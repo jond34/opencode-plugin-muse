@@ -132,11 +132,24 @@ export class LiveSession {
     return true;
   }
 
-  constructor(openCodeSessionId: string, muse: MuseHarnessSession) {
+  constructor(
+    openCodeSessionId: string,
+    muse: MuseHarnessSession,
+    private readonly toolsRef: { current: ToolDefinition[] } = { current: [] },
+  ) {
     this.openCodeSessionId = openCodeSessionId;
     this.muse = muse;
     this.model = muse.info.model;
     void this.pump();
+  }
+
+  /**
+   * Offer this step's tools to the bridge. Each OpenCode session has its own
+   * agent and therefore its own tool set; a shared list would serve one
+   * session's tools to another.
+   */
+  setTools(tools: ReadonlyArray<ToolDefinition>): void {
+    this.toolsRef.current = [...tools];
   }
 
   get promptLength(): number {
@@ -285,17 +298,24 @@ export class LiveSession {
   /**
    * Stop the active turn because OpenCode cancelled the step.
    *
-   * A turn parked on tool calls is left waiting for its results, mirroring the
-   * reference provider: interrupting it would only turn the pending calls into
-   * errors. A turn that is still generating is interrupted natively, and the
-   * buffered parts are dropped so a stale finish cannot reach the next step.
+   * A turn still generating is interrupted natively, and the buffered parts
+   * are dropped so a stale finish cannot reach the next step. A turn parked on
+   * a tool call would otherwise wait forever, because OpenCode discards the
+   * step that owed the result; its call is rejected and the turn is stopped.
    */
   async interrupt(): Promise<void> {
-    if (!this.turnActive || this.pending.size > 0) return;
+    if (!this.turnActive) return;
     const turnId = this.currentTurnId;
     this.setActiveTurn(false);
     this.stepAborted = true;
     this.queue = [];
+    // A parked turn has a `tools/call` waiting on the bridge. If the step is
+    // cancelled, OpenCode will never send that result, so reject it here and
+    // interrupt the native turn; otherwise the session stays parked with a
+    // turn OpenCode no longer knows about.
+    if (this.pending.size > 0) {
+      this.clearPending(new Error("Step cancelled before the tool result arrived"));
+    }
     if (turnId !== null) {
       try {
         await this.muse.interruptTurn({ turnId });
@@ -303,7 +323,6 @@ export class LiveSession {
         // The turn may already be over.
       }
     }
-    this.clearPending(new Error("Turn interrupted"));
   }
 
   /** Emit a tool call to OpenCode and park the step. */
@@ -410,15 +429,10 @@ export class MuseSessionRegistry {
   private readonly sessions = new Map<string, LiveSession>();
   private readonly adapter: MuseHarnessAdapter;
   private readonly store: SessionStore | undefined;
-  private tools: ToolDefinition[] = [];
 
   constructor(adapter: MuseHarnessAdapter, store?: SessionStore) {
     this.adapter = adapter;
     this.store = store;
-  }
-
-  setTools(tools: ReadonlyArray<ToolDefinition>): void {
-    this.tools = [...tools];
   }
 
   /** Read the Muse model catalog through the session's host. */
@@ -440,9 +454,15 @@ export class MuseSessionRegistry {
     cwd: string,
     resumeFrom?: string,
     model?: string,
+    /**
+     * The tools this session's next step offers; the bridge serves them.
+     * Omitted for utility requests, which must leave the live list alone.
+     */
+    tools?: ReadonlyArray<ToolDefinition>,
   ): Promise<LiveSession> {
     const existing = this.sessions.get(openCodeSessionId);
     if (existing) {
+      if (tools !== undefined) existing.setTools(tools);
       if (model !== undefined) await existing.setModel(model);
       return existing;
     }
@@ -452,9 +472,13 @@ export class MuseSessionRegistry {
     // and its first turn carries the full conversation as text.
     const seedFull = own === undefined && resumeFrom !== undefined;
 
+    // The bridge is asked for its tool list during `session/start`, before the
+    // LiveSession exists, so the list lives in a box the session later updates
+    // instead of on the session itself.
+    const toolsRef = { current: tools === undefined ? [] : [...tools] };
     let live: LiveSession | undefined;
     const bridge: HarnessToolBridge = {
-      listTools: () => this.tools,
+      listTools: () => toolsRef.current,
       callTool: async (call) => {
         const current = live;
         if (!current) throw new Error("Session is not ready");
@@ -474,7 +498,7 @@ export class MuseSessionRegistry {
       ...(own !== undefined ? { resumeSessionId: own } : {}),
       toolBridge: bridge,
     });
-    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession);
+    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef);
     if (seedFull) live.requestFullSeed();
     this.sessions.set(openCodeSessionId, live);
     if (this.store) {

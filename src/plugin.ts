@@ -1,5 +1,6 @@
 import { Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
+import { writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
 import { CONTRIBUTOR_SUFFIX } from "./host.js";
 import { HEADERS, MuseLanguageModel } from "./language-model.js";
 import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
@@ -99,17 +100,36 @@ export function toModelInfo(providerID: ReturnType<typeof Provider.ID.make>, mod
 export const MusePlugin = Plugin.define({
   id: PLUGIN_ID,
   async setup(ctx) {
+    // Muse reads its prompt and toolset from settings.json at startup, so the
+    // only way to keep it to inference is a private config dir: the file pins
+    // the toolset to the bridge and replaces Muse's own base prompt. Without
+    // it, Muse's built-in tools and any MCP servers in the user's Muse config
+    // answer inside Muse's own loop, bypassing OpenCode's permissions and
+    // history.
+    let hostConfig: HostConfigPaths | undefined;
+    try {
+      hostConfig = writeMuseHostConfig();
+    } catch (error) {
+      // A session that runs without containment beats one that cannot start,
+      // so the old preset remains the fallback. It hides the session's own
+      // built-in tools but not MCP servers from the user's Muse config.
+      console.warn("[opencode-muse] private Muse config failed; falling back to the empty preset:", error);
+    }
+    // A preset set by the user wins; otherwise the private config is the
+    // containment channel, and `empty` is only the fallback when it failed.
+    const preset = process.env.MUSE_PRESET;
     const adapter = new MuseHarnessAdapter({
       hostOptions: {
         museBin: process.env.MUSE_BIN ?? "muse",
-        // Muse's built-in tools otherwise answer inside Muse's own loop,
-        // bypassing OpenCode's permissions and history. `empty` keeps only the
-        // per-session MCP bridge, so every tool call reaches OpenCode.
-        preset: process.env.MUSE_PRESET ?? "empty",
-        // The `empty` preset turns contributor mode on, which routes every
-        // model to its `-contributor` variant; a model without one (ember)
-        // then fails. Off keeps the id from the model list authoritative, so
-        // both the base entry and the contributor entry work.
+        ...(preset !== undefined
+          ? { preset }
+          : hostConfig === undefined
+            ? { preset: "empty" }
+            : { env: { ...process.env, XDG_CONFIG_HOME: hostConfig.xdg } }),
+        // With the `empty` preset Muse turns contributor mode on, which routes
+        // every model to its `-contributor` variant; a model without one
+        // (ember) then fails. Off keeps the model id authoritative, so both the
+        // base entry and the contributor entry work.
         contributorMode: process.env.MUSE_CONTRIBUTOR_MODE === "on" ? "on" : "off",
         trustWorkspace: true,
       },
@@ -209,6 +229,7 @@ export const MusePlugin = Plugin.define({
     return async () => {
       await registry.closeAll();
       await adapter.close();
+      hostConfig?.remove();
     };
   },
 });

@@ -11,6 +11,7 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 
 bun --version
-# The live suites (tool-bridge, fork-live, conformance) spawn a real `muse serve`
+# The live suites (tool-bridge, containment, fork-live, conformance) spawn a real
+# `muse serve`
 # host and need a logged-in Muse Code CLI. Run `bun test` to include them.
 bun run test:offline

@@ -6,8 +6,9 @@ CLI, so no Muse credential reaches opencode or your config.
 
 Tested with Muse CLI 1.4.23 and opencode 2.3.2. Republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
-with two patches: [`CREDITS.md`](CREDITS.md) has the diff, `docs/provenance.md` the
-build hash and what it does and does not prove.
+with three patches: [`CREDITS.md`](CREDITS.md) has the diffs, `docs/provenance.md` the
+build hash and what it does and does not prove. The first two reconcile the published
+0.1.9 tarball; the third contains Muse to inference and is not yet published.
 
 Not affiliated with Meta or opencode. Best-effort maintenance by one person, with no
 support commitment.
@@ -22,6 +23,10 @@ support commitment.
 - implements `LanguageModelV3`, translating opencode turns into Muse CLI sessions
 - runs a loopback-only MCP server (`127.0.0.1`, random port, per-start bearer token)
   so Muse can call opencode's tools
+- starts `muse serve` with a private config: Muse's built-in tools and any MCP servers
+  from your Muse config are off, its base prompt is replaced by a short control prompt,
+  and every tool call has to cross the bridge, so opencode's permissions and history
+  stay authoritative
 - forwards `museAgent` and `museInstructions` options
 
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a subscription
@@ -69,22 +74,27 @@ bash scripts/repro.sh
 ```
 
 It installs from the committed lockfile, compiles, and compares the resulting `dist/`
-against the hash recorded in `docs/provenance.md`. It prints `PASS` or exits non-zero.
+against the hash recorded for this tree in `docs/provenance.md`. It prints `PASS` or
+exits non-zero. The hash of the published 0.1.9 tarball is recorded there too; this tree
+adds a third patch, so its hash differs.
 
 ```bash
 npm run check:offline   # typecheck plus the offline test suite
 ```
 
-`npm run check:offline` runs 32 tests that need no network or credentials. `bun test`
-adds five suites (`tool-bridge`, `fork-live`, `model-live`, `conformance`, `restart-live`)
-that spawn a real `muse serve` host: 38 tests in total, all needing a logged-in Muse Code
-CLI. One reuses a tool result on the next turn; another resumes a session after its host
-has been restarted.
+`npm run check:offline` runs 41 tests that need no network or credentials. `bun test`
+adds six live suites (`tool-bridge`, `containment`, `fork-live`, `model-live`,
+`conformance`, `restart-live`) that spawn a real `muse serve` host: 48 tests in total,
+all needing a logged-in Muse Code CLI. One reuses a tool result on the next turn;
+another resumes a session after its host has been restarted; `containment` proves the
+host sees only bridge tools.
 
 Those live suites pass `contributorMode: "off"` for the same reason the plugin does.
 The `empty` preset turns contributor mode on, which routes every model to its
 `-contributor` variant, and `muse-ember-1.0` has none, so the model request fails with
-`code: "modelError"` unless the flag is set.
+`code: "modelError"` unless the flag is set. Production does not use that preset; it
+uses the private config, and `empty` remains only as a fallback when the config cannot
+be written.
 
 ## Verify the published package
 
@@ -121,7 +131,7 @@ The attestation endpoint needs an npm-style `User-Agent`. A bare `curl` gets a
 ## Layout
 
 ```text
-src/        upstream source plus the two patches in docs/provenance.md
+src/        upstream source plus the patches in docs/provenance.md
 test/       upstream test suite
 docs/       provenance record
 evidence/   inputs for the reproduction check (diffs, measurements); repository only

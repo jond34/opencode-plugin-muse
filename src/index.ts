@@ -1,6 +1,7 @@
 export * from "./capabilities.js";
 export * from "./events.js";
 export * from "./host.js";
+export * from "./host-config.js";
 export * from "./bridge.js";
 export * from "./session.js";
 export * from "./adapter.js";

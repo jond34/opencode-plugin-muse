@@ -1,0 +1,763 @@
+diff --git a/package.json b/package.json
+index f355612..8b10b46 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "@jonathand34/opencode-plugin-muse",
+   "version": "0.1.12",
+-  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with two patches.",
++  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with three patches.",
+   "license": "MIT",
+   "repository": {
+     "type": "git",
+@@ -28,7 +28,7 @@
+   "scripts": {
+     "build": "tsc -p tsconfig.json",
+     "test": "bun test",
+-    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts",
++    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts",
+     "check": "tsc --noEmit -p tsconfig.json && bun test",
+     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
+     "repro": "bash scripts/repro.sh"
+diff --git a/src/host-config.ts b/src/host-config.ts
+new file mode 100644
+index 0000000..977c776
+--- /dev/null
++++ b/src/host-config.ts
+@@ -0,0 +1,132 @@
++import {
++  existsSync,
++  lstatSync,
++  mkdirSync,
++  mkdtempSync,
++  rmSync,
++  symlinkSync,
++  writeFileSync,
++} from "node:fs";
++import { homedir, tmpdir } from "node:os";
++import { isAbsolute, join, win32 } from "node:path";
++
++/**
++ * A private Muse config dir for one host process.
++ *
++ * Muse takes its prompt and toolset from `settings.json` at startup, and there
++ * is no per-session or command-line way to pass them. A redirected
++ * `XDG_CONFIG_HOME` with a bridge-authored file is therefore the only way to
++ * keep Muse to inference: the file pins the toolset to the opencode bridge and
++ * replaces Muse's own base prompt. The user's real config is never read or
++ * written; only `auth.json` is linked in so the existing login keeps working.
++ */
++
++/** The bridge's MCP server name, and the only tool namespace Muse may use. */
++export const BRIDGE_TOOLSET: readonly string[] = ["mcp__opencode__*"];
++
++/**
++ * Replaces Muse's ~64k-character base prompt. It keeps the one fact the model
++ * cannot infer from the turn (that opencode owns the session) and tells it to
++ * ignore the skill catalog Muse still injects separately.
++ */
++export const CONTROL_SYSTEM_PROMPT = [
++  "You are the language model inside an opencode session.",
++  "opencode owns the agent loop, the tools, the permissions, and the history.",
++  "Use only the tools in the tool list; never assume a tool you were not given.",
++  "The first user message carries the session's role and instructions; follow them.",
++  "Ignore any skill catalog, reminder, or workflow text in this prompt, and answer concisely.",
++].join("\n");
++
++export interface HostConfigPaths {
++  /** The config root to export as `XDG_CONFIG_HOME`. */
++  readonly xdg: string;
++  /** `<xdg>/muse/settings.json`. */
++  readonly settingsPath: string;
++  /** Remove the private directory and everything in it. */
++  remove(): void;
++}
++
++export interface HostConfigOptions {
++  /** Prompt written to `run.system_prompt`; defaults to the control prompt. */
++  readonly systemPrompt?: string;
++  /** Toolset allowlist; defaults to the bridge namespace. */
++  readonly toolset?: readonly string[];
++  /**
++   * Compaction thresholds. Muse requires soft < hard and refuses 1/1.
++   * Defaults sit above opencode's own limit so Muse stops compacting first.
++   */
++  readonly softThreshold?: number;
++  readonly hardThreshold?: number;
++  /** Parent for the temporary directory; defaults to `os.tmpdir()`. */
++  readonly baseDir?: string;
++  readonly env?: NodeJS.ProcessEnv;
++  readonly platform?: NodeJS.Platform;
++  readonly homeDirectory?: string;
++}
++
++/**
++ * The user's real Muse config dir.
++ *
++ * Used only to find `auth.json` for the symlink. Nothing here reads the file.
++ */
++export function userMuseConfigDir(options: HostConfigOptions = {}): string {
++  const env = options.env ?? process.env;
++  const platform = options.platform ?? process.platform;
++  const homeDirectory = options.homeDirectory ?? homedir();
++  if (platform === "win32") {
++    const appData = env.LOCALAPPDATA;
++    const root = appData && win32.isAbsolute(appData)
++      ? appData
++      : win32.join(homeDirectory, "AppData", "Local");
++    return win32.join(root, "muse");
++  }
++  const root = env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)
++    ? env.XDG_CONFIG_HOME
++    : join(homeDirectory, ".config");
++  return join(root, "muse");
++}
++
++/**
++ * Write a private `settings.json` and link the user's login into it.
++ *
++ * The directory is 0700 and the file 0600. If `auth.json` cannot be linked
++ * (Windows without symlink permission, for example) the host still starts; the
++ * caller can surface the login failure Muse reports.
++ */
++export function writeMuseHostConfig(options: HostConfigOptions = {}): HostConfigPaths {
++  const xdg = mkdtempSync(join(options.baseDir ?? tmpdir(), "opencode-muse-"));
++  const dir = join(xdg, "muse");
++  mkdirSync(dir, { recursive: true, mode: 0o700 });
++
++  const settings = {
++    schema_version: 1,
++    run: {
++      toolset: [...(options.toolset ?? BRIDGE_TOOLSET)],
++      system_prompt: options.systemPrompt ?? CONTROL_SYSTEM_PROMPT,
++    },
++    context: { foreign_personal_rules: false },
++    // Muse compacts its own history below opencode's limit. Deferring both
++    // thresholds to the window's edge leaves compaction to opencode.
++    context_compaction: {
++      soft_threshold: options.softThreshold ?? 0.99,
++      hard_threshold: options.hardThreshold ?? 0.995,
++    },
++  };
++  const settingsPath = join(dir, "settings.json");
++  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 1)}\n`, { mode: 0o600 });
++
++  const authSource = join(userMuseConfigDir(options), "auth.json");
++  try {
++    if (existsSync(authSource) && lstatSync(authSource).isFile()) {
++      symlinkSync(authSource, join(dir, "auth.json"));
++    }
++  } catch {
++    // A raced or refused link leaves the host to report the missing login.
++  }
++
++  return {
++    xdg,
++    settingsPath,
++    remove: () => rmSync(xdg, { recursive: true, force: true }),
++  };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 7f13080..5f605d7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,7 @@
+ export * from "./capabilities.js";
+ export * from "./events.js";
+ export * from "./host.js";
++export * from "./host-config.js";
+ export * from "./bridge.js";
+ export * from "./session.js";
+ export * from "./adapter.js";
+diff --git a/src/language-model.ts b/src/language-model.ts
+index 9cb8f92..5aeb0f5 100644
+--- a/src/language-model.ts
++++ b/src/language-model.ts
+@@ -109,8 +109,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
+       ...(tool.description === undefined ? {} : { description: tool.description }),
+       inputSchema: tool.inputSchema as Record<string, unknown>,
+     }));
+-    this.registry.setTools(toolDefs);
+-
+     if (kind !== "primary") {
+       // Compaction and generate branch the chat: they keep the chat's tools
+       // so the request matches the cached shape. Titles stand alone.
+@@ -121,14 +119,17 @@ export class MuseLanguageModel implements LanguageModelV3 {
+       throw new Error("Muse model request is missing the session header");
+     }
+ 
+-    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId);
++    // Titles and other utility requests carry no tools; they must not clear
++    // the list a primary step is using on the same session.
++    const sessionTools = kind === "primary" ? toolDefs : undefined;
++    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
+     let reseed = false;
+     if (!live.isFresh && options.prompt.length < live.promptLength) {
+       // OpenCode rewrote the history (compaction, rewind): the native session
+       // still holds the old context, so recycle it and reseed from the full
+       // prompt below.
+       await this.registry.close(sessionID);
+-      live = await this.registry.get(sessionID, directory, forkSource, this.modelId);
++      live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
+       reseed = true;
+     }
+     if (live.isFresh) {
+diff --git a/src/plugin.ts b/src/plugin.ts
+index ffb4b08..b8831d5 100644
+--- a/src/plugin.ts
++++ b/src/plugin.ts
+@@ -1,5 +1,6 @@
+ import { Model, Plugin, Provider } from "@opencode/plugin";
+ import { MuseHarnessAdapter } from "./adapter.js";
++import { writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
+ import { CONTRIBUTOR_SUFFIX } from "./host.js";
+ import { HEADERS, MuseLanguageModel } from "./language-model.js";
+ import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
+@@ -99,17 +100,36 @@ export function toModelInfo(providerID: ReturnType<typeof Provider.ID.make>, mod
+ export const MusePlugin = Plugin.define({
+   id: PLUGIN_ID,
+   async setup(ctx) {
++    // Muse reads its prompt and toolset from settings.json at startup, so the
++    // only way to keep it to inference is a private config dir: the file pins
++    // the toolset to the bridge and replaces Muse's own base prompt. Without
++    // it, Muse's built-in tools and any MCP servers in the user's Muse config
++    // answer inside Muse's own loop, bypassing OpenCode's permissions and
++    // history.
++    let hostConfig: HostConfigPaths | undefined;
++    try {
++      hostConfig = writeMuseHostConfig();
++    } catch (error) {
++      // A session that runs without containment beats one that cannot start,
++      // so the old preset remains the fallback. It hides the session's own
++      // built-in tools but not MCP servers from the user's Muse config.
++      console.warn("[opencode-muse] private Muse config failed; falling back to the empty preset:", error);
++    }
++    // A preset set by the user wins; otherwise the private config is the
++    // containment channel, and `empty` is only the fallback when it failed.
++    const preset = process.env.MUSE_PRESET;
+     const adapter = new MuseHarnessAdapter({
+       hostOptions: {
+         museBin: process.env.MUSE_BIN ?? "muse",
+-        // Muse's built-in tools otherwise answer inside Muse's own loop,
+-        // bypassing OpenCode's permissions and history. `empty` keeps only the
+-        // per-session MCP bridge, so every tool call reaches OpenCode.
+-        preset: process.env.MUSE_PRESET ?? "empty",
+-        // The `empty` preset turns contributor mode on, which routes every
+-        // model to its `-contributor` variant; a model without one (ember)
+-        // then fails. Off keeps the id from the model list authoritative, so
+-        // both the base entry and the contributor entry work.
++        ...(preset !== undefined
++          ? { preset }
++          : hostConfig === undefined
++            ? { preset: "empty" }
++            : { env: { ...process.env, XDG_CONFIG_HOME: hostConfig.xdg } }),
++        // With the `empty` preset Muse turns contributor mode on, which routes
++        // every model to its `-contributor` variant; a model without one
++        // (ember) then fails. Off keeps the model id authoritative, so both the
++        // base entry and the contributor entry work.
+         contributorMode: process.env.MUSE_CONTRIBUTOR_MODE === "on" ? "on" : "off",
+         trustWorkspace: true,
+       },
+@@ -209,6 +229,7 @@ export const MusePlugin = Plugin.define({
+     return async () => {
+       await registry.closeAll();
+       await adapter.close();
++      hostConfig?.remove();
+     };
+   },
+ });
+diff --git a/src/session-registry.ts b/src/session-registry.ts
+index efa598c..5caaa38 100644
+--- a/src/session-registry.ts
++++ b/src/session-registry.ts
+@@ -132,13 +132,26 @@ export class LiveSession {
+     return true;
+   }
+ 
+-  constructor(openCodeSessionId: string, muse: MuseHarnessSession) {
++  constructor(
++    openCodeSessionId: string,
++    muse: MuseHarnessSession,
++    private readonly toolsRef: { current: ToolDefinition[] } = { current: [] },
++  ) {
+     this.openCodeSessionId = openCodeSessionId;
+     this.muse = muse;
+     this.model = muse.info.model;
+     void this.pump();
+   }
+ 
++  /**
++   * Offer this step's tools to the bridge. Each OpenCode session has its own
++   * agent and therefore its own tool set; a shared list would serve one
++   * session's tools to another.
++   */
++  setTools(tools: ReadonlyArray<ToolDefinition>): void {
++    this.toolsRef.current = [...tools];
++  }
++
+   get promptLength(): number {
+     return this.lastPromptLength;
+   }
+@@ -285,17 +298,24 @@ export class LiveSession {
+   /**
+    * Stop the active turn because OpenCode cancelled the step.
+    *
+-   * A turn parked on tool calls is left waiting for its results, mirroring the
+-   * reference provider: interrupting it would only turn the pending calls into
+-   * errors. A turn that is still generating is interrupted natively, and the
+-   * buffered parts are dropped so a stale finish cannot reach the next step.
++   * A turn still generating is interrupted natively, and the buffered parts
++   * are dropped so a stale finish cannot reach the next step. A turn parked on
++   * a tool call would otherwise wait forever, because OpenCode discards the
++   * step that owed the result; its call is rejected and the turn is stopped.
+    */
+   async interrupt(): Promise<void> {
+-    if (!this.turnActive || this.pending.size > 0) return;
++    if (!this.turnActive) return;
+     const turnId = this.currentTurnId;
+     this.setActiveTurn(false);
+     this.stepAborted = true;
+     this.queue = [];
++    // A parked turn has a `tools/call` waiting on the bridge. If the step is
++    // cancelled, OpenCode will never send that result, so reject it here and
++    // interrupt the native turn; otherwise the session stays parked with a
++    // turn OpenCode no longer knows about.
++    if (this.pending.size > 0) {
++      this.clearPending(new Error("Step cancelled before the tool result arrived"));
++    }
+     if (turnId !== null) {
+       try {
+         await this.muse.interruptTurn({ turnId });
+@@ -303,7 +323,6 @@ export class LiveSession {
+         // The turn may already be over.
+       }
+     }
+-    this.clearPending(new Error("Turn interrupted"));
+   }
+ 
+   /** Emit a tool call to OpenCode and park the step. */
+@@ -410,17 +429,12 @@ export class MuseSessionRegistry {
+   private readonly sessions = new Map<string, LiveSession>();
+   private readonly adapter: MuseHarnessAdapter;
+   private readonly store: SessionStore | undefined;
+-  private tools: ToolDefinition[] = [];
+ 
+   constructor(adapter: MuseHarnessAdapter, store?: SessionStore) {
+     this.adapter = adapter;
+     this.store = store;
+   }
+ 
+-  setTools(tools: ReadonlyArray<ToolDefinition>): void {
+-    this.tools = [...tools];
+-  }
+-
+   /** Read the Muse model catalog through the session's host. */
+   async listModels(): Promise<Array<Record<string, unknown>>> {
+     return this.adapter.listModels();
+@@ -440,9 +454,15 @@ export class MuseSessionRegistry {
+     cwd: string,
+     resumeFrom?: string,
+     model?: string,
++    /**
++     * The tools this session's next step offers; the bridge serves them.
++     * Omitted for utility requests, which must leave the live list alone.
++     */
++    tools?: ReadonlyArray<ToolDefinition>,
+   ): Promise<LiveSession> {
+     const existing = this.sessions.get(openCodeSessionId);
+     if (existing) {
++      if (tools !== undefined) existing.setTools(tools);
+       if (model !== undefined) await existing.setModel(model);
+       return existing;
+     }
+@@ -452,9 +472,13 @@ export class MuseSessionRegistry {
+     // and its first turn carries the full conversation as text.
+     const seedFull = own === undefined && resumeFrom !== undefined;
+ 
++    // The bridge is asked for its tool list during `session/start`, before the
++    // LiveSession exists, so the list lives in a box the session later updates
++    // instead of on the session itself.
++    const toolsRef = { current: tools === undefined ? [] : [...tools] };
+     let live: LiveSession | undefined;
+     const bridge: HarnessToolBridge = {
+-      listTools: () => this.tools,
++      listTools: () => toolsRef.current,
+       callTool: async (call) => {
+         const current = live;
+         if (!current) throw new Error("Session is not ready");
+@@ -474,7 +498,7 @@ export class MuseSessionRegistry {
+       ...(own !== undefined ? { resumeSessionId: own } : {}),
+       toolBridge: bridge,
+     });
+-    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession);
++    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef);
+     if (seedFull) live.requestFullSeed();
+     this.sessions.set(openCodeSessionId, live);
+     if (this.store) {
+diff --git a/test/containment-live.test.ts b/test/containment-live.test.ts
+new file mode 100644
+index 0000000..59bf763
+--- /dev/null
++++ b/test/containment-live.test.ts
+@@ -0,0 +1,130 @@
++import { describe, expect, test } from "bun:test";
++import type { HarnessEvent } from "../src/contract/index.js";
++import { writeMuseHostConfig } from "../src/host-config.js";
++import { MuseHarnessAdapter, MuseHarnessSession } from "../src/index.js";
++import { userMessage } from "./harness/helpers.js";
++
++/**
++ * Proves the production containment channel: a private Muse config whose
++ * settings pin the toolset to the bridge and replace Muse's base prompt. The
++ * user's real Muse config (which has its own MCP servers) is not read.
++ */
++
++const tools = [
++  {
++    name: "lookup",
++    description: "Look something up",
++    inputSchema: {
++      type: "object",
++      properties: { q: { type: "string" } },
++      required: ["q"],
++      additionalProperties: false,
++    },
++  },
++];
++
++async function turn(
++  session: MuseHarnessSession,
++  turnId: string,
++  text: string,
++): Promise<HarnessEvent[]> {
++  const events: HarnessEvent[] = [];
++  const pump = (async () => {
++    for await (const event of session.subscribe()) {
++      events.push(event);
++      if (
++        event.type === "request.updated" &&
++        event.request.kind === "approval" &&
++        event.request.status === "pending"
++      ) {
++        const option =
++          event.request.options?.find((entry) => entry.id === "allow_once") ??
++          event.request.options?.[0];
++        await session.respondToRequest({
++          requestId: event.request.id,
++          ...(option ? { optionId: option.id } : {}),
++        });
++      }
++      if (event.type === "turn.terminal" && event.turn.id === turnId) return;
++    }
++  })();
++
++  await session.startTurn({ turnId, message: userMessage(text) });
++  await Promise.race([
++    pump,
++    new Promise((_, reject) =>
++      setTimeout(() => reject(new Error(`turn ${turnId} timed out`)), 120_000),
++    ),
++  ]);
++  return events;
++}
++
++function reply(events: HarnessEvent[]): string {
++  return events
++    .filter((event) => event.type === "message.delta")
++    .map((event) => (event.type === "message.delta" ? event.text ?? "" : ""))
++    .join("");
++}
++
++describe("containment", () => {
++  test(
++    "the host sees only bridge tools and can call one",
++    async () => {
++      const config = writeMuseHostConfig();
++      const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
++      const adapter = new MuseHarnessAdapter({
++        hostOptions: {
++          env: { ...process.env, XDG_CONFIG_HOME: config.xdg },
++          contributorMode: "off",
++          trustWorkspace: true,
++        },
++      });
++
++      try {
++        const session = (await adapter.openSession({
++          sessionId: "containment",
++          cwd: process.cwd(),
++          toolBridge: {
++            listTools: () => tools,
++            callTool: async (call: { name: string; input: Record<string, unknown> }) => {
++              calls.push(call);
++              return {
++                content: [
++                  { type: "text" as const, text: `echo:${call.name}:${JSON.stringify(call.input)}` },
++                ],
++              };
++            },
++          },
++        })) as MuseHarnessSession;
++
++        const listed = await turn(
++          session,
++          "turn-list",
++          "List the exact names of every tool you can call, one per line, and nothing else.",
++        );
++        const names = reply(listed);
++        expect(names).toContain("mcp__opencode.lookup");
++        // Muse's built-ins and the user's own Muse MCP servers must be gone.
++        expect(names).not.toContain("muse.");
++        expect(names).not.toContain("mcp__mcpproxy");
++
++        const called = await turn(
++          session,
++          "turn-call",
++          "Use the lookup tool with q=hello, then reply with exactly the tool output.",
++        );
++        expect(calls.map((call) => call.name)).toContain("lookup");
++        const completed = called.filter((event) => event.type === "tool.completed");
++        expect(completed.length).toBeGreaterThan(0);
++        const first = completed[0];
++        if (first?.type !== "tool.completed") throw new Error("expected tool.completed");
++        expect(first.item.status).toBe("completed");
++        expect(first.item.output).toContain("echo:lookup");
++      } finally {
++        await adapter.close();
++        config.remove();
++      }
++    },
++    { timeout: 180_000 },
++  );
++});
+diff --git a/test/host-config.test.ts b/test/host-config.test.ts
+new file mode 100644
+index 0000000..c6ba275
+--- /dev/null
++++ b/test/host-config.test.ts
+@@ -0,0 +1,129 @@
++import { describe, expect, test } from "bun:test";
++import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import {
++  BRIDGE_TOOLSET,
++  CONTROL_SYSTEM_PROMPT,
++  userMuseConfigDir,
++  writeMuseHostConfig,
++} from "../src/host-config.js";
++
++interface Settings {
++  schema_version: number;
++  run: { toolset: string[]; system_prompt: string };
++  context: { foreign_personal_rules: boolean };
++  context_compaction: { soft_threshold: number; hard_threshold: number };
++}
++
++function home(): string {
++  return mkdtempSync(join(tmpdir(), "muse-home-"));
++}
++
++function settingsAt(path: string): Settings {
++  return JSON.parse(readFileSync(path, "utf8")) as Settings;
++}
++
++describe("host config", () => {
++  test("writes a private settings file that contains Muse to the bridge", () => {
++    const base = home();
++    const config = writeMuseHostConfig({ baseDir: base, homeDirectory: base });
++    try {
++      const settings = settingsAt(config.settingsPath);
++      expect(settings.schema_version).toBe(1);
++      expect(settings.run.toolset).toEqual([...BRIDGE_TOOLSET]);
++      expect(settings.run.system_prompt).toBe(CONTROL_SYSTEM_PROMPT);
++      expect(settings.context_compaction).toEqual({ soft_threshold: 0.99, hard_threshold: 0.995 });
++      expect(settings.context.foreign_personal_rules).toBe(false);
++    } finally {
++      config.remove();
++    }
++  });
++
++  test("keeps the directory and file private", () => {
++    const base = home();
++    const config = writeMuseHostConfig({ baseDir: base, homeDirectory: base });
++    try {
++      expect(statSync(config.xdg).mode & 0o777).toBe(0o700);
++      expect(statSync(config.settingsPath).mode & 0o777).toBe(0o600);
++    } finally {
++      config.remove();
++    }
++  });
++
++  test("links the user's login instead of copying it", () => {
++    const base = home();
++    const realDir = join(base, ".config", "muse");
++    mkdirSync(realDir, { recursive: true });
++    const authSource = join(realDir, "auth.json");
++    writeFileSync(authSource, '{"token":"test"}\n');
++
++    const config = writeMuseHostConfig({ baseDir: base, homeDirectory: base, env: {} });
++    try {
++      const link = join(config.xdg, "muse", "auth.json");
++      expect(lstatSync(link).isSymbolicLink()).toBe(true);
++      expect(readFileSync(link, "utf8")).toBe('{"token":"test"}\n');
++    } finally {
++      config.remove();
++    }
++  });
++
++  test("writes no login when the user has none", () => {
++    const base = home();
++    const config = writeMuseHostConfig({ baseDir: base, homeDirectory: base, env: {} });
++    try {
++      expect(existsSync(join(config.xdg, "muse", "auth.json"))).toBe(false);
++    } finally {
++      config.remove();
++    }
++  });
++
++  test("honours prompt and toolset overrides", () => {
++    const base = home();
++    const config = writeMuseHostConfig({
++      baseDir: base,
++      homeDirectory: base,
++      systemPrompt: "custom",
++      toolset: ["mcp__other__*"],
++      softThreshold: 0.9,
++      hardThreshold: 0.95,
++    });
++    try {
++      const settings = settingsAt(config.settingsPath);
++      expect(settings.run.system_prompt).toBe("custom");
++      expect(settings.run.toolset).toEqual(["mcp__other__*"]);
++      expect(settings.context_compaction).toEqual({ soft_threshold: 0.9, hard_threshold: 0.95 });
++    } finally {
++      config.remove();
++    }
++  });
++
++  test("remove() deletes the private directory", () => {
++    const base = home();
++    const config = writeMuseHostConfig({ baseDir: base, homeDirectory: base });
++    expect(existsSync(config.xdg)).toBe(true);
++    config.remove();
++    expect(existsSync(config.xdg)).toBe(false);
++    rmSync(base, { recursive: true, force: true });
++  });
++
++  test("resolves the real config dir per platform", () => {
++    expect(
++      userMuseConfigDir({ platform: "linux", homeDirectory: "/home/u", env: {} }),
++    ).toBe("/home/u/.config/muse");
++    expect(
++      userMuseConfigDir({
++        platform: "linux",
++        homeDirectory: "/home/u",
++        env: { XDG_CONFIG_HOME: "/cfg" },
++      }),
++    ).toBe("/cfg/muse");
++    expect(
++      userMuseConfigDir({
++        platform: "win32",
++        homeDirectory: "C:\\Users\\u",
++        env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" },
++      }),
++    ).toBe("C:\\Users\\u\\AppData\\Local\\muse");
++  });
++});
+diff --git a/test/lifecycle.test.ts b/test/lifecycle.test.ts
+index 9b8dbfd..6217541 100644
+--- a/test/lifecycle.test.ts
++++ b/test/lifecycle.test.ts
+@@ -364,6 +364,90 @@ describe("LiveSession step settling", () => {
+   });
+ });
+ 
++describe("LiveSession cancellation", () => {
++  test("cancelling a parked step rejects its call and interrupts the turn", async () => {
++    const { host, commands } = fakeHost({
++      "turn/start": { turnId: "native-turn" },
++      "turn/interrupt": { status: "accepted" },
++    });
++    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
++    const live = new LiveSession("oc", session);
++    try {
++      await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
++      session.handleNotification({
++        method: "turn/started",
++        params: { turnId: "native-turn", sessionId: "native" },
++      } satisfies MuseNotification);
++      live.setActiveTurn(true, "t1");
++
++      let rejected: unknown;
++      live.pending.set("tc1", {
++        id: "tc1",
++        name: "lookup",
++        input: { q: "x" },
++        resolve: () => {},
++        reject: (error) => {
++          rejected = error;
++        },
++      });
++
++      await live.interrupt();
++
++      expect(rejected).toBeInstanceOf(Error);
++      expect(live.pendingCount()).toBe(0);
++      expect(live.hasActiveTurn).toBe(false);
++      expect(commands.some((entry) => entry.method === "turn/interrupt")).toBe(true);
++    } finally {
++      await live.close();
++    }
++  });
++});
++
++describe("MuseSessionRegistry tools", () => {
++  test("each session's bridge serves only that session's tools", async () => {
++    const opened: Array<{ sessionId: string; list: () => ReadonlyArray<{ name: string }> }> = [];
++    const adapter = {
++      listModels: async () => [],
++      openSession: async (input: Record<string, unknown>) => {
++        const bridge = input.toolBridge as {
++          listTools(): ReadonlyArray<{ name: string }>;
++        };
++        opened.push({ sessionId: input.sessionId as string, list: () => bridge.listTools() });
++        return MuseHarnessSession.fromNativeSession(
++          fakeHost().host,
++          { sessionId: input.sessionId as string, cwd: input.cwd as string },
++          `native-${input.sessionId as string}`,
++        );
++      },
++    } as unknown as MuseHarnessAdapter;
++    const registry = new MuseSessionRegistry(adapter);
++    const tool = (name: string) => ({ name, description: name, inputSchema: { type: "object" } });
++
++    try {
++      await registry.get("a", "/tmp", undefined, undefined, [tool("a-tool")]);
++      await registry.get("b", "/tmp", undefined, undefined, [tool("b-tool")]);
++
++      const [a, b] = opened;
++      if (!a || !b) throw new Error("expected two sessions");
++      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool"]);
++      expect(b.list().map((entry) => entry.name)).toEqual(["b-tool"]);
++
++      // A later step for one session replaces its list without touching the
++      // other session's.
++      await registry.get("a", "/tmp", undefined, undefined, [tool("a-tool-2")]);
++      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool-2"]);
++      expect(b.list().map((entry) => entry.name)).toEqual(["b-tool"]);
++
++      // A utility request on the same session omits tools and leaves the list
++      // the running step is using untouched.
++      await registry.get("a", "/tmp");
++      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool-2"]);
++    } finally {
++      await registry.closeAll();
++    }
++  });
++});
++
+ describe("toToolResult", () => {
+   test("error-text keeps its message instead of stringifying the envelope", () => {
+     const result = toToolResult({

@@ -364,6 +364,90 @@ describe("LiveSession step settling", () => {
   });
 });
 
+describe("LiveSession cancellation", () => {
+  test("cancelling a parked step rejects its call and interrupts the turn", async () => {
+    const { host, commands } = fakeHost({
+      "turn/start": { turnId: "native-turn" },
+      "turn/interrupt": { status: "accepted" },
+    });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const live = new LiveSession("oc", session);
+    try {
+      await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "native-turn", sessionId: "native" },
+      } satisfies MuseNotification);
+      live.setActiveTurn(true, "t1");
+
+      let rejected: unknown;
+      live.pending.set("tc1", {
+        id: "tc1",
+        name: "lookup",
+        input: { q: "x" },
+        resolve: () => {},
+        reject: (error) => {
+          rejected = error;
+        },
+      });
+
+      await live.interrupt();
+
+      expect(rejected).toBeInstanceOf(Error);
+      expect(live.pendingCount()).toBe(0);
+      expect(live.hasActiveTurn).toBe(false);
+      expect(commands.some((entry) => entry.method === "turn/interrupt")).toBe(true);
+    } finally {
+      await live.close();
+    }
+  });
+});
+
+describe("MuseSessionRegistry tools", () => {
+  test("each session's bridge serves only that session's tools", async () => {
+    const opened: Array<{ sessionId: string; list: () => ReadonlyArray<{ name: string }> }> = [];
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) => {
+        const bridge = input.toolBridge as {
+          listTools(): ReadonlyArray<{ name: string }>;
+        };
+        opened.push({ sessionId: input.sessionId as string, list: () => bridge.listTools() });
+        return MuseHarnessSession.fromNativeSession(
+          fakeHost().host,
+          { sessionId: input.sessionId as string, cwd: input.cwd as string },
+          `native-${input.sessionId as string}`,
+        );
+      },
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const tool = (name: string) => ({ name, description: name, inputSchema: { type: "object" } });
+
+    try {
+      await registry.get("a", "/tmp", undefined, undefined, [tool("a-tool")]);
+      await registry.get("b", "/tmp", undefined, undefined, [tool("b-tool")]);
+
+      const [a, b] = opened;
+      if (!a || !b) throw new Error("expected two sessions");
+      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool"]);
+      expect(b.list().map((entry) => entry.name)).toEqual(["b-tool"]);
+
+      // A later step for one session replaces its list without touching the
+      // other session's.
+      await registry.get("a", "/tmp", undefined, undefined, [tool("a-tool-2")]);
+      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool-2"]);
+      expect(b.list().map((entry) => entry.name)).toEqual(["b-tool"]);
+
+      // A utility request on the same session omits tools and leaves the list
+      // the running step is using untouched.
+      await registry.get("a", "/tmp");
+      expect(a.list().map((entry) => entry.name)).toEqual(["a-tool-2"]);
+    } finally {
+      await registry.closeAll();
+    }
+  });
+});
+
 describe("toToolResult", () => {
   test("error-text keeps its message instead of stringifying the envelope", () => {
     const result = toToolResult({

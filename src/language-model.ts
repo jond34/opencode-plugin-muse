@@ -109,8 +109,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
       ...(tool.description === undefined ? {} : { description: tool.description }),
       inputSchema: tool.inputSchema as Record<string, unknown>,
     }));
-    this.registry.setTools(toolDefs);
-
     if (kind !== "primary") {
       // Compaction and generate branch the chat: they keep the chat's tools
       // so the request matches the cached shape. Titles stand alone.
@@ -121,14 +119,17 @@ export class MuseLanguageModel implements LanguageModelV3 {
       throw new Error("Muse model request is missing the session header");
     }
 
-    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId);
+    // Titles and other utility requests carry no tools; they must not clear
+    // the list a primary step is using on the same session.
+    const sessionTools = kind === "primary" ? toolDefs : undefined;
+    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
     let reseed = false;
     if (!live.isFresh && options.prompt.length < live.promptLength) {
       // OpenCode rewrote the history (compaction, rewind): the native session
       // still holds the old context, so recycle it and reseed from the full
       // prompt below.
       await this.registry.close(sessionID);
-      live = await this.registry.get(sessionID, directory, forkSource, this.modelId);
+      live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
       reseed = true;
     }
     if (live.isFresh) {
