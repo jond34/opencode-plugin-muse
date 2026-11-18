@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessEvent } from "../src/contract/index.js";
 import { MuseHarnessAdapter, MuseHarnessSession } from "../src/index.js";
+import { runTurn } from "./harness/helpers.js";
 
 const tools = [
   {
@@ -14,41 +15,6 @@ const tools = [
     },
   },
 ];
-
-async function runTurn(
-  session: MuseHarnessSession,
-  turnId: string,
-  text: string,
-): Promise<HarnessEvent[]> {
-  const events: HarnessEvent[] = [];
-  const terminal = new Promise<HarnessEvent>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error(`turn ${turnId} timed out`)),
-      90_000,
-    );
-    void (async () => {
-      try {
-        for await (const event of session.subscribe()) {
-          events.push(event);
-          if (event.type === "turn.terminal" && event.turn.id === turnId) {
-            clearTimeout(timeout);
-            resolve(event);
-            return;
-          }
-        }
-        clearTimeout(timeout);
-        reject(new Error(`event stream ended before the terminal for ${turnId}`));
-      }
-      catch (error) {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    })();
-  });
-  await session.startTurn({ turnId, message: { content: [{ type: "text", text }] } });
-  await terminal;
-  return events;
-}
 
 describe("tool bridge", () => {
   test(
