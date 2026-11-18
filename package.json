@@ -1,9 +1,12 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
-  "version": "0.1.9-fork.1",
-  "private": true,
-  "description": "Muse Code inside opencode as a LanguageModelV3 provider (fork of @rasyid_rafi/opencode-muse)",
+  "version": "0.1.10",
+  "description": "Muse Code inside opencode as a LanguageModelV3 provider, built on @rasyid_rafi/opencode-muse",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jond34/opencode-plugin-muse.git"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "module": "./src/index.ts",
@@ -52,6 +55,7 @@
     "muse-code",
     "agent-harness",
     "provider",
+    "opencode-plugin",
     "mcp"
   ]
 }
