@@ -1,5 +1,5 @@
---- src/session-registry.ts	2026-11-15 04:02:37.000000000 -0800
-+++ /home/jonat/.config/opencode/node_modules/@rasyid_rafi/opencode-muse/src/session-registry.ts	2026-11-17 19:20:22.816147681 -0800
+--- src/session-registry.ts
++++ src/session-registry.ts
 @@ -95,6 +95,7 @@
    private parkTimer: ReturnType<typeof setTimeout> | null = null;
    private closed = false;

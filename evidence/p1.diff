@@ -1,5 +1,5 @@
---- src/events.ts	2026-11-15 04:02:37.000000000 -0800
-+++ /home/jonat/.config/opencode/node_modules/@rasyid_rafi/opencode-muse/src/events.ts	2026-11-17 19:20:22.623943173 -0800
+--- src/events.ts
++++ src/events.ts
 @@ -115,7 +115,7 @@
  /** Translate an MSP `turn/completed` error into a contract failure. */
  export function toFailure(error: unknown): HarnessFailure {

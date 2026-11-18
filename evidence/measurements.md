@@ -12,8 +12,8 @@ Raw inputs and numbers behind `../docs/provenance.md`.
 | --- | --- |
 | Base commit | `edb5d52f9fa6e9571cc5741bb5f3c996e63996a7` |
 | Base tarball sha256 | `8bdc3f6a3d5c6351abd97db1073dc482da34955d4f7c2e2196aec6b77838cbba` |
-| `p1.diff` sha256 | `90a0fa6f72e06dcc1dc52ca940380b7b0825d2b2cf2c7eaca4ce8fed4fadf954` |
-| `p2.diff` sha256 | `d756be32fe1c33dfcd07dd3d6b9298cb1832c791d4b0ddc1386e55732d05c907` |
+| `p1.diff` sha256 | `2c62813874155637c8bc684ee130f1b9fb238fb8de083ff52f7dc02d9ef443c9` |
+| `p2.diff` sha256 | `f8099ba5be47c5b0e1f7f10d35bfb24a0731f8e9a985202dc7847ef6ceca8616` |
 | src files compared | 21, zero differences |
 | dist files compared | 84, zero differences |
 | dist hash (rebuild and published) | `b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3` |
@@ -24,7 +24,7 @@ Raw inputs and numbers behind `../docs/provenance.md`.
 
 - `dist.signatures: true`, `dist.attestations: false`; the attestations endpoint
   returns 404 for version 0.1.9.
-- Publisher: `rasyid_rafi <muhammand.rafi25@gmail.com>`.
+- Publisher: npm user `rasyid_rafi` (contact address withheld).
 - No `repository` field in the published `package.json`; no verified npm-to-GitHub
   identity link. GitHub commits show `author.login: null` with an unlinked author
   address.
