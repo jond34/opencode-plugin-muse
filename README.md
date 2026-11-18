@@ -4,13 +4,15 @@ Use a Muse Code subscription in [opencode](https://opencode.ai). Muse models app
 the model picker as the `muse` provider, and requests go through the signed-in `muse`
 CLI, so no Muse credential reaches opencode or your config.
 
-Tested with Muse CLI 1.4.23 and opencode 2.3.0. Republished build of
+Tested with Muse CLI 1.4.23 and opencode 2.3.2. Republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 with two patches: [`CREDITS.md`](CREDITS.md) has the diff, `docs/provenance.md` the
 build hash and what it does and does not prove.
 
 Not affiliated with Meta or opencode. Best-effort maintenance by one person, with no
 support commitment.
+
+![opencode's model picker, showing Muse Ember under the Muse Code provider](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/v0.1.12/media/opencode-model-picker.png)
 
 ## What it does
 
@@ -29,6 +31,13 @@ subscription key from anything else (`permission_error`,
 via `@muse-code/sdk`) instead of calling the model API itself. It never holds Muse
 credentials, and the API key it reports to opencode is a placeholder that is never sent
 to Muse.
+
+## What a turn looks like
+
+One turn end to end. opencode draws the model label, the latency, and the throughput
+from the provider, so the line under the reply is the plugin reporting back:
+
+![a hello turn answered by Muse Ember, showing 5.5s and 72.0 tok/s](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/v0.1.12/media/opencode-turn.png)
 
 ## Install
 
