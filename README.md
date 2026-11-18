@@ -1,24 +1,22 @@
 # opencode-plugin-muse
 
-Muse Code models inside [opencode](https://opencode.ai), registered as the provider
-`muse` with four models: `muse-ember-1.0`, `muse-wonder-1.0`, `muse-spark-1.3`,
-`muse-spark-1.2`.
+Use a Muse Code subscription in [opencode](https://opencode.ai). Muse models appear in
+the model picker as the `muse` provider, and requests go through the signed-in `muse`
+CLI, so no Muse credential reaches opencode or your config.
 
-Most of the code is the npm package
+Tested with Muse CLI 1.4.23 and opencode 2.3.0. Republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
-(MIT), published by `rasyid_rafi` and rebuilt here from base
-`edb5d52f9fa6e9571cc5741bb5f3c996e63996a7` with two patches. [`CREDITS.md`](CREDITS.md)
-explains what changed and why the credit stops at the npm publisher;
-[`docs/provenance.md`](docs/provenance.md) has the build hash and what it does and does
-not prove.
+with two patches: [`CREDITS.md`](CREDITS.md) has the diff, `docs/provenance.md` the
+build hash and what it does and does not prove.
 
-Not affiliated with Meta, Muse Code, or opencode. Maintenance is best-effort by one
-person; there is no support commitment.
+Not affiliated with Meta or opencode. Best-effort maintenance by one person, with no
+support commitment.
 
 ## What it does
 
-- registers a provider named `Muse Code`, so Muse models appear in the model picker
-  and can be used as a main or subagent model
+- registers the `muse` provider (labelled "Muse Code") with `muse-ember-1.0`,
+  `muse-wonder-1.0`, `muse-spark-1.3`, and `muse-spark-1.2`, usable as a main or
+  subagent model
 - implements `LanguageModelV3`, translating opencode turns into Muse CLI sessions
 - runs a loopback-only MCP server (`127.0.0.1`, random port, per-start bearer token)
   so Muse can call opencode's tools
