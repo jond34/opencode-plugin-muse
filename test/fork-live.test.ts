@@ -33,7 +33,7 @@ describe("fork", () => {
     "a fork is an independent native session that leaves the source usable",
     async () => {
       const adapter = new MuseHarnessAdapter({
-        hostOptions: { preset: "empty", trustWorkspace: true },
+        hostOptions: { preset: "empty", contributorMode: "off", trustWorkspace: true },
       });
       try {
         const source = (await adapter.openSession({

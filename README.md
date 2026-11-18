@@ -54,11 +54,14 @@ against the hash recorded in `docs/provenance.md`. It prints `PASS` or exits non
 npm run check   # typecheck plus the offline test suite
 ```
 
-`npm run check` runs 32 tests that need no network or credentials. Three further
-suites (`tool-bridge`, `fork-live`, `conformance`) spawn a real `muse serve` host and
-need a logged-in Muse Code CLI; run them with `bun test` once one is available. Without
-credentials they fail with `code: "modelError"`, which is the adapter correctly
-reporting a failure rather than exiting silently.
+`npm run check` runs 32 tests that need no network or credentials. `bun test` adds four
+suites (`tool-bridge`, `fork-live`, `model-live`, `conformance`) that spawn a real
+`muse serve` host: 36 tests in total, all needing a logged-in Muse Code CLI.
+
+Those live suites pass `contributorMode: "off"` for the same reason the plugin does.
+The `empty` preset turns contributor mode on, which routes every model to its
+`-contributor` variant, and `muse-ember-1.0` has none, so the model request fails with
+`code: "modelError"` unless the flag is set.
 
 ## Layout
 

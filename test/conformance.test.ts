@@ -52,7 +52,7 @@ describe("MuseHarnessAdapter conformance", () => {
     "passes the shared scenarios against a real muse serve host",
     async () => {
       const adapter = new MuseHarnessAdapter({
-        hostOptions: { preset: "empty", trustWorkspace: true },
+        hostOptions: { preset: "empty", contributorMode: "off", trustWorkspace: true },
       });
       try {
         const result = await runHarnessConformance({

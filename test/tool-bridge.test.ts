@@ -20,7 +20,7 @@ describe("tool bridge", () => {
     "Muse calls an OpenCode tool through the per-session MCP server",
     async () => {
       const adapter = new MuseHarnessAdapter({
-        hostOptions: { preset: "empty", trustWorkspace: true },
+        hostOptions: { preset: "empty", contributorMode: "off", trustWorkspace: true },
       });
       const bridge = {
         listTools: () => tools,

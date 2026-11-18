@@ -6,7 +6,7 @@ describe("model selection", () => {
     "the requested model reaches the session and can be switched",
     async () => {
       const adapter = new MuseHarnessAdapter({
-        hostOptions: { preset: "empty", trustWorkspace: true },
+        hostOptions: { preset: "empty", contributorMode: "off", trustWorkspace: true },
       });
       try {
         const session = (await adapter.openSession({
