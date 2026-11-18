@@ -1,7 +1,8 @@
 {
-  "name": "@rasyid_rafi/opencode-muse",
-  "version": "0.1.8",
-  "description": "Run Muse Code inside OpenCode as a LanguageModelV3 provider",
+  "name": "@jonathand34/opencode-plugin-muse",
+  "version": "0.1.9-fork.1",
+  "private": true,
+  "description": "Muse Code inside opencode as a LanguageModelV3 provider (fork of @rasyid_rafi/opencode-muse)",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -24,8 +25,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
+    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
-    "prepublishOnly": "npm run build"
+    "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
+    "repro": "bash scripts/repro.sh"
   },
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
@@ -48,7 +51,7 @@
     "opencode",
     "muse-code",
     "agent-harness",
-    "adapter",
+    "provider",
     "mcp"
   ]
 }
