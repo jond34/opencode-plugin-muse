@@ -77,6 +77,38 @@ The `empty` preset turns contributor mode on, which routes every model to its
 `-contributor` variant, and `muse-ember-1.0` has none, so the model request fails with
 `code: "modelError"` unless the flag is set.
 
+## Verify the published package
+
+The npm package is built and published by `.github/workflows/publish.yml` on
+GitHub Actions, and every version carries a provenance attestation. After
+installing, two checks tie the bytes you have to that workflow:
+
+```bash
+npm audit signatures          # registry signatures and attestations
+```
+
+To match the tarball against the attestation yourself, compare the two digests.
+The registry reports base64, the attestation reports hex:
+
+```bash
+npm view @jonathand34/opencode-plugin-muse@0.1.10 dist.integrity
+
+curl -sS -A npm/11.19.1 \
+  "https://registry.npmjs.org/-/npm/v1/attestations/@jonathand34%2fopencode-plugin-muse@0.1.10" \
+  | jq -r '.attestations[] | select(.predicateType=="https://slsa.dev/provenance/v1")
+      | .bundle.dsseEnvelope.payload' \
+  | base64 -d | jq -r '.subject[0].digest.sha512'
+```
+
+What the attestation establishes: the tarball was built by this repository's
+`publish.yml` at `refs/heads/main` on a GitHub-hosted runner, and it names the
+workflow run. That is SLSA Build Level 2 — it shows where the bytes came from,
+not that they are free of bugs. The plugin never holds credentials; it drives
+the signed-in `muse` CLI.
+
+The attestation endpoint needs an npm-style `User-Agent`. A bare `curl` gets a
+404.
+
 ## Layout
 
 ```text
