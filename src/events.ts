@@ -115,7 +115,7 @@ function toFailureClass(kind: string): HarnessFailureClass {
 /** Translate an MSP `turn/completed` error into a contract failure. */
 export function toFailure(error: unknown): HarnessFailure {
   if (!error || typeof error !== "object") {
-    return { class: "unknown", message: String(error), retryable: false };
+    return { class: "unknown", message: error == null ? "Turn failed" : String(error), retryable: false };
   }
   const value = error as Record<string, unknown>;
   const kind = typeof value.kind === "string" ? value.kind : "unknown";

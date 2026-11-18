@@ -95,6 +95,7 @@ export class LiveSession {
   private parkTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private stepUsage: Usage = {};
+  private terminalError: Error | null = null;
   private preamble = "";
   private preambleSent = false;
   private fresh = true;
@@ -186,6 +187,9 @@ export class LiveSession {
         for (const part of this.converter.convert(event)) this.enqueue(part);
         if (event.type === "turn.terminal") {
           this.setActiveTurn(false);
+          if (event.turn.status === "failed") {
+            this.terminalError = new Error(event.failure?.message ?? "Muse turn failed");
+          }
           this.mergeUsage(event.turn.tokenUsage as Usage | undefined);
           if (this.pending.size > 0) {
             // The turn ended before its tool calls were answered; they can
@@ -252,10 +256,15 @@ export class LiveSession {
       // finish; report it here instead of dropping it.
       const usage = this.stepUsage;
       this.stepUsage = {};
+      const error = this.terminalError;
+      this.terminalError = null;
       try {
+        if (error) controller.enqueue({ type: "error", error });
         controller.enqueue({
           type: "finish",
-          finishReason: { unified: "stop", raw: "stop" },
+          finishReason: error
+            ? { unified: "error", raw: "error" }
+            : { unified: "stop", raw: "stop" },
           usage: toAIUsage(usage),
         });
       } catch {
@@ -349,9 +358,14 @@ export class LiveSession {
     for (const part of this.converter.closeBlocks()) this.enqueue(part);
     const usage = this.stepUsage;
     this.stepUsage = {};
+    const error = this.terminalError;
+    this.terminalError = null;
+    if (error) this.enqueue({ type: "error", error });
     this.enqueue({
       type: "finish",
-      finishReason: finishReason === "tool-calls"
+      finishReason: error
+        ? { unified: "error", raw: "error" }
+        : finishReason === "tool-calls"
         ? { unified: "tool-calls", raw: "tool_use" }
         : { unified: "stop", raw: "stop" },
       usage: toAIUsage(usage),
@@ -550,6 +564,9 @@ export class MuseSessionRegistry {
       }
     }
     const terminalEvent = events.find((event) => event.type === "turn.terminal");
+    if (terminalEvent?.type === "turn.terminal" && terminalEvent.turn.status === "failed") {
+      throw new Error(terminalEvent.failure?.message ?? "Muse turn failed");
+    }
     const usage: Usage =
       terminalEvent?.type === "turn.terminal" ? (terminalEvent.turn.tokenUsage as Usage | undefined) ?? {} : {};
     return { text, usage };
