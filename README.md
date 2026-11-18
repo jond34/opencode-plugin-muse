@@ -77,7 +77,8 @@ npm run check:offline   # typecheck plus the offline test suite
 
 `npm run check:offline` runs 32 tests that need no network or credentials. `bun test`
 adds four suites (`tool-bridge`, `fork-live`, `model-live`, `conformance`) that spawn a
-real `muse serve` host: 36 tests in total, all needing a logged-in Muse Code CLI.
+real `muse serve` host: 37 tests in total, all needing a logged-in Muse Code CLI. One of
+them calls an OpenCode tool on the first turn and reuses its result on the second.
 
 Those live suites pass `contributorMode: "off"` for the same reason the plugin does.
 The `empty` preset turns contributor mode on, which routes every model to its

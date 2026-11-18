@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessEvent } from "../src/contract/index.js";
-import { MuseHarnessAdapter } from "../src/index.js";
+import { MuseHarnessAdapter, MuseHarnessSession } from "../src/index.js";
 
 const tools = [
   {
@@ -14,6 +14,41 @@ const tools = [
     },
   },
 ];
+
+async function runTurn(
+  session: MuseHarnessSession,
+  turnId: string,
+  text: string,
+): Promise<HarnessEvent[]> {
+  const events: HarnessEvent[] = [];
+  const terminal = new Promise<HarnessEvent>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`turn ${turnId} timed out`)),
+      90_000,
+    );
+    void (async () => {
+      try {
+        for await (const event of session.subscribe()) {
+          events.push(event);
+          if (event.type === "turn.terminal" && event.turn.id === turnId) {
+            clearTimeout(timeout);
+            resolve(event);
+            return;
+          }
+        }
+        clearTimeout(timeout);
+        reject(new Error(`event stream ended before the terminal for ${turnId}`));
+      }
+      catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    })();
+  });
+  await session.startTurn({ turnId, message: { content: [{ type: "text", text }] } });
+  await terminal;
+  return events;
+}
 
 describe("tool bridge", () => {
   test(
@@ -88,5 +123,60 @@ describe("tool bridge", () => {
       }
     },
     { timeout: 120_000 },
+  );
+
+  test(
+    "a second turn carries the first turn's tool result",
+    async () => {
+      const adapter = new MuseHarnessAdapter({
+        hostOptions: { preset: "empty", contributorMode: "off", trustWorkspace: true },
+      });
+      try {
+        const session = (await adapter.openSession({
+          sessionId: "multi-turn",
+          cwd: process.cwd(),
+          toolBridge: {
+            listTools: () => tools,
+            callTool: async (call: { name: string; input: Record<string, unknown> }) => ({
+              content: [{ type: "text" as const, text: `echo:${call.name}:${JSON.stringify(call.input)}` }],
+            }),
+          },
+        })) as MuseHarnessSession;
+
+        const first = await runTurn(
+          session,
+          "turn-one",
+          "Use the lookup tool with q=alpha, then reply with the exact tool output.",
+        );
+        const called = first.filter((event) => event.type === "tool.completed");
+        expect(called.length).toBeGreaterThan(0);
+        const call = called[0];
+        if (call?.type !== "tool.completed") throw new Error("expected tool.completed");
+        expect(call.item.status).toBe("completed");
+        expect(call.item.output).toContain("echo:lookup");
+
+        // The failure this guards against is a second turn that throws, fails,
+        // or answers empty because the earlier tool result is still in history.
+        const second = await runTurn(
+          session,
+          "turn-two",
+          "Reply with the exact tool output text from earlier in this session, and nothing else.",
+        );
+        const terminal = second.find((event) => event.type === "turn.terminal");
+        if (terminal?.type !== "turn.terminal") throw new Error("expected terminal");
+        expect(terminal.turn.status).toBe("completed");
+        expect(second.some((event) => event.type === "session.error")).toBe(false);
+
+        const reply = second
+          .filter((event) => event.type === "message.delta")
+          .map((event) => (event.type === "message.delta" ? event.text ?? "" : ""))
+          .join("");
+        expect(reply).toContain("echo:lookup");
+      }
+      finally {
+        await adapter.close();
+      }
+    },
+    { timeout: 240_000 },
   );
 });
