@@ -6,9 +6,10 @@ CLI, so no Muse credential reaches opencode or your config.
 
 Tested with Muse CLI 1.4.23 and opencode 2.3.2. Republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
-with three patches: [`CREDITS.md`](CREDITS.md) has the diffs, `docs/provenance.md` the
+with four patches: [`CREDITS.md`](CREDITS.md) has the diffs, `docs/provenance.md` the
 build hash and what it does and does not prove. The first two reconcile the published
-0.1.9 tarball; the third contains Muse to inference and is not yet published.
+0.1.9 tarball; the third contains Muse to inference and the fourth makes opencode own
+the context. Neither of the last two is published yet.
 
 Not affiliated with Meta or opencode. Best-effort maintenance by one person, with no
 support commitment.
@@ -28,6 +29,10 @@ support commitment.
   and every tool call has to cross the bridge, so opencode's permissions and history
   stay authoritative
 - forwards `museAgent` and `museInstructions` options
+- maps opencode's reasoning-effort variants to Muse's per-turn effort, and answers
+  titles and compaction locally instead of spending a Muse turn
+- starts Muse with its skills, observer reminders, workflow triggers, and context
+  messages off, then reconciles a rewritten transcript before reseeding
 
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a subscription
 covers requests that client makes, and `api.meta.ai` refuses requests carrying a
@@ -76,15 +81,15 @@ bash scripts/repro.sh
 It installs from the committed lockfile, compiles, and compares the resulting `dist/`
 against the hash recorded for this tree in `docs/provenance.md`. It prints `PASS` or
 exits non-zero. The hash of the published 0.1.9 tarball is recorded there too; this tree
-adds a third patch, so its hash differs.
+adds patches 3 and 4, so its hash differs.
 
 ```bash
 npm run check:offline   # typecheck plus the offline test suite
 ```
 
-`npm run check:offline` runs 41 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 69 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment`, `fork-live`, `model-live`,
-`conformance`, `restart-live`) that spawn a real `muse serve` host: 48 tests in total,
+`conformance`, `restart-live`) that spawn a real `muse serve` host: 76 tests in total,
 all needing a logged-in Muse Code CLI. One reuses a tool result on the next turn;
 another resumes a session after its host has been restarted; `containment` proves the
 host sees only bridge tools.

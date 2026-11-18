@@ -91,6 +91,8 @@ export class LiveSession {
   private stepAborted = false;
   private stepEnded = false;
   private lastPromptLength = 0;
+  private transcript: string[] = [];
+  private compactions: string[] = [];
   private counter = 0;
   private parkTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -158,6 +160,24 @@ export class LiveSession {
 
   set promptLength(value: number) {
     this.lastPromptLength = value;
+  }
+
+  /** Visible user/assistant fingerprints the native session has already seen. */
+  get transcriptFingerprints(): readonly string[] {
+    return this.transcript;
+  }
+
+  setTranscriptFingerprints(fingerprints: readonly string[]): void {
+    this.transcript = [...fingerprints];
+  }
+
+  /** Compaction summaries this session produced, for rewrite detection. */
+  get compactionFingerprints(): readonly string[] {
+    return this.compactions;
+  }
+
+  setCompactionFingerprints(fingerprints: readonly string[]): void {
+    this.compactions = [...fingerprints];
   }
 
   get hasActiveTurn(): boolean {
@@ -425,8 +445,25 @@ export class LiveSession {
 /**
  * The registry owns every live session and the adapter that serves them.
  */
+function parseFingerprints(raw: string | undefined): string[] {
+  if (raw === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The registry owns every live session and the adapter that serves them.
+ */
 export class MuseSessionRegistry {
   private readonly sessions = new Map<string, LiveSession>();
+  private readonly transcriptBySession = new Map<string, string[]>();
+  private readonly compactionBySession = new Map<string, string[]>();
   private readonly adapter: MuseHarnessAdapter;
   private readonly store: SessionStore | undefined;
 
@@ -438,6 +475,31 @@ export class MuseSessionRegistry {
   /** Read the Muse model catalog through the session's host. */
   async listModels(): Promise<Array<Record<string, unknown>>> {
     return this.adapter.listModels();
+  }
+
+  /**
+   * Persist the visible transcript the native session now matches.
+   *
+   * The store is best-effort: losing the map only costs a full reseed on the
+   * next start, while failing the request would lose the turn.
+   */
+  async rememberTranscript(sessionID: string, fingerprints: readonly string[]): Promise<void> {
+    const copy = [...fingerprints];
+    this.transcriptBySession.set(sessionID, copy);
+    this.sessions.get(sessionID)?.setTranscriptFingerprints(copy);
+    await this.store?.set(`${sessionID}:transcript`, JSON.stringify(copy)).catch(() => undefined);
+  }
+
+  /** Record a locally produced compaction summary so a rewrite can be named. */
+  async recordCompaction(sessionID: string, fingerprint: string): Promise<void> {
+    const next = [...(this.compactionBySession.get(sessionID) ?? []), fingerprint].slice(-8);
+    this.compactionBySession.set(sessionID, next);
+    this.sessions.get(sessionID)?.setCompactionFingerprints(next);
+    await this.store?.set(`${sessionID}:compaction`, JSON.stringify(next)).catch(() => undefined);
+  }
+
+  compactionFingerprintsFor(sessionID: string): readonly string[] {
+    return this.compactionBySession.get(sessionID) ?? [];
   }
 
   /**
@@ -500,6 +562,12 @@ export class MuseSessionRegistry {
     });
     live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef);
     if (seedFull) live.requestFullSeed();
+    const transcript = parseFingerprints(await this.store?.get(`${openCodeSessionId}:transcript`));
+    const compactions = parseFingerprints(await this.store?.get(`${openCodeSessionId}:compaction`));
+    this.transcriptBySession.set(openCodeSessionId, transcript);
+    this.compactionBySession.set(openCodeSessionId, compactions);
+    live.setTranscriptFingerprints(transcript);
+    live.setCompactionFingerprints(compactions);
     this.sessions.set(openCodeSessionId, live);
     if (this.store) {
       await this.store.set(openCodeSessionId, live.muse.nativeSessionId).catch(() => undefined);

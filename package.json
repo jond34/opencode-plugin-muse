@@ -1,7 +1,7 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
   "version": "0.1.12",
-  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with three patches.",
+  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with four patches.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
-    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts",
+    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
     "repro": "bash scripts/repro.sh"

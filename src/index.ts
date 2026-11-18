@@ -9,5 +9,8 @@ export * from "./prompt.js";
 export * from "./convert.js";
 export * from "./session-registry.js";
 export * from "./language-model.js";
+export * from "./effort.js";
+export * from "./meta.js";
+export * from "./fingerprint.js";
 export * from "./shared.js";
 export { MusePlugin, MusePlugin as default, toModelInfo } from "./plugin.js";

@@ -4,6 +4,7 @@ import type { HarnessEvent } from "../src/contract/index.js";
 import {
   HEADERS,
   LiveSession,
+  fingerprintCompactionOutput,
   MuseHarnessAdapter,
   MuseHarnessSession,
   MuseLanguageModel,
@@ -130,6 +131,8 @@ describe("MuseHarnessSession construction", () => {
     });
     expect(commands[0]?.method).toBe("session/start");
     expect(commands[0]?.params.modelId).toBe("muse-spark-1.3");
+    // No bridge means the host's own approval default applies.
+    expect(commands[0]?.params).not.toHaveProperty("approvalMode");
     await session.close();
   });
 });
@@ -400,6 +403,158 @@ describe("LiveSession cancellation", () => {
     } finally {
       await live.close();
     }
+  });
+});
+
+describe("MuseHarnessSession approvals", () => {
+  test("a bridge session defaults to allowAll", async () => {
+    const { host, commands } = fakeHost({
+      "session/start": { session: { sessionId: "native", modelId: "muse-spark-1.3" } },
+    });
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc-bridge",
+      cwd: "/tmp",
+      toolBridge: {
+        listTools: () => [],
+        callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
+      },
+    });
+    try {
+      expect(commands[0]?.params.approvalMode).toBe("allowAll");
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+describe("reasoning effort", () => {
+  test("a variant reaches turn/start and turn/steer", async () => {
+    const { host, commands } = fakeHost({
+      "turn/start": { turnId: "native-turn" },
+      "turn/steer": { status: "accepted" },
+    });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const adapter = {
+      listModels: async () => [],
+      openSession: async () => session,
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const efforts = new Map([
+      ["muse-spark-1.3", { defaultEffort: "max", variants: ["low", "medium", "high", "max"] }],
+    ]);
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
+    const request = (variant: string, messages: unknown[]) =>
+      ({
+        prompt: messages,
+        tools: [],
+        headers: {
+          [HEADERS.kind]: "primary",
+          [HEADERS.session]: "oc",
+          [HEADERS.directory]: "/tmp",
+          [HEADERS.variant]: variant,
+        },
+      }) as unknown as LanguageModelV3CallOptions;
+
+    const first = await model.doStream(
+      request("high", [{ role: "user", content: [{ type: "text", text: "first" }] }]),
+    );
+    expect(commands.find((entry) => entry.method === "turn/start")?.params.reasoningEffort).toBe("high");
+
+    const second = await model.doStream(
+      request("off", [
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "assistant", content: [{ type: "text", text: "working" }] },
+        { role: "user", content: [{ type: "text", text: "second" }] },
+      ]),
+    );
+    expect(commands.find((entry) => entry.method === "turn/steer")?.params.reasoningEffort).toBe("none");
+
+    await first.stream.cancel();
+    await second.stream.cancel();
+  });
+});
+
+describe("transcript reconciliation", () => {
+  test("a compaction digest recycles the native session and reseeds", async () => {
+    const opened: Array<Record<string, unknown>> = [];
+    const hosts: Array<{ commands: RecordedCommand[] }> = [];
+    let counter = 0;
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) => {
+        opened.push(input);
+        const fake = fakeHost({ "turn/start": { turnId: `native-turn-${counter}` } });
+        hosts.push({ commands: fake.commands });
+        return MuseHarnessSession.fromNativeSession(
+          fake.host,
+          { sessionId: input.sessionId as string, cwd: input.cwd as string },
+          `native-${counter++}`,
+        );
+      },
+    } as unknown as MuseHarnessAdapter;
+    const stored = new Map<string, string>();
+    const registry = new MuseSessionRegistry(adapter, {
+      get: async (key) => stored.get(key),
+      set: async (key, value) => {
+        stored.set(key, value);
+      },
+    });
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+    const request = (messages: unknown[]) =>
+      ({
+        prompt: messages,
+        tools: [],
+        headers: {
+          [HEADERS.kind]: "primary",
+          [HEADERS.session]: "oc",
+          [HEADERS.directory]: "/tmp",
+        },
+      }) as unknown as LanguageModelV3CallOptions;
+
+    const first = await model.doStream(request([{ role: "user", content: "old" }]));
+    const digest = "Conversation digest (opencode-owned history):\n\nUser: old";
+    await registry.recordCompaction("oc", fingerprintCompactionOutput(digest));
+    const second = await model.doStream(request([{ role: "user", content: digest }]));
+
+    expect(opened).toHaveLength(2);
+    const start = hosts[1]?.commands.find((entry) => entry.method === "turn/start");
+    expect(start?.params.input).toEqual([{ type: "text", text: digest }]);
+    expect(JSON.parse(stored.get("oc:transcript") ?? "[]")).toEqual([
+      expect.any(String),
+    ]);
+
+    await first.stream.cancel();
+    await second.stream.cancel();
+    await registry.closeAll();
+  });
+
+  test("fingerprints survive a registry restart", async () => {
+    const stored = new Map<string, string>();
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) =>
+        MuseHarnessSession.fromNativeSession(
+          fakeHost().host,
+          { sessionId: input.sessionId as string, cwd: input.cwd as string },
+          "native",
+        ),
+    } as unknown as MuseHarnessAdapter;
+    const store = {
+      get: async (key: string) => stored.get(key),
+      set: async (key: string, value: string) => {
+        stored.set(key, value);
+      },
+    };
+
+    const first = new MuseSessionRegistry(adapter, store);
+    await first.get("oc", "/tmp");
+    await first.rememberTranscript("oc", ["a", "b"]);
+    await first.closeAll();
+
+    const second = new MuseSessionRegistry(adapter, store);
+    const reopened = await second.get("oc", "/tmp");
+    expect(reopened.transcriptFingerprints).toEqual(["a", "b"]);
+    await second.closeAll();
   });
 });
 

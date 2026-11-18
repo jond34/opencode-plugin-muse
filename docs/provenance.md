@@ -11,9 +11,10 @@ byte for byte by the base tree recorded below plus patches 1 and 2.
    the published `dist/`: 84 files, zero differences.
 3. The two patch files in `evidence/` regenerate the patched files from upstream's.
 
-This repository's current tree adds patch 3 (containment), which no published
-tarball carries. Its build is recorded separately below; the 0.1.9 identity
-check above applies to the tree before patch 3.
+This repository's current tree adds patch 3 (containment) and patch 4
+(harness-owned context), which no published tarball carries. Its build is
+recorded separately below; the 0.1.9 identity check above applies to the tree
+before those patches.
 
 ## Canonical build hash
 
@@ -29,13 +30,13 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-Current tree (base + patches 1-3), not published:
+Current tree (base + patches 1-4), not published:
 
 ```text
-1dbc91861d767840cfa61bb031a7bc6b3dfaff24bd696dd70889db7d46ee8eae
+f948d90eaf91a66fb0db589d121313ec8447e55ba62837a56c6e1950c69a61ba
 ```
 
-88 files. `bash scripts/repro.sh` checks the current tree against this hash.
+100 files. `bash scripts/repro.sh` checks the current tree against this hash.
 
 ## Inputs
 
@@ -46,6 +47,7 @@ Current tree (base + patches 1-3), not published:
 | Patch 1 (`events.ts`) | sha256 `2c62813874155637c8bc684ee130f1b9fb238fb8de083ff52f7dc02d9ef443c9` |
 | Patch 2 (`session-registry.ts`) | sha256 `f8099ba5be47c5b0e1f7f10d35bfb24a0731f8e9a985202dc7847ef6ceca8616` |
 | Patch 3 (containment) | sha256 `8a875580a279a8b963fc1962b9645e7840e0582b7058ac2f228ef33a900a5956` |
+| Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
 | Dependency graph | `package-lock.json`, 275 packages |
 
@@ -90,6 +92,28 @@ Patch 3 is this repository's own change and is not in any published tarball:
   and interrupts the native turn.
 - `src/language-model.ts`, `src/index.ts`: pass the step's tools through and export the
   new module.
+
+Patch 4 makes opencode own the context around the model, and is also unpublished:
+
+- `src/host-config.ts`: turns Muse's skills, observer reminders, workflow triggers,
+  context-usage message, context slimming, and foreign personal skills off, using the
+  same settings keys as pi-muse-subscription. Skill enumeration runs
+  `muse skills list --json`; any failure omits the map and leaves the control prompt as
+  the fallback.
+- `src/effort.ts`, `src/language-model.ts`, `src/plugin.ts`, `src/contract/adapter.ts`,
+  `src/session.ts`: carries `request.model.variant` in a request header, resolves it to
+  Muse's closed effort vocabulary, and sends it as `turn/start.reasoningEffort` (and
+  `turn/steer`).
+- `src/meta.ts`, `src/plugin.ts`: answers opencode's `title` and `compaction` hooks
+  locally. Titles are 72-codepoint derivations of the first user message; compaction is
+  a deterministic transcript digest, so neither spends a Muse turn.
+- `src/fingerprint.ts`, `src/session-registry.ts`, `src/language-model.ts`: fingerprints
+  the visible user/assistant transcript, persists it per opencode session, and
+  classifies a prompt as `same`, `compacted`, or `diverged`. A rewrite recycles the
+  native session and reseeds; fork-at-boundary remains deferred.
+- `src/session.ts`: bridge sessions default to `approvalMode: "allowAll"`, because
+  opencode's permission evaluation is the only fence and a second Muse prompt would
+  double-ask.
 
 The containment behavior was measured on Muse CLI 1.4.23 before it was written:
 `run.toolset` is honoured only from `settings.json`, `-c run.toolset=…` and `[]` are

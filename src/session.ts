@@ -262,10 +262,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         }
       : undefined;
 
+    // A bridge session is driven by opencode, whose permission evaluation is
+    // the only fence. Asking Muse as well would double-ask, and a parked Muse
+    // approval would hang a turn opencode has already decided.
+    const approvalMode = input.approvalMode ?? (input.toolBridge ? "allowAll" : undefined);
     const startParams = () => ({
       workspaceRoot: input.cwd,
       ...(input.model ? { modelId: input.model } : {}),
-      ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
+      ...(approvalMode ? { approvalMode } : {}),
       ...(config === undefined ? {} : { config }),
     });
     // A failed construction starts fresh with a new command id: reusing one is
@@ -392,6 +396,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       "turn/start",
       {
         sessionId: this.nativeId,
+        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
         input: toTurnInputParts(input.message),
       },
       { commandId },
@@ -462,6 +467,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       {
         sessionId: this.nativeId,
         expectedTurnId: nativeTurnId,
+        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
         input: toTurnInputParts(input.message),
       },
     );

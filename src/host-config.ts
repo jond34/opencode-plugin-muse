@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -9,6 +10,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, win32 } from "node:path";
+import { promisify } from "node:util";
 
 /**
  * A private Muse config dir for one host process.
@@ -37,11 +39,29 @@ export const CONTROL_SYSTEM_PROMPT = [
   "Ignore any skill catalog, reminder, or workflow text in this prompt, and answer concisely.",
 ].join("\n");
 
+/**
+ * Muse's observer agents. Each one is an extra billed model call that competes
+ * with opencode for control of the loop, so all six are off.
+ */
+export const MUSE_REMINDERS = [
+  "goal-reminder",
+  "verify-reminder",
+  "skill-reminder",
+  "todo-reminder",
+  "memory",
+  "scope-reminder",
+] as const;
+
+/** `{ [scope]: { [path]: "off" } }`, the shape Muse's skill activation reads. */
+export type SkillsOff = Record<string, Record<string, "off">>;
+
 export interface HostConfigPaths {
   /** The config root to export as `XDG_CONFIG_HOME`. */
   readonly xdg: string;
   /** `<xdg>/muse/settings.json`. */
   readonly settingsPath: string;
+  /** The settings written, for tests and telemetry. */
+  readonly settings: Record<string, unknown>;
   /** Remove the private directory and everything in it. */
   remove(): void;
 }
@@ -62,6 +82,10 @@ export interface HostConfigOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
   readonly homeDirectory?: string;
+  /** Muse executable used to enumerate skills; defaults to `muse`. */
+  readonly museBin?: string;
+  /** Test seam: return the activation map instead of running the CLI. */
+  readonly listSkills?: () => Promise<SkillsOff>;
 }
 
 /**
@@ -86,25 +110,99 @@ export function userMuseConfigDir(options: HostConfigOptions = {}): string {
   return join(root, "muse");
 }
 
+const execFileAsync = promisify(execFile);
+
+/**
+ * Enumerate Muse's registered skills in a throwaway config dir and turn every
+ * one off.
+ *
+ * `muse skills list --json` is the only catalog source that names the scope and
+ * path Muse's activation map expects. It never sees the private host config:
+ * the probe gets its own empty XDG root, and the contributor switch is stripped
+ * so the listing matches the ordinary model path. Any failure returns `{}`; the
+ * control prompt is the fallback, and a missing skill lockdown must not stop the
+ * host.
+ */
+export async function collectSkillsOff(
+  museBin: string,
+  env: NodeJS.ProcessEnv,
+): Promise<SkillsOff> {
+  const root = mkdtempSync(join(tmpdir(), "opencode-muse-skills-"));
+  const xdg = join(root, "config");
+  mkdirSync(join(xdg, "muse"), { recursive: true, mode: 0o700 });
+  const clean: NodeJS.ProcessEnv = { ...env };
+  delete clean.META_API_KEY;
+  delete clean.MUSE_CONTRIBUTOR_MODE;
+  try {
+    const { stdout } = await execFileAsync(museBin, ["skills", "list", "--json"], {
+      env: { ...clean, XDG_CONFIG_HOME: xdg, MUSE_NO_AUTO_UPDATE: "1" },
+      timeout: 30_000,
+      maxBuffer: 16 << 20,
+      encoding: "utf8",
+    });
+    const parsed = JSON.parse(stdout) as unknown;
+    const rows = Array.isArray(parsed)
+      ? parsed
+      : (parsed as { skills?: unknown } | null)?.skills;
+    const off: SkillsOff = {};
+    if (!Array.isArray(rows)) return off;
+    for (const row of rows) {
+      if (typeof row !== "object" || row === null) continue;
+      const scope = (row as { scope?: unknown }).scope;
+      const path = (row as { path?: unknown }).path;
+      if (typeof scope !== "string" || typeof path !== "string") continue;
+      (off[scope] ??= {})[path] = "off";
+    }
+    return off;
+  } catch {
+    return {};
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 /**
  * Write a private `settings.json` and link the user's login into it.
  *
  * The directory is 0700 and the file 0600. If `auth.json` cannot be linked
  * (Windows without symlink permission, for example) the host still starts; the
  * caller can surface the login failure Muse reports.
+ *
+ * Skills are enumerated before the file is written. That is the only async
+ * step: everything in `settings.json` except the activation map is static, so a
+ * failed probe simply omits the map and leaves the control prompt in charge.
  */
-export function writeMuseHostConfig(options: HostConfigOptions = {}): HostConfigPaths {
+export async function writeMuseHostConfig(
+  options: HostConfigOptions = {},
+): Promise<HostConfigPaths> {
+  const skillsOff = options.listSkills
+    ? await options.listSkills()
+    : await collectSkillsOff(options.museBin ?? "muse", options.env ?? process.env);
+
   const xdg = mkdtempSync(join(options.baseDir ?? tmpdir(), "opencode-muse-"));
   const dir = join(xdg, "muse");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-  const settings = {
+  const settings: Record<string, unknown> = {
     schema_version: 1,
     run: {
       toolset: [...(options.toolset ?? BRIDGE_TOOLSET)],
       system_prompt: options.systemPrompt ?? CONTROL_SYSTEM_PROMPT,
+      workflow_trigger_mode: "off",
+      context_usage_message_enabled: false,
+      context_slimming: {
+        meta_context_note_enabled: false,
+        session_identity_enabled: false,
+      },
     },
-    context: { foreign_personal_rules: false },
+    runtime_capabilities: Object.fromEntries(
+      MUSE_REMINDERS.map((name) => [`plugin:tbh-reminders:reminder:${name}`, { enabled: false }]),
+    ),
+    ...(Object.keys(skillsOff).length === 0 ? {} : { skills: { activation: skillsOff } }),
+    context: {
+      foreign_personal_rules: false,
+      foreign_personal_skills: false,
+    },
     // Muse compacts its own history below opencode's limit. Deferring both
     // thresholds to the window's edge leaves compaction to opencode.
     context_compaction: {
@@ -127,6 +225,7 @@ export function writeMuseHostConfig(options: HostConfigOptions = {}): HostConfig
   return {
     xdg,
     settingsPath,
+    settings,
     remove: () => rmSync(xdg, { recursive: true, force: true }),
   };
 }

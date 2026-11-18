@@ -70,7 +70,7 @@ describe("containment", () => {
   test(
     "the host sees only bridge tools and can call one",
     async () => {
-      const config = writeMuseHostConfig();
+      const config = await writeMuseHostConfig();
       const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const adapter = new MuseHarnessAdapter({
         hostOptions: {

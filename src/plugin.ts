@@ -1,8 +1,11 @@
 import { Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
+import { buildEffortCatalog } from "./effort.js";
+import { fingerprintCompactionOutput } from "./fingerprint.js";
 import { writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
 import { CONTRIBUTOR_SUFFIX } from "./host.js";
 import { HEADERS, MuseLanguageModel } from "./language-model.js";
+import { makeCompactionDigest, makeLocalTitle } from "./meta.js";
 import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
 import { setGlobalRegistry } from "./shared.js";
 
@@ -106,9 +109,10 @@ export const MusePlugin = Plugin.define({
     // it, Muse's built-in tools and any MCP servers in the user's Muse config
     // answer inside Muse's own loop, bypassing OpenCode's permissions and
     // history.
+    const museBin = process.env.MUSE_BIN ?? "muse";
     let hostConfig: HostConfigPaths | undefined;
     try {
-      hostConfig = writeMuseHostConfig();
+      hostConfig = await writeMuseHostConfig({ museBin });
     } catch (error) {
       // A session that runs without containment beats one that cannot start,
       // so the old preset remains the fallback. It hides the session's own
@@ -120,7 +124,7 @@ export const MusePlugin = Plugin.define({
     const preset = process.env.MUSE_PRESET;
     const adapter = new MuseHarnessAdapter({
       hostOptions: {
-        museBin: process.env.MUSE_BIN ?? "muse",
+        museBin,
         ...(preset !== undefined
           ? { preset }
           : hostConfig === undefined
@@ -155,6 +159,7 @@ export const MusePlugin = Plugin.define({
       console.warn("[opencode-muse] model discovery failed:", error);
     }
     const modelInfos = models.map((model) => toModelInfo(providerID, model));
+    const efforts = buildEffortCatalog(models);
 
     await ctx.provider.transform((editor) => {
       editor.add({
@@ -177,7 +182,13 @@ export const MusePlugin = Plugin.define({
       (event) => {
         event.sdk = {
           languageModel: (modelID: string) =>
-            new MuseLanguageModel(modelID, event.options, registry, event.model.canonical ?? event.model.providerID),
+            new MuseLanguageModel(
+              modelID,
+              event.options,
+              registry,
+              event.model.canonical ?? event.model.providerID,
+              efforts,
+            ),
         };
       },
       { providerID },
@@ -188,6 +199,12 @@ export const MusePlugin = Plugin.define({
       "model.request",
       async (event) => {
         if (event.model.providerID !== PROVIDER_ID) return;
+        const variant = (event.model as { variant?: unknown }).variant;
+        if (typeof variant === "string" && variant.length > 0) {
+          event.headers[HEADERS.variant] = variant;
+        } else {
+          delete event.headers[HEADERS.variant];
+        }
         event.headers[HEADERS.kind] = event.kind;
         if (event.kind !== "primary") return;
         event.headers[HEADERS.session] = event.sessionID;
@@ -214,17 +231,50 @@ export const MusePlugin = Plugin.define({
     );
 
     // Forward the agent role and OpenCode's instruction files.
-    for (const kind of ["context", "compaction", "generate"] as const) {
-      await ctx.session.hook(
-        kind,
-        async (event) => {
-          const agent = await ctx.agent.get({ agentID: event.agent });
-          event.options[AGENT_OPTION] = agent.data.system ?? "";
-          event.options[INSTRUCTIONS_OPTION] = instructionsText(event.system as ReadonlyArray<SystemPart>);
-        },
-        { providerID },
-      );
+    const forwardAgentContext = async (event: {
+      agent: Parameters<typeof ctx.agent.get>[0]["agentID"];
+      system: ReadonlyArray<SystemPart>;
+      options: Record<string, unknown>;
+    }) => {
+      const agent = await ctx.agent.get({ agentID: event.agent });
+      event.options[AGENT_OPTION] = agent.data.system ?? "";
+      event.options[INSTRUCTIONS_OPTION] = instructionsText(event.system);
+    };
+    for (const kind of ["context", "generate"] as const) {
+      await ctx.session.hook(kind, forwardAgentContext, { providerID });
     }
+
+    // Compaction is answered locally: opencode owns the history, and the
+    // digest is deterministic, so no Muse turn is spent on a summary. The
+    // digest's fingerprint is recorded so a later prompt that carries it is
+    // recognized as a compaction instead of an unexplained rewrite.
+    await ctx.session.hook(
+      "compaction",
+      async (event) => {
+        await forwardAgentContext(event);
+        const budget =
+          typeof event.options.maxOutputTokens === "number"
+            ? event.options.maxOutputTokens
+            : undefined;
+        const summary = makeCompactionDigest(
+          event.messages as unknown as Parameters<typeof makeCompactionDigest>[0],
+          budget,
+        );
+        await registry.recordCompaction(String(event.sessionID), fingerprintCompactionOutput(summary));
+        event.result = { summary };
+      },
+      { providerID },
+    );
+
+    // Titles are a local derivation of the first user message. Muse has no
+    // title model, and a title request must never open a native turn.
+    await ctx.session.hook(
+      "title",
+      async (event) => {
+        event.result = makeLocalTitle(event.messages);
+      },
+      { providerID },
+    );
 
     return async () => {
       await registry.closeAll();

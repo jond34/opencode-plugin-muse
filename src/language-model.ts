@@ -6,6 +6,8 @@ import type {
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 import type { HarnessToolResult } from "./contract/index.js";
+import { resolveEffort, type ModelEffort } from "./effort.js";
+import { fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
 import type { MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
 import { toAIUsage } from "./session-registry.js";
 import {
@@ -23,6 +25,7 @@ export const HEADERS = {
   session: "x-opencode-session-id",
   directory: "x-opencode-muse-directory",
   forkSource: "x-opencode-muse-fork-source",
+  variant: "x-opencode-muse-variant",
 } as const;
 
 export const AGENT_OPTION = "museAgent";
@@ -90,6 +93,8 @@ export class MuseLanguageModel implements LanguageModelV3 {
      * written under.
      */
     private readonly providerOptionKey = PROVIDER_ID,
+    /** Per-model catalog effort, keyed by Muse model id. */
+    private readonly efforts: ReadonlyMap<string, ModelEffort> = new Map(),
   ) {}
 
   async doGenerate(_options: LanguageModelV3CallOptions): Promise<never> {
@@ -102,6 +107,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
     const sessionID = headers[HEADERS.session];
     const directory = headers[HEADERS.directory] ?? process.cwd();
     const forkSource = headers[HEADERS.forkSource];
+    const effort = resolveEffort(this.efforts.get(this.modelId), headers[HEADERS.variant]);
 
     const tools = functionTools(options);
     const toolDefs: ToolDefinition[] = tools.map((tool) => ({
@@ -124,10 +130,19 @@ export class MuseLanguageModel implements LanguageModelV3 {
     const sessionTools = kind === "primary" ? toolDefs : undefined;
     let live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
     let reseed = false;
-    if (!live.isFresh && options.prompt.length < live.promptLength) {
-      // OpenCode rewrote the history (compaction, rewind): the native session
-      // still holds the old context, so recycle it and reseed from the full
-      // prompt below.
+    const fingerprints = fingerprintTranscript(options.prompt);
+    const verdict = reconcileTranscript(
+      live.transcriptFingerprints,
+      fingerprints,
+      this.registry.compactionFingerprintsFor(sessionID),
+      options.prompt,
+    );
+    if (verdict !== "same" && live.transcriptFingerprints.length > 0) {
+      // OpenCode rewrote the history (compaction, rewind, or a restored
+      // session). The native session still holds the old context, so stop it,
+      // start a clean one, and reseed from the full prompt below. Closing with
+      // `stop: true` is what makes the old native id unusable; a plain resume
+      // would keep the stale transcript.
       await this.registry.close(sessionID);
       live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
       reseed = true;
@@ -156,6 +171,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
         try {
           await live.muse.steerTurn({
             turnId: running,
+            ...(effort === undefined ? {} : { reasoningEffort: effort }),
             message: {
               content: [
                 ...(turn.text.length > 0 ? [{ type: "text" as const, text: turn.text }] : []),
@@ -192,6 +208,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
         const turnId = `muse_turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         await live.muse.startTurn({
           turnId,
+          ...(effort === undefined ? {} : { reasoningEffort: effort }),
           message: {
             content: [
               ...(text.length > 0 ? [{ type: "text" as const, text }] : []),
@@ -208,6 +225,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
     }
 
     live.promptLength = options.prompt.length;
+    await this.registry.rememberTranscript(sessionID, fingerprints);
 
     // Cancelling the step must stop Muse: a native turn left running would keep
     // producing events, and its finish would leak into the next step.
