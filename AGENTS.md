@@ -1,5 +1,8 @@
 # opencode-plugin-muse
 
+Shared rules live in `~/repos/agent-kit/AGENTS.shared.md`; this file adds only
+what is specific to this repo.
+
 Muse Code as an opencode provider, built on the npm package
 `@rasyid_rafi/opencode-muse@0.1.9` (MIT). The base tree is recorded in
 `docs/provenance.md`; credit and rationale are in `CREDITS.md`.
