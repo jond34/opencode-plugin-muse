@@ -1,7 +1,7 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
-  "version": "0.1.10",
-  "description": "Muse Code inside opencode as a LanguageModelV3 provider, built on @rasyid_rafi/opencode-muse",
+  "version": "0.1.11",
+  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with two patches.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -52,10 +52,13 @@
   },
   "keywords": [
     "opencode",
+    "opencode-plugin",
+    "muse",
     "muse-code",
+    "meta",
+    "subscription",
     "agent-harness",
     "provider",
-    "opencode-plugin",
     "mcp"
   ]
 }
