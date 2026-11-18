@@ -1,0 +1,19 @@
+version: 2
+
+# The publish workflow pins its actions by commit SHA, which protects the
+# provenance attestation from a retargeted tag but also freezes fixes. This
+# monthly, grouped entry is the only thing that keeps the pins current.
+#
+# Package dependencies are deliberately not listed: they are exact-pinned
+# against the Muse CLI contract, so a bump has to be tested against that CLI
+# and is done by hand rather than proposed by a bot.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
