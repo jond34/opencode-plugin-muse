@@ -22,10 +22,39 @@ const driver: HarnessConformanceDriver = {
     });
   },
   async startToolTurn(session, turnId) {
+    // Muse asks before running a local MCP tool, unless an existing grant
+    // covers it. Answer the way a user would, so the scenario behaves the same
+    // either way instead of hanging on an unanswered approval.
+    const subscription = session.subscribe();
+    const approving = (async () => {
+      for await (const event of subscription) {
+        if (
+          event.type === "request.updated" &&
+          event.request.kind === "approval" &&
+          event.request.status === "pending" &&
+          event.request.turnId === turnId
+        ) {
+          const option =
+            event.request.options?.find((entry) => entry.id === "allow_once") ??
+            event.request.options?.[0];
+          await session.respondToRequest({
+            requestId: event.request.id,
+            ...(option ? { optionId: option.id } : {}),
+          });
+          return;
+        }
+        if (event.type === "turn.terminal" && event.turn.id === turnId) return;
+      }
+    })().catch(() => undefined);
+
     await session.startTurn({
       turnId,
       message: userMessage("Use the lookup tool with q=hello, then reply with the result."),
     });
+    await Promise.race([
+      approving,
+      new Promise((resolve) => setTimeout(resolve, 30_000)),
+    ]);
   },
 };
 
