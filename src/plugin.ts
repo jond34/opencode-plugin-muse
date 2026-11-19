@@ -119,6 +119,15 @@ export const MusePlugin = Plugin.define({
       // built-in tools but not MCP servers from the user's Muse config.
       console.warn("[opencode-muse] private Muse config failed; falling back to the empty preset:", error);
     }
+    if (hostConfig?.diagnostics.skills === "failed") {
+      // Skill activation is a best-effort second fence. When enumeration
+      // fails, the control prompt still tells Muse to ignore the catalog, but
+      // the lockdown itself is absent; say so instead of implying it worked.
+      console.warn(
+        "[opencode-muse] could not enumerate Muse skills; the control prompt is the fallback:",
+        hostConfig.diagnostics.skillsError,
+      );
+    }
     // A preset set by the user wins; otherwise the private config is the
     // containment channel, and `empty` is only the fallback when it failed.
     const preset = process.env.MUSE_PRESET;

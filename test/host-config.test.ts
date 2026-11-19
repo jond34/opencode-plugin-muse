@@ -7,6 +7,7 @@ import {
   CONTROL_SYSTEM_PROMPT,
   MUSE_REMINDERS,
   collectSkillsOff,
+  collectSkillsOffReport,
   userMuseConfigDir,
   writeMuseHostConfig,
   type HostConfigOptions,
@@ -64,6 +65,7 @@ describe("host config", () => {
         foreign_personal_skills: false,
       });
       expect(settings.skills).toBeUndefined();
+      expect(config.diagnostics.skills).toBe("empty");
     } finally {
       config.remove();
     }
@@ -103,6 +105,7 @@ describe("host config", () => {
           project: { "/work/.muse/skills/two": "off" },
         },
       });
+      expect(config.diagnostics.skills).toBe("enumerated");
     } finally {
       config.remove();
     }
@@ -177,6 +180,13 @@ describe("host config", () => {
 
   test("a missing muse binary fails open with no skill map", async () => {
     await expect(collectSkillsOff("definitely-not-a-muse-binary-xyz", {})).resolves.toEqual({});
+  });
+
+  test("a failed skill probe is reported instead of looking empty", async () => {
+    const report = await collectSkillsOffReport("definitely-not-a-muse-binary-xyz", {});
+    expect(report.off).toEqual({});
+    expect(report.status).toBe("failed");
+    expect(report.error).toBeTruthy();
   });
 
   test("resolves the real config dir per platform", () => {

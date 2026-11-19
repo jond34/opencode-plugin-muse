@@ -55,6 +55,14 @@ export const MUSE_REMINDERS = [
 /** `{ [scope]: { [path]: "off" } }`, the shape Muse's skill activation reads. */
 export type SkillsOff = Record<string, Record<string, "off">>;
 
+export type SkillsProbeStatus = "enumerated" | "empty" | "failed";
+
+export interface SkillsProbeReport {
+  readonly off: SkillsOff;
+  readonly status: SkillsProbeStatus;
+  readonly error?: string;
+}
+
 export interface HostConfigPaths {
   /** The config root to export as `XDG_CONFIG_HOME`. */
   readonly xdg: string;
@@ -62,6 +70,11 @@ export interface HostConfigPaths {
   readonly settingsPath: string;
   /** The settings written, for tests and telemetry. */
   readonly settings: Record<string, unknown>;
+  /** Whether the skill lockdown was enumerated, empty, or unavailable. */
+  readonly diagnostics: {
+    readonly skills: SkillsProbeStatus;
+    readonly skillsError?: string;
+  };
   /** Remove the private directory and everything in it. */
   remove(): void;
 }
@@ -123,10 +136,10 @@ const execFileAsync = promisify(execFile);
  * control prompt is the fallback, and a missing skill lockdown must not stop the
  * host.
  */
-export async function collectSkillsOff(
+export async function collectSkillsOffReport(
   museBin: string,
   env: NodeJS.ProcessEnv,
-): Promise<SkillsOff> {
+): Promise<SkillsProbeReport> {
   const root = mkdtempSync(join(tmpdir(), "opencode-muse-skills-"));
   const xdg = join(root, "config");
   mkdirSync(join(xdg, "muse"), { recursive: true, mode: 0o700 });
@@ -145,7 +158,7 @@ export async function collectSkillsOff(
       ? parsed
       : (parsed as { skills?: unknown } | null)?.skills;
     const off: SkillsOff = {};
-    if (!Array.isArray(rows)) return off;
+    if (!Array.isArray(rows)) return { off, status: "empty" };
     for (const row of rows) {
       if (typeof row !== "object" || row === null) continue;
       const scope = (row as { scope?: unknown }).scope;
@@ -153,12 +166,24 @@ export async function collectSkillsOff(
       if (typeof scope !== "string" || typeof path !== "string") continue;
       (off[scope] ??= {})[path] = "off";
     }
-    return off;
-  } catch {
-    return {};
+    return { off, status: Object.keys(off).length === 0 ? "empty" : "enumerated" };
+  } catch (error) {
+    return {
+      off: {},
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+/** Compatibility wrapper for callers that only need the activation map. */
+export async function collectSkillsOff(
+  museBin: string,
+  env: NodeJS.ProcessEnv,
+): Promise<SkillsOff> {
+  return (await collectSkillsOffReport(museBin, env)).off;
 }
 
 /**
@@ -175,9 +200,13 @@ export async function collectSkillsOff(
 export async function writeMuseHostConfig(
   options: HostConfigOptions = {},
 ): Promise<HostConfigPaths> {
-  const skillsOff = options.listSkills
-    ? await options.listSkills()
-    : await collectSkillsOff(options.museBin ?? "muse", options.env ?? process.env);
+  const skillsReport: SkillsProbeReport = options.listSkills
+    ? await options.listSkills().then((off) => ({
+        off,
+        status: Object.keys(off).length === 0 ? "empty" : "enumerated",
+      }))
+    : await collectSkillsOffReport(options.museBin ?? "muse", options.env ?? process.env);
+  const skillsOff = skillsReport.off;
 
   const xdg = mkdtempSync(join(options.baseDir ?? tmpdir(), "opencode-muse-"));
   const dir = join(xdg, "muse");
@@ -226,6 +255,10 @@ export async function writeMuseHostConfig(
     xdg,
     settingsPath,
     settings,
+    diagnostics: {
+      skills: skillsReport.status,
+      ...(skillsReport.error === undefined ? {} : { skillsError: skillsReport.error }),
+    },
     remove: () => rmSync(xdg, { recursive: true, force: true }),
   };
 }
