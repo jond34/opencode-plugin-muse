@@ -95,9 +95,9 @@ the replacement question answered twice:
 
 Medians: fork `freshInput` 7,031 and total input 7,031; reseed `freshInput` 3,431 and
 total input 4,946. Fork used 2.0x the fresh input and 1.4x the total input, won 0 of 4
-reps, and wrote no cache entries. The pre-registered rule required at least 4 valid
-reps, a 20% lower median `freshInput`, total input within 2%, no higher cache writes,
-and at least 3 of 4 reps lower. Every validity check passed (all turns completed, the
+reps, and reported no cache-write tokens in either arm. The pre-registered rule required
+at least 4 valid reps, a 20% lower median `freshInput`, total input within 2%, no higher
+cache writes, and at least 3 of 4 reps lower. Every validity check passed (all turns completed, the
 canary code word survived in both arms, no tool calls), and the win rule failed.
 
 The children's input tracked the source's context at the cut (7,541, 6,107, 8,925, and
@@ -109,8 +109,14 @@ context carries items that `fullConversationText()` does not.
 `SessionForkParams` carries only `commandId`, `cutPoint`, `excludeItems`, and
 `sessionId`; `excludeItems` only skips inline history in the result. There is no
 cache-preservation option to enable. A cache-scope preflight sent the same 1,200-word
-text to two fresh sessions in a row; the second reported `cachedInputTokens: 0`, so the
-provider cache did not carry across session ids here.
+text to two fresh sessions in a row; the second reported 2,929 cached input tokens of
+3,055, so the provider cache did carry across session ids for an identical prefix. The
+fork child still reported no cached input in three of four reps (753 in the fourth):
+its native context is not a prefix any earlier request had submitted in that form. The
+reseed's 1,521 cached tokens are consistent with a reused prefix, but the exact cached
+span is not proven. `cacheWriteTokens` was 0 in both arms, so the "no higher cache
+writes" check does not distinguish them; cached-read share and `freshInput` are the
+meaningful counters.
 
 A first run measured a continuation instead: the source turns were kept whole, the fork
 cut at the last turn, and a new question was added. Production classifies an appended
