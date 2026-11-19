@@ -1,0 +1,1340 @@
+diff --git a/package.json b/package.json
+index 69075ae..93f1526 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "@jonathand34/opencode-plugin-muse",
+   "version": "0.1.12",
+-  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with four patches.",
++  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with five patches.",
+   "license": "MIT",
+   "repository": {
+     "type": "git",
+diff --git a/src/adapter.ts b/src/adapter.ts
+index 2a9c41c..e980cec 100644
+--- a/src/adapter.ts
++++ b/src/adapter.ts
+@@ -20,6 +20,8 @@ export interface MuseAdapterOptions {
+ export interface MuseOpenSessionInput extends OpenSessionInput {
+   /** Native Muse session id to resume instead of starting a new session. */
+   readonly resumeSessionId?: string;
++  /** Per-session developer instructions, forwarded to `SessionConfig`. */
++  readonly developerPrompt?: string;
+ }
+ 
+ /**
+@@ -65,6 +67,7 @@ export class MuseHarnessAdapter implements HarnessAdapter {
+       ...(input.toolBridge === undefined ? {} : { toolBridge: input.toolBridge }),
+       ...(input.signal === undefined ? {} : { signal: input.signal }),
+       ...(input.resumeSessionId === undefined ? {} : { resumeSessionId: input.resumeSessionId }),
++      ...(input.developerPrompt === undefined ? {} : { developerPrompt: input.developerPrompt }),
+     };
+     return MuseHarnessSession.create(host, createInput);
+   }
+diff --git a/src/effort.ts b/src/effort.ts
+index de0342c..788c9f6 100644
+--- a/src/effort.ts
++++ b/src/effort.ts
+@@ -8,7 +8,8 @@
+  *
+  * The vocabulary is closed on purpose: a typo must fail loudly instead of
+  * silently running at Muse's default. A tier the model knows but does not offer
+- * falls to its lowest offered tier, which is the same choice pi makes.
++ * also fails, because choosing another tier would change the request the user
++ * made. Only an omitted variant or `"default"` leaves the choice to Muse.
+  */
+ 
+ export const EFFORT_ORDER = [
+@@ -25,8 +26,6 @@ export const EFFORT_ORDER = [
+ export type EffortTier = (typeof EFFORT_ORDER)[number];
+ 
+ export interface ModelEffort {
+-  /** Catalog `defaultReasoningEffort`, if the row publishes one. */
+-  readonly defaultEffort?: string;
+   /** Tiers this model offers, in catalog order. */
+   readonly variants?: readonly string[];
+ }
+@@ -42,33 +41,21 @@ function isTier(value: unknown): value is EffortTier {
+   return typeof value === "string" && (EFFORT_ORDER as readonly string[]).includes(value);
+ }
+ 
+-function lowestOffered(tiers: readonly EffortTier[]): EffortTier | undefined {
+-  let lowest: EffortTier | undefined;
+-  for (const tier of tiers) {
+-    if (lowest === undefined || EFFORT_ORDER.indexOf(tier) < EFFORT_ORDER.indexOf(lowest)) {
+-      lowest = tier;
+-    }
+-  }
+-  return lowest;
+-}
+-
+ /**
+  * Resolve one request's effort.
+  *
+- * - no variant: omit the field and let Muse use the model's own default
+- * - `"default"`: the catalog's `defaultReasoningEffort`
++ * - no variant or `"default"`: omit the field and let Muse use its own default
+  * - `"off"`: `"none"`
+  * - an unknown tier: throw, because the request names something Muse cannot run
+- * - a known tier the model does not offer: its lowest offered tier
++ * - a known tier the model does not offer: throw, because substituting another
++ *   tier would not be the request the user made
+  */
+ export function resolveEffort(
+   model: ModelEffort | undefined,
+   variant: string | undefined,
+ ): EffortTier | undefined {
+   if (variant === undefined || variant.length === 0) return undefined;
+-  if (variant === "default") {
+-    return isTier(model?.defaultEffort) ? model.defaultEffort : undefined;
+-  }
++  if (variant === "default") return undefined;
+   if (variant === "off") return "none";
+   if (!isTier(variant)) {
+     throw new UnsupportedEffortError(
+@@ -82,13 +69,9 @@ export function resolveEffort(
+     );
+   }
+   if (offered.includes(variant)) return variant;
+-  const lowest = lowestOffered(offered);
+-  if (lowest === undefined) {
+-    throw new UnsupportedEffortError(
+-      `Reasoning effort "${variant}" is not offered by this model`,
+-    );
+-  }
+-  return lowest;
++  throw new UnsupportedEffortError(
++    `Reasoning effort "${variant}" is not offered by this model; expected one of ${offered.join(", ")}`,
++  );
+ }
+ 
+ /** Build the per-model effort table from the Muse catalog rows. */
+@@ -110,12 +93,7 @@ export function buildEffortCatalog(
+           )
+           .filter((variant): variant is string => variant !== undefined)
+       : [];
+-    catalog.set(modelId, {
+-      ...(typeof model.defaultReasoningEffort === "string"
+-        ? { defaultEffort: model.defaultReasoningEffort }
+-        : {}),
+-      variants,
+-    });
++    catalog.set(modelId, { variants });
+   }
+   return catalog;
+ }
+diff --git a/src/fingerprint.ts b/src/fingerprint.ts
+index dd31d9d..0f3fd2a 100644
+--- a/src/fingerprint.ts
++++ b/src/fingerprint.ts
+@@ -115,6 +115,17 @@ export function promptContainsCompactionFingerprint(
+   return false;
+ }
+ 
++/** Length of the shared visible prefix, in fingerprints. */
++export function commonPrefixLength(
++  previous: readonly string[],
++  current: readonly string[],
++): number {
++  const limit = Math.min(previous.length, current.length);
++  let index = 0;
++  while (index < limit && previous[index] === current[index]) index += 1;
++  return index;
++}
++
+ /**
+  * Classify the current transcript against the native session's history.
+  *
+diff --git a/src/host-config.ts b/src/host-config.ts
+index ceb3ba6..f0274b0 100644
+--- a/src/host-config.ts
++++ b/src/host-config.ts
+@@ -35,7 +35,7 @@ export const CONTROL_SYSTEM_PROMPT = [
+   "You are the language model inside an opencode session.",
+   "opencode owns the agent loop, the tools, the permissions, and the history.",
+   "Use only the tools in the tool list; never assume a tool you were not given.",
+-  "The first user message carries the session's role and instructions; follow them.",
++  "The session's role and instructions arrive as developer context or the first user message; follow them.",
+   "Ignore any skill catalog, reminder, or workflow text in this prompt, and answer concisely.",
+ ].join("\n");
+ 
+@@ -55,6 +55,14 @@ export const MUSE_REMINDERS = [
+ /** `{ [scope]: { [path]: "off" } }`, the shape Muse's skill activation reads. */
+ export type SkillsOff = Record<string, Record<string, "off">>;
+ 
++export type SkillsProbeStatus = "enumerated" | "empty" | "failed";
++
++export interface SkillsProbeReport {
++  readonly off: SkillsOff;
++  readonly status: SkillsProbeStatus;
++  readonly error?: string;
++}
++
+ export interface HostConfigPaths {
+   /** The config root to export as `XDG_CONFIG_HOME`. */
+   readonly xdg: string;
+@@ -62,6 +70,11 @@ export interface HostConfigPaths {
+   readonly settingsPath: string;
+   /** The settings written, for tests and telemetry. */
+   readonly settings: Record<string, unknown>;
++  /** Whether the skill lockdown was enumerated, empty, or unavailable. */
++  readonly diagnostics: {
++    readonly skills: SkillsProbeStatus;
++    readonly skillsError?: string;
++  };
+   /** Remove the private directory and everything in it. */
+   remove(): void;
+ }
+@@ -123,10 +136,10 @@ const execFileAsync = promisify(execFile);
+  * control prompt is the fallback, and a missing skill lockdown must not stop the
+  * host.
+  */
+-export async function collectSkillsOff(
++export async function collectSkillsOffReport(
+   museBin: string,
+   env: NodeJS.ProcessEnv,
+-): Promise<SkillsOff> {
++): Promise<SkillsProbeReport> {
+   const root = mkdtempSync(join(tmpdir(), "opencode-muse-skills-"));
+   const xdg = join(root, "config");
+   mkdirSync(join(xdg, "muse"), { recursive: true, mode: 0o700 });
+@@ -145,7 +158,7 @@ export async function collectSkillsOff(
+       ? parsed
+       : (parsed as { skills?: unknown } | null)?.skills;
+     const off: SkillsOff = {};
+-    if (!Array.isArray(rows)) return off;
++    if (!Array.isArray(rows)) return { off, status: "empty" };
+     for (const row of rows) {
+       if (typeof row !== "object" || row === null) continue;
+       const scope = (row as { scope?: unknown }).scope;
+@@ -153,14 +166,26 @@ export async function collectSkillsOff(
+       if (typeof scope !== "string" || typeof path !== "string") continue;
+       (off[scope] ??= {})[path] = "off";
+     }
+-    return off;
+-  } catch {
+-    return {};
++    return { off, status: Object.keys(off).length === 0 ? "empty" : "enumerated" };
++  } catch (error) {
++    return {
++      off: {},
++      status: "failed",
++      error: error instanceof Error ? error.message : String(error),
++    };
+   } finally {
+     rmSync(root, { recursive: true, force: true });
+   }
+ }
+ 
++/** Compatibility wrapper for callers that only need the activation map. */
++export async function collectSkillsOff(
++  museBin: string,
++  env: NodeJS.ProcessEnv,
++): Promise<SkillsOff> {
++  return (await collectSkillsOffReport(museBin, env)).off;
++}
++
+ /**
+  * Write a private `settings.json` and link the user's login into it.
+  *
+@@ -175,9 +200,13 @@ export async function collectSkillsOff(
+ export async function writeMuseHostConfig(
+   options: HostConfigOptions = {},
+ ): Promise<HostConfigPaths> {
+-  const skillsOff = options.listSkills
+-    ? await options.listSkills()
+-    : await collectSkillsOff(options.museBin ?? "muse", options.env ?? process.env);
++  const skillsReport: SkillsProbeReport = options.listSkills
++    ? await options.listSkills().then((off) => ({
++        off,
++        status: Object.keys(off).length === 0 ? "empty" : "enumerated",
++      }))
++    : await collectSkillsOffReport(options.museBin ?? "muse", options.env ?? process.env);
++  const skillsOff = skillsReport.off;
+ 
+   const xdg = mkdtempSync(join(options.baseDir ?? tmpdir(), "opencode-muse-"));
+   const dir = join(xdg, "muse");
+@@ -226,6 +255,10 @@ export async function writeMuseHostConfig(
+     xdg,
+     settingsPath,
+     settings,
++    diagnostics: {
++      skills: skillsReport.status,
++      ...(skillsReport.error === undefined ? {} : { skillsError: skillsReport.error }),
++    },
+     remove: () => rmSync(xdg, { recursive: true, force: true }),
+   };
+ }
+diff --git a/src/language-model.ts b/src/language-model.ts
+index 5596b9f..cdbb147 100644
+--- a/src/language-model.ts
++++ b/src/language-model.ts
+@@ -7,7 +7,7 @@ import type {
+ } from "@ai-sdk/provider";
+ import type { HarnessToolResult } from "./contract/index.js";
+ import { resolveEffort, type ModelEffort } from "./effort.js";
+-import { fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
++import { commonPrefixLength, fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
+ import type { MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
+ import { toAIUsage } from "./session-registry.js";
+ import {
+@@ -124,28 +124,81 @@ export class MuseLanguageModel implements LanguageModelV3 {
+     if (typeof sessionID !== "string" || sessionID.length === 0) {
+       throw new Error("Muse model request is missing the session header");
+     }
++    if (toolDefs.length === 0) {
++      // Muse validates `run.toolset` before the turn starts, and the private
++      // host config pins it to the bridge namespace. With no bridge tools that
++      // wildcard cannot resolve, so the turn would fail with an opaque
++      // `unknown tool` error. Fail here with something actionable instead of
++      // inventing a no-op tool to satisfy the wildcard.
++      throw new Error(
++        "The Muse bridge has no tools; enable at least one tool or run without the bridge.",
++      );
++    }
++
++    const providerOptions = options.providerOptions?.[this.providerOptionKey] as
++      | Record<string, unknown>
++      | undefined;
++    const agent = typeof providerOptions?.[AGENT_OPTION] === "string" ? providerOptions[AGENT_OPTION] : "";
++    const instructions =
++      typeof providerOptions?.[INSTRUCTIONS_OPTION] === "string" ? providerOptions[INSTRUCTIONS_OPTION] : "";
++    const preamble = [agent, instructions].filter((text) => text.length > 0).join("\n\n");
+ 
+     // Titles and other utility requests carry no tools; they must not clear
+     // the list a primary step is using on the same session.
+     const sessionTools = kind === "primary" ? toolDefs : undefined;
+-    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
++    let live = await this.registry.get(
++      sessionID,
++      directory,
++      forkSource,
++      this.modelId,
++      sessionTools,
++      preamble,
++    );
+     let reseed = false;
+     const fingerprints = fingerprintTranscript(options.prompt);
++    const previous = live.transcriptFingerprints;
+     const verdict = reconcileTranscript(
+-      live.transcriptFingerprints,
++      previous,
+       fingerprints,
+       this.registry.compactionFingerprintsFor(sessionID),
+       options.prompt,
+     );
+-    if (verdict !== "same" && live.transcriptFingerprints.length > 0) {
+-      // OpenCode rewrote the history (compaction, rewind, or a restored
+-      // session). The native session still holds the old context, so stop it,
+-      // start a clean one, and reseed from the full prompt below. Closing with
+-      // `stop: true` is what makes the old native id unusable; a plain resume
+-      // would keep the stale transcript.
+-      await this.registry.close(sessionID);
+-      live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
+-      reseed = true;
++    if (verdict !== "same" && previous.length > 0) {
++      // A divergence with a proven common prefix can branch the native session
++      // at the last completed turn inside that prefix. Compaction has no such
++      // prefix, so it always reseeds.
++      let forked = false;
++      if (verdict === "diverged") {
++        const point = live.forkPoint(commonPrefixLength(previous, fingerprints));
++        if (point !== undefined) {
++          try {
++            await this.registry.fork(
++              sessionID,
++              point,
++              previous.slice(0, point.fingerprintLength),
++            );
++            forked = true;
++          } catch {
++            // Any fork failure falls back to the reseed below.
++          }
++        }
++      }
++      if (!forked) {
++        // The native session holds context the new prompt no longer has, so
++        // stop it and reseed from the full prompt below. Closing with
++        // `stop: true` is what makes the old native id unusable; a plain
++        // resume would keep the stale transcript.
++        await this.registry.close(sessionID);
++        live = await this.registry.get(
++          sessionID,
++          directory,
++          forkSource,
++          this.modelId,
++          sessionTools,
++          preamble,
++        );
++        reseed = true;
++      }
+     }
+     if (live.isFresh) {
+       // A resumed session already holds the conversation Muse has seen, so
+@@ -189,13 +242,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
+         }
+       }
+       if (!live.hasActiveTurn) {
+-        const providerOptions = options.providerOptions?.[this.providerOptionKey] as
+-          | Record<string, unknown>
+-          | undefined;
+-        const agent = typeof providerOptions?.[AGENT_OPTION] === "string" ? providerOptions[AGENT_OPTION] : "";
+-        const instructions =
+-          typeof providerOptions?.[INSTRUCTIONS_OPTION] === "string" ? providerOptions[INSTRUCTIONS_OPTION] : "";
+-        const preamble = [agent, instructions].filter((text) => text.length > 0).join("\n\n");
+         // After a history rewrite the fresh native session has seen nothing,
+         // so seed it with the whole condensed conversation, not just the
+         // delta. A forked session is in the same position on its first turn.
+@@ -206,7 +252,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
+           ? `${preamble}\n\n${body}`
+           : body;
+         const turnId = `muse_turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+-        await live.muse.startTurn({
++        const started = await live.muse.startTurn({
+           turnId,
+           ...(effort === undefined ? {} : { reasoningEffort: effort }),
+           message: {
+@@ -220,6 +266,13 @@ export class MuseLanguageModel implements LanguageModelV3 {
+             ],
+           },
+         });
++        if (started.nativeRef.id !== null) {
++          live.recordTurnStart(
++            started.nativeRef.id,
++            Math.max(0, options.prompt.length - 1),
++            Math.max(0, fingerprints.length - 1),
++          );
++        }
+         live.setActiveTurn(true, turnId);
+       }
+     }
+diff --git a/src/plugin.ts b/src/plugin.ts
+index 726c732..b4ca2e1 100644
+--- a/src/plugin.ts
++++ b/src/plugin.ts
+@@ -119,6 +119,15 @@ export const MusePlugin = Plugin.define({
+       // built-in tools but not MCP servers from the user's Muse config.
+       console.warn("[opencode-muse] private Muse config failed; falling back to the empty preset:", error);
+     }
++    if (hostConfig?.diagnostics.skills === "failed") {
++      // Skill activation is a best-effort second fence. When enumeration
++      // fails, the control prompt still tells Muse to ignore the catalog, but
++      // the lockdown itself is absent; say so instead of implying it worked.
++      console.warn(
++        "[opencode-muse] could not enumerate Muse skills; the control prompt is the fallback:",
++        hostConfig.diagnostics.skillsError,
++      );
++    }
+     // A preset set by the user wins; otherwise the private config is the
+     // containment channel, and `empty` is only the fallback when it failed.
+     const preset = process.env.MUSE_PRESET;
+diff --git a/src/session-registry.ts b/src/session-registry.ts
+index 451cfea..31b2f4c 100644
+--- a/src/session-registry.ts
++++ b/src/session-registry.ts
+@@ -78,9 +78,23 @@ export function toAIUsage(usage: Usage): LanguageModelV3Usage {
+  * `doStream` again with the result, which resolves the parked call and lets
+  * Muse continue.
+  */
++export interface TurnBoundary {
++  readonly nativeTurnId: string;
++  readonly promptStart: number;
++  readonly fingerprintStart: number;
++  completed: boolean;
++}
++
++export interface ForkPoint {
++  readonly nativeTurnId: string;
++  readonly promptLength: number;
++  readonly fingerprintLength: number;
++  readonly turnIndex: number;
++}
++
+ export class LiveSession {
+   readonly openCodeSessionId: string;
+-  readonly muse: MuseHarnessSession;
++  muse: MuseHarnessSession;
+   readonly pending = new Map<string, PendingCall>();
+ 
+   private readonly converter = new StreamConverter();
+@@ -100,6 +114,9 @@ export class LiveSession {
+   private terminalError: Error | null = null;
+   private preamble = "";
+   private preambleSent = false;
++  private readonly nativeDeveloperPrompt: boolean;
++  private readonly boundaries: TurnBoundary[] = [];
++  private nativeGeneration = 0;
+   private fresh = true;
+   private model: string | null;
+   private fullSeed = false;
+@@ -125,10 +142,17 @@ export class LiveSession {
+     return value;
+   }
+ 
+-  /** Prepend the agent role/instructions once, and again when they change. */
++  /**
++   * Prepend the agent role/instructions once, and again when they change.
++   *
++   * A session created with `developerPrompt` already carries the first value
++   * natively, so the first turn must not repeat it. A later, different value
++   * still travels in the next user turn; Muse has no per-session mutation for
++   * that field.
++   */
+   prependPreamble(preamble: string): boolean {
+     if (preamble.length === 0) return false;
+-    if (this.preambleSent && this.preamble === preamble) return false;
++    if (this.preamble === preamble && (this.preambleSent || this.nativeDeveloperPrompt)) return false;
+     this.preamble = preamble;
+     this.preambleSent = true;
+     return true;
+@@ -138,10 +162,14 @@ export class LiveSession {
+     openCodeSessionId: string,
+     muse: MuseHarnessSession,
+     private readonly toolsRef: { current: ToolDefinition[] } = { current: [] },
++    developerPrompt = "",
+   ) {
+     this.openCodeSessionId = openCodeSessionId;
+     this.muse = muse;
+     this.model = muse.info.model;
++    const initial = developerPrompt.trim();
++    this.preamble = initial;
++    this.nativeDeveloperPrompt = initial.length > 0;
+     void this.pump();
+   }
+ 
+@@ -194,6 +222,77 @@ export class LiveSession {
+     this.currentTurnId = value ? (turnId ?? null) : null;
+   }
+ 
++  /** Record where a native turn began in the prompt and its fingerprint chain. */
++  recordTurnStart(
++    nativeTurnId: string,
++    promptStart: number,
++    fingerprintStart: number,
++  ): void {
++    this.boundaries.push({ nativeTurnId, promptStart, fingerprintStart, completed: false });
++  }
++
++  /** Mark the newest native turn as finished; only completed turns are forkable. */
++  markTurnCompleted(): void {
++    const last = this.boundaries[this.boundaries.length - 1];
++    if (last) last.completed = true;
++  }
++
++  /**
++   * Choose the newest completed turn whose output is wholly inside the common
++   * visible prefix. A turn's end is the next turn's start, or the transcript
++   * the native session was last told it had.
++   */
++  forkPoint(commonFingerprints: number): ForkPoint | undefined {
++    for (let index = this.boundaries.length - 1; index >= 0; index -= 1) {
++      const boundary = this.boundaries[index];
++      if (!boundary || !boundary.completed) continue;
++      const next = this.boundaries[index + 1];
++      const fingerprintLength = next?.fingerprintStart ?? this.transcript.length;
++      const promptLength = next?.promptStart ?? this.lastPromptLength;
++      if (fingerprintLength <= commonFingerprints && promptLength > boundary.promptStart) {
++        return {
++          nativeTurnId: boundary.nativeTurnId,
++          promptLength,
++          fingerprintLength,
++          turnIndex: index,
++        };
++      }
++    }
++    return undefined;
++  }
++
++  /**
++   * Replace this step's native session with a forked child.
++   *
++   * The child already holds the turns through the cut, so the prompt resumes
++   * after it; the old pump is retired by the generation check. The caller owns
++   * closing the old native session after this returns.
++   */
++  adoptNative(
++    muse: MuseHarnessSession,
++    promptLength: number,
++    fingerprints: readonly string[],
++    turnIndex: number,
++  ): void {
++    this.nativeGeneration += 1;
++    this.muse = muse;
++    this.model = muse.info.model;
++    this.lastPromptLength = promptLength;
++    this.transcript = [...fingerprints];
++    this.boundaries.splice(turnIndex + 1);
++    this.fresh = false;
++    this.fullSeed = false;
++    this.turnActive = false;
++    this.currentTurnId = null;
++    this.terminalError = null;
++    this.stepUsage = {};
++    this.queue = [];
++    this.controller = null;
++    this.stepEnded = false;
++    this.stepAborted = false;
++    void this.pump();
++  }
++
+   /**
+    * Switch the standing model. A no-op when the session already uses it, so a
+    * step never pays for a redundant host command.
+@@ -214,11 +313,13 @@ export class LiveSession {
+ 
+   /** Subscribe the session's event stream once and pump it into the current step. */
+   private async pump(): Promise<void> {
++    const generation = this.nativeGeneration;
+     try {
+       for await (const event of this.muse.subscribe()) {
+-        if (this.closed) return;
++        if (this.closed || generation !== this.nativeGeneration) return;
+         for (const part of this.converter.convert(event)) this.enqueue(part);
+         if (event.type === "turn.terminal") {
++          this.markTurnCompleted();
+           this.setActiveTurn(false);
+           if (event.turn.status === "failed") {
+             this.terminalError = new Error(event.failure?.message ?? "Muse turn failed");
+@@ -521,6 +622,11 @@ export class MuseSessionRegistry {
+      * Omitted for utility requests, which must leave the live list alone.
+      */
+     tools?: ReadonlyArray<ToolDefinition>,
++    /**
++     * Agent role and instructions for a session this call creates. An existing
++     * session keeps its native prompt; a changed value travels in the next turn.
++     */
++    developerPrompt?: string,
+   ): Promise<LiveSession> {
+     const existing = this.sessions.get(openCodeSessionId);
+     if (existing) {
+@@ -558,9 +664,12 @@ export class MuseSessionRegistry {
+       cwd,
+       ...(model === undefined ? {} : { model }),
+       ...(own !== undefined ? { resumeSessionId: own } : {}),
++      ...(developerPrompt === undefined || developerPrompt.trim().length === 0
++        ? {}
++        : { developerPrompt }),
+       toolBridge: bridge,
+     });
+-    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef);
++    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef, developerPrompt);
+     if (seedFull) live.requestFullSeed();
+     const transcript = parseFingerprints(await this.store?.get(`${openCodeSessionId}:transcript`));
+     const compactions = parseFingerprints(await this.store?.get(`${openCodeSessionId}:compaction`));
+@@ -575,6 +684,30 @@ export class MuseSessionRegistry {
+     return live;
+   }
+ 
++  /**
++   * Replace a diverged native session with a fork at a completed turn. The
++   * caller supplies the prompt/fingerprint boundary that the child already
++   * holds; only the suffix is seeded afterwards.
++   */
++  async fork(
++    openCodeSessionId: string,
++    point: ForkPoint,
++    fingerprints: readonly string[],
++  ): Promise<void> {
++    const live = this.sessions.get(openCodeSessionId);
++    if (!live) throw new Error(`Session ${openCodeSessionId} is not live`);
++    const old = live.muse;
++    const child = await old.forkAt({ lastTurnId: point.nativeTurnId });
++    try {
++      live.adoptNative(child, point.promptLength, fingerprints, point.turnIndex);
++    } catch (error) {
++      await child.close().catch(() => undefined);
++      throw error;
++    }
++    await old.close().catch(() => undefined);
++    await this.store?.set(openCodeSessionId, child.nativeSessionId).catch(() => undefined);
++  }
++
+   peek(openCodeSessionId: string): LiveSession | undefined {
+     return this.sessions.get(openCodeSessionId);
+   }
+diff --git a/src/session.ts b/src/session.ts
+index cf90773..1f777a2 100644
+--- a/src/session.ts
++++ b/src/session.ts
+@@ -152,6 +152,30 @@ function textContent(text: string): ReadonlyArray<HarnessContentBlock> {
+   return [{ type: "text", text }];
+ }
+ 
++/** Build the `SessionConfig` both `session/start` and `session/resume` accept. */
++function sessionConfig(
++  bridgeServer: ToolBridgeServer | undefined,
++  developerPrompt: string | undefined,
++): Record<string, unknown> | undefined {
++  const prompt = developerPrompt?.trim();
++  if (bridgeServer === undefined && (prompt === undefined || prompt.length === 0)) return undefined;
++  return {
++    ...(bridgeServer === undefined
++      ? {}
++      : {
++          mcpServers: {
++            [BRIDGE_MCP_SERVER_NAME]: {
++              transport: "streamableHttp",
++              url: bridgeServer.url,
++              headers: { Authorization: `Bearer ${bridgeServer.token}` },
++              mode: "required",
++            },
++          },
++        }),
++    ...(prompt === undefined || prompt.length === 0 ? {} : { developerPrompt: prompt }),
++  };
++}
++
+ /** Convert contract content blocks into MSP turn input parts. */
+ export function toTurnInputParts(message: HarnessUserMessage): Array<Record<string, unknown>> {
+   const parts: Array<Record<string, unknown>> = [];
+@@ -180,6 +204,12 @@ export interface CreateSessionInput {
+   readonly approvalMode?: string;
+   /** Native Muse session id to resume instead of starting a new session. */
+   readonly resumeSessionId?: string;
++  /**
++   * Developer instructions for this session only. Muse trims the text; a
++   * nonblank value replaces the settings-derived developer context, including
++   * the agent catalog and memory snapshot.
++   */
++  readonly developerPrompt?: string;
+ }
+ 
+ /**
+@@ -197,6 +227,11 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+   private readonly capabilities = MUSE_CAPABILITIES;
+   private readonly toolBridge: import("./contract/index.js").HarnessToolBridge | undefined;
+   private readonly bridgeServer: ToolBridgeServer | undefined;
++  private readonly cwd: string;
++  private readonly approvalMode: string | undefined;
++  private readonly developerPrompt: string | undefined;
++  /** A forked child takes the shared bridge; only its owner closes it. */
++  private ownsBridge: boolean;
+   private readonly turns = new Map<string, ActiveTurn>();
+   private readonly turnUsage = new Map<string, TurnUsage>();
+   private lastContextUsage: ContextUsage | null = null;
+@@ -222,12 +257,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+     startedAt: string,
+     toolBridge?: import("./contract/index.js").HarnessToolBridge,
+     bridgeServer?: ToolBridgeServer,
++    ownsBridge = true,
+   ) {
+     this.host = host;
+     this.id = input.sessionId;
+     this.nativeId = nativeSessionId;
++    this.cwd = input.cwd;
++    this.approvalMode = input.approvalMode;
++    this.developerPrompt = input.developerPrompt?.trim();
+     this.toolBridge = toolBridge;
+     this.bridgeServer = bridgeServer;
++    this.ownsBridge = ownsBridge;
+     this.sessionInfo = {
+       id: input.sessionId,
+       adapterId: ADAPTER_ID,
+@@ -249,18 +289,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+     const bridgeServer = input.toolBridge
+       ? await startToolBridgeServer(input.toolBridge)
+       : undefined;
+-    const config = bridgeServer
+-      ? {
+-          mcpServers: {
+-            [BRIDGE_MCP_SERVER_NAME]: {
+-              transport: "streamableHttp",
+-              url: bridgeServer.url,
+-              headers: { Authorization: `Bearer ${bridgeServer.token}` },
+-              mode: "required",
+-            },
+-          },
+-        }
+-      : undefined;
++    const config = sessionConfig(bridgeServer, input.developerPrompt);
+ 
+     // A bridge session is driven by opencode, whose permission evaluation is
+     // the only fence. Asking Muse as well would double-ask, and a parked Muse
+@@ -314,12 +343,105 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+       createdAt,
+       input.toolBridge,
+       bridgeServer,
++      true,
+     );
+     host.registerSink(created);
+     created.emit({ type: "session.updated", session: created.info });
+     return created;
+   }
+ 
++  /**
++   * Branch this native session at a completed turn.
++   *
++   * `session/fork` creates and loads the child before returning it, but the
++   * child inherits no per-session MCP configuration: its `run.toolset`
++   * wildcard would fail on its first turn. Releasing the fresh child and
++   * resuming it with the source's `SessionConfig` reattaches the bridge and
++   * keeps the forked history. The source stays loaded and usable.
++   */
++  async forkAt(cutPoint: { lastTurnId: string }): Promise<MuseHarnessSession> {
++    this.assertOpen();
++    const result = await this.host.connection.command(
++      "session/fork",
++      {
++        sessionId: this.nativeId,
++        cutPoint,
++        excludeItems: true,
++      },
++      { commandId: this.host.connection.mintCommandId() },
++    );
++    const envelope = result.session as Record<string, unknown> | undefined;
++    const childId = typeof envelope?.sessionId === "string" ? envelope.sessionId : undefined;
++    if (childId === undefined) throw new Error("session/fork returned no child session id");
++
++    await this.host.connection.command(
++      "session/leave",
++      { sessionId: childId, stop: true },
++      { commandId: this.host.connection.mintCommandId() },
++    );
++
++    // `session/leave` is admission-only; the runtime releases asynchronously.
++    // Resume retries until that release lands, then returns the forked history
++    // with the bridge and developer prompt attached.
++    const config = sessionConfig(this.bridgeServer, this.developerPrompt);
++    let resumed: Record<string, unknown> | undefined;
++    for (let attempt = 0; attempt < 20; attempt += 1) {
++      try {
++        resumed = await this.host.connection.command(
++          "session/resume",
++          {
++            sessionId: childId,
++            ...(this.sessionInfo.model === null ? {} : { modelId: this.sessionInfo.model }),
++            ...(config === undefined ? {} : { config }),
++          },
++          { commandId: this.host.connection.mintCommandId() },
++        );
++        break;
++      } catch (error) {
++        if (attempt === 19) throw error;
++        await new Promise<void>((resolve) => setTimeout(resolve, 50));
++      }
++    }
++    if (resumed === undefined) throw new Error("session/resume returned no fork envelope");
++    if (this.approvalMode !== undefined) {
++      // `session/resume` has no approval-mode member, and a fork starts on the
++      // host default. Re-select the source's mode so the child does not park on
++      // a Muse approval that opencode already decided.
++      await this.host.connection.command(
++        "session/setApprovalMode",
++        { sessionId: childId, mode: this.approvalMode },
++        { commandId: this.host.connection.mintCommandId() },
++      );
++    }
++
++    const childEnvelope = resumed.session as Record<string, unknown> | undefined;
++    const childModel =
++      typeof childEnvelope?.modelId === "string" ? childEnvelope.modelId : this.sessionInfo.model;
++    const createdAt =
++      typeof childEnvelope?.createdAt === "string" ? childEnvelope.createdAt : now();
++    const child = new MuseHarnessSession(
++      this.host,
++      {
++        sessionId: this.id,
++        cwd: this.cwd,
++        ...(childModel === null ? {} : { model: childModel }),
++        ...(this.approvalMode === undefined ? {} : { approvalMode: this.approvalMode }),
++        ...(this.developerPrompt === undefined ? {} : { developerPrompt: this.developerPrompt }),
++      },
++      childId,
++      createdAt,
++      this.toolBridge,
++      this.bridgeServer,
++      false,
++    );
++    // The child now owns the shared bridge; this session's close must not close
++    // the server the child is using.
++    this.ownsBridge = false;
++    child.ownsBridge = true;
++    this.host.registerSink(child);
++    return child;
++  }
++
+   /**
+    * Attach to an already-started native session without issuing `session/start`.
+    * Used by replay tests, which drive a recorded transcript through the
+@@ -336,6 +458,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+       { ...input, model },
+       nativeSessionId,
+       now(),
++      undefined,
++      undefined,
++      false,
+     );
+     host.registerSink(created);
+     return created;
+@@ -580,12 +705,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
+       this.updateSession("stopped");
+       this.closed = true;
+       this.bus.close();
+-      try {
+-        await this.toolBridge?.close?.();
+-      } catch {
+-        // Bridge cleanup is best-effort.
++      if (this.ownsBridge) {
++        try {
++          await this.toolBridge?.close?.();
++        } catch {
++          // Bridge cleanup is best-effort.
++        }
++        await this.bridgeServer?.close();
+       }
+-      await this.bridgeServer?.close();
+     })();
+     return this.closing;
+   }
+diff --git a/test/effort.test.ts b/test/effort.test.ts
+index 5f2438e..38d5b54 100644
+--- a/test/effort.test.ts
++++ b/test/effort.test.ts
+@@ -11,13 +11,11 @@ describe("resolveEffort", () => {
+     expect(resolveEffort(undefined, "")).toBeUndefined();
+   });
+ 
+-  test("default resolves the catalog's default effort", () => {
+-    expect(
+-      resolveEffort({ defaultEffort: "max", variants: ["low", "high", "max"] }, "default"),
+-    ).toBe("max");
+-  });
+-
+-  test("default without a catalog default stays undefined", () => {
++  test("default leaves the host default alone even when the catalog names one", () => {
++    const catalog = buildEffortCatalog([
++      { modelId: "muse-spark-1.3", defaultReasoningEffort: "max", variants: ["low", "high", "max"] },
++    ]);
++    expect(resolveEffort(catalog.get("muse-spark-1.3"), "default")).toBeUndefined();
+     expect(resolveEffort({ variants: ["low", "high"] }, "default")).toBeUndefined();
+   });
+ 
+@@ -29,8 +27,10 @@ describe("resolveEffort", () => {
+     expect(() => resolveEffort({ variants: ["low"] }, "turbo")).toThrow(UnsupportedEffortError);
+   });
+ 
+-  test("a known tier the model does not offer falls to its lowest offered", () => {
+-    expect(resolveEffort({ variants: ["medium", "high", "xhigh"] }, "ultra")).toBe("medium");
++  test("a known tier the model does not offer fails closed", () => {
++    expect(() => resolveEffort({ variants: ["medium", "high", "xhigh"] }, "ultra")).toThrow(
++      UnsupportedEffortError,
++    );
+   });
+ 
+   test("a model with no offered tiers fails closed", () => {
+@@ -40,7 +40,7 @@ describe("resolveEffort", () => {
+ });
+ 
+ describe("buildEffortCatalog", () => {
+-  test("reads modelId, default, and string or object variants", () => {
++  test("reads modelId and string or object variants, ignoring the catalog default", () => {
+     const catalog = buildEffortCatalog([
+       {
+         modelId: "muse-spark-1.3",
+@@ -51,10 +51,7 @@ describe("buildEffortCatalog", () => {
+       { displayLabel: "no id" },
+     ]);
+ 
+-    expect(catalog.get("muse-spark-1.3")).toEqual({
+-      defaultEffort: "max",
+-      variants: ["low", "high", "max"],
+-    });
++    expect(catalog.get("muse-spark-1.3")).toEqual({ variants: ["low", "high", "max"] });
+     expect(catalog.get("muse-ember-1.0")).toEqual({ variants: [] });
+     expect(catalog.size).toBe(2);
+   });
+diff --git a/test/host-config.test.ts b/test/host-config.test.ts
+index 095b307..af09ec6 100644
+--- a/test/host-config.test.ts
++++ b/test/host-config.test.ts
+@@ -7,6 +7,7 @@ import {
+   CONTROL_SYSTEM_PROMPT,
+   MUSE_REMINDERS,
+   collectSkillsOff,
++  collectSkillsOffReport,
+   userMuseConfigDir,
+   writeMuseHostConfig,
+   type HostConfigOptions,
+@@ -64,6 +65,7 @@ describe("host config", () => {
+         foreign_personal_skills: false,
+       });
+       expect(settings.skills).toBeUndefined();
++      expect(config.diagnostics.skills).toBe("empty");
+     } finally {
+       config.remove();
+     }
+@@ -103,6 +105,7 @@ describe("host config", () => {
+           project: { "/work/.muse/skills/two": "off" },
+         },
+       });
++      expect(config.diagnostics.skills).toBe("enumerated");
+     } finally {
+       config.remove();
+     }
+@@ -179,6 +182,13 @@ describe("host config", () => {
+     await expect(collectSkillsOff("definitely-not-a-muse-binary-xyz", {})).resolves.toEqual({});
+   });
+ 
++  test("a failed skill probe is reported instead of looking empty", async () => {
++    const report = await collectSkillsOffReport("definitely-not-a-muse-binary-xyz", {});
++    expect(report.off).toEqual({});
++    expect(report.status).toBe("failed");
++    expect(report.error).toBeTruthy();
++  });
++
+   test("resolves the real config dir per platform", () => {
+     expect(
+       userMuseConfigDir({ platform: "linux", homeDirectory: "/home/u", env: {} }),
+diff --git a/test/lifecycle.test.ts b/test/lifecycle.test.ts
+index a62c463..300d0f8 100644
+--- a/test/lifecycle.test.ts
++++ b/test/lifecycle.test.ts
+@@ -14,6 +14,12 @@ import {
+   type SessionHost,
+ } from "../src/index.js";
+ 
++const BRIDGE_TOOL = {
++  type: "function" as const,
++  name: "lookup",
++  inputSchema: { type: "object" },
++};
++
+ interface RecordedCommand {
+   method: string;
+   params: Record<string, unknown>;
+@@ -120,6 +126,35 @@ describe("MuseHarnessSession construction", () => {
+     await session.close();
+   });
+ 
++  test("start forwards a developer prompt in SessionConfig", async () => {
++    const { host, commands } = fakeHost({
++      "session/start": { session: { sessionId: "fresh-native", modelId: "muse-spark-1.3" } },
++    });
++    const session = await MuseHarnessSession.create(host, {
++      sessionId: "oc-start",
++      cwd: "/tmp",
++      developerPrompt: "Be terse.",
++    });
++    expect(commands[0]?.method).toBe("session/start");
++    expect(commands[0]?.params.config).toEqual({ developerPrompt: "Be terse." });
++    await session.close();
++  });
++
++  test("resume forwards a developer prompt in SessionConfig", async () => {
++    const { host, commands } = fakeHost({
++      "session/resume": { session: { sessionId: "source-native", modelId: "muse-spark-1.3" } },
++    });
++    const session = await MuseHarnessSession.create(host, {
++      sessionId: "oc-resume",
++      cwd: "/tmp",
++      resumeSessionId: "source-native",
++      developerPrompt: "Be terse.",
++    });
++    expect(commands[0]?.method).toBe("session/resume");
++    expect(commands[0]?.params.config).toEqual({ developerPrompt: "Be terse." });
++    await session.close();
++  });
++
+   test("a fresh start forwards the model", async () => {
+     const { host, commands } = fakeHost({
+       "session/start": { session: { sessionId: "fresh-native", modelId: "muse-spark-1.3" } },
+@@ -297,7 +332,7 @@ describe("LiveSession step settling", () => {
+     const request = (messages: unknown[]) =>
+       ({
+         prompt: messages,
+-        tools: [],
++        tools: [BRIDGE_TOOL],
+         headers: {
+           [HEADERS.kind]: "primary",
+           [HEADERS.session]: "oc",
+@@ -440,13 +475,13 @@ describe("reasoning effort", () => {
+     } as unknown as MuseHarnessAdapter;
+     const registry = new MuseSessionRegistry(adapter);
+     const efforts = new Map([
+-      ["muse-spark-1.3", { defaultEffort: "max", variants: ["low", "medium", "high", "max"] }],
++      ["muse-spark-1.3", { variants: ["low", "medium", "high", "max"] }],
+     ]);
+     const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
+     const request = (variant: string, messages: unknown[]) =>
+       ({
+         prompt: messages,
+-        tools: [],
++        tools: [BRIDGE_TOOL],
+         headers: {
+           [HEADERS.kind]: "primary",
+           [HEADERS.session]: "oc",
+@@ -472,6 +507,264 @@ describe("reasoning effort", () => {
+     await first.stream.cancel();
+     await second.stream.cancel();
+   });
++
++  test("default omits reasoningEffort when the catalog names one", async () => {
++    const { host, commands } = fakeHost({ "turn/start": { turnId: "native-turn" } });
++    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
++    const adapter = {
++      listModels: async () => [],
++      openSession: async () => session,
++    } as unknown as MuseHarnessAdapter;
++    const registry = new MuseSessionRegistry(adapter);
++    const efforts = new Map([
++      ["muse-spark-1.3", { variants: ["low", "medium", "high", "max"] }],
++    ]);
++    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
++    const request = {
++      prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
++      tools: [BRIDGE_TOOL],
++      headers: {
++        [HEADERS.kind]: "primary",
++        [HEADERS.session]: "oc",
++        [HEADERS.directory]: "/tmp",
++        [HEADERS.variant]: "default",
++      },
++    } as unknown as LanguageModelV3CallOptions;
++
++    const stream = await model.doStream(request);
++    const start = commands.find((entry) => entry.method === "turn/start");
++    expect(start?.params).not.toHaveProperty("reasoningEffort");
++    await stream.stream.cancel();
++  });
++});
++
++describe("fork boundary", () => {
++  test("chooses the newest completed turn fully inside the common prefix", async () => {
++    const { host } = fakeHost();
++    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
++    const live = new LiveSession("oc", session);
++    try {
++      live.setTranscriptFingerprints(["u1", "a1", "u2", "a2"]);
++      live.promptLength = 4;
++      live.recordTurnStart("turn-1", 0, 0);
++      live.markTurnCompleted();
++      live.recordTurnStart("turn-2", 2, 2);
++      live.markTurnCompleted();
++
++      expect(live.forkPoint(2)).toMatchObject({
++        nativeTurnId: "turn-1",
++        promptLength: 2,
++        fingerprintLength: 2,
++        turnIndex: 0,
++      });
++      expect(live.forkPoint(1)).toBeUndefined();
++    } finally {
++      await live.close();
++    }
++  });
++
++  test("a diverged prompt forks only after a completed turn and seeds the suffix", async () => {
++    const { host, commands } = fakeHost({
++      "turn/start": { turnId: "native-turn" },
++      "session/fork": { session: { sessionId: "child-native" } },
++      "session/leave": { status: "accepted" },
++      "session/resume": { session: { sessionId: "child-native", modelId: "muse-spark-1.3" } },
++    });
++    const source = MuseHarnessSession.fromNativeSession(
++      host,
++      { sessionId: "oc", cwd: "/tmp", model: "muse-spark-1.3" },
++      "source-native",
++      "muse-spark-1.3",
++    );
++    const adapter = {
++      listModels: async () => [],
++      openSession: async () => source,
++    } as unknown as MuseHarnessAdapter;
++    const registry = new MuseSessionRegistry(adapter);
++    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
++    const request = (messages: unknown[]) =>
++      ({
++        prompt: messages,
++        tools: [BRIDGE_TOOL],
++        headers: {
++          [HEADERS.kind]: "primary",
++          [HEADERS.session]: "oc",
++          [HEADERS.directory]: "/tmp",
++        },
++      }) as unknown as LanguageModelV3CallOptions;
++    const complete = () =>
++      source.handleNotification({
++        method: "turn/completed",
++        params: { turnId: "native-turn", sessionId: "source-native", terminal: "completed" },
++      } as MuseNotification);
++
++    const first = await model.doStream(
++      request([{ role: "user", content: [{ type: "text", text: "one" }] }]),
++    );
++    complete();
++    const second = await model.doStream(
++      request([
++        { role: "user", content: [{ type: "text", text: "one" }] },
++        { role: "assistant", content: [{ type: "text", text: "a1" }] },
++        { role: "user", content: [{ type: "text", text: "two" }] },
++      ]),
++    );
++    complete();
++    const third = await model.doStream(
++      request([
++        { role: "user", content: [{ type: "text", text: "one" }] },
++        { role: "assistant", content: [{ type: "text", text: "a1" }] },
++        { role: "user", content: [{ type: "text", text: "two changed" }] },
++      ]),
++    );
++
++    const fork = commands.find((entry) => entry.method === "session/fork");
++    expect(fork?.params).toMatchObject({
++      sessionId: "source-native",
++      cutPoint: { lastTurnId: "native-turn" },
++    });
++    const childStart = commands.filter((entry) => entry.method === "turn/start").at(-1);
++    expect(childStart?.params.sessionId).toBe("child-native");
++    expect(childStart?.params.input).toEqual([{ type: "text", text: "two changed" }]);
++
++    await first.stream.cancel();
++    await second.stream.cancel();
++    await third.stream.cancel();
++    await registry.closeAll();
++  });
++
++  test("forkAt leaves the source usable and resumes the child with its config", async () => {
++    const { host, commands } = fakeHost({
++      "session/fork": { session: { sessionId: "child-native" } },
++      "session/leave": { status: "accepted" },
++      "session/resume": {
++        session: { sessionId: "child-native", modelId: "muse-spark-1.3", createdAt: "2026-11-19T00:00:00Z" },
++      },
++      "session/setApprovalMode": { status: "accepted" },
++    });
++    const source = MuseHarnessSession.fromNativeSession(
++      host,
++      {
++        sessionId: "oc",
++        cwd: "/tmp",
++        model: "muse-spark-1.3",
++        developerPrompt: "Be terse.",
++        approvalMode: "allowAll",
++      },
++      "source-native",
++      "muse-spark-1.3",
++    );
++    const child = await source.forkAt({ lastTurnId: "turn-1" });
++    try {
++      expect(commands.map((entry) => entry.method)).toEqual([
++        "session/fork",
++        "session/leave",
++        "session/resume",
++        "session/setApprovalMode",
++      ]);
++      expect(commands[0]?.params).toMatchObject({
++        sessionId: "source-native",
++        cutPoint: { lastTurnId: "turn-1" },
++        excludeItems: true,
++      });
++      expect(commands[1]?.params).toMatchObject({ sessionId: "child-native", stop: true });
++      expect(commands[2]?.params).toMatchObject({
++        sessionId: "child-native",
++        modelId: "muse-spark-1.3",
++        config: { developerPrompt: "Be terse." },
++      });
++      expect(commands[3]?.params).toMatchObject({ sessionId: "child-native", mode: "allowAll" });
++      expect(child.nativeSessionId).toBe("child-native");
++      expect(source.nativeSessionId).toBe("source-native");
++    } finally {
++      await child.close();
++      await source.close();
++    }
++  });
++});
++
++describe("developer prompt", () => {
++  test("the first turn does not repeat a prompt Muse already holds", async () => {
++    const { host, commands } = fakeHost({ "turn/start": { turnId: "native-turn" } });
++    const session = MuseHarnessSession.fromNativeSession(
++      host,
++      { sessionId: "oc", cwd: "/tmp", model: "muse-spark-1.3" },
++      "native",
++      "muse-spark-1.3",
++    );
++    const opened: Array<Record<string, unknown>> = [];
++    const adapter = {
++      listModels: async () => [],
++      openSession: async (input: Record<string, unknown>) => {
++        opened.push(input);
++        return session;
++      },
++    } as unknown as MuseHarnessAdapter;
++    const registry = new MuseSessionRegistry(adapter);
++    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
++    const request = {
++      prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
++      tools: [BRIDGE_TOOL],
++      providerOptions: { muse: { museAgent: "Be terse." } },
++      headers: {
++        [HEADERS.kind]: "primary",
++        [HEADERS.session]: "oc",
++        [HEADERS.directory]: "/tmp",
++      },
++    } as unknown as LanguageModelV3CallOptions;
++
++    const stream = await model.doStream(request);
++    expect(opened[0]?.developerPrompt).toBe("Be terse.");
++    const start = commands.find((entry) => entry.method === "turn/start");
++    expect(start?.params.input).toEqual([{ type: "text", text: "first" }]);
++    await stream.stream.cancel();
++  });
++
++  test("a changed prompt travels in the next user turn", async () => {
++    const { host } = fakeHost({ "turn/start": { turnId: "native-turn" } });
++    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
++    const live = new LiveSession("oc", session, { current: [] }, "Be terse.");
++    try {
++      expect(live.prependPreamble("Be terse.")).toBe(false);
++      expect(live.prependPreamble("Be thorough.")).toBe(true);
++      expect(live.prependPreamble("Be thorough.")).toBe(false);
++    } finally {
++      await live.close();
++    }
++  });
++});
++
++describe("empty bridge preflight", () => {
++  test("a primary request with no tools fails before opening a session", async () => {
++    let opened = false;
++    const adapter = {
++      listModels: async () => [],
++      openSession: async () => {
++        opened = true;
++        return MuseHarnessSession.fromNativeSession(
++          fakeHost().host,
++          { sessionId: "oc", cwd: "/tmp" },
++          "native",
++        );
++      },
++    } as unknown as MuseHarnessAdapter;
++    const registry = new MuseSessionRegistry(adapter);
++    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
++    const request = {
++      prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
++      tools: [],
++      headers: {
++        [HEADERS.kind]: "primary",
++        [HEADERS.session]: "oc",
++        [HEADERS.directory]: "/tmp",
++      },
++    } as unknown as LanguageModelV3CallOptions;
++
++    await expect(model.doStream(request)).rejects.toThrow(
++      "The Muse bridge has no tools; enable at least one tool or run without the bridge.",
++    );
++    expect(opened).toBe(false);
++  });
+ });
+ 
+ describe("transcript reconciliation", () => {
+@@ -503,7 +796,7 @@ describe("transcript reconciliation", () => {
+     const request = (messages: unknown[]) =>
+       ({
+         prompt: messages,
+-        tools: [],
++        tools: [BRIDGE_TOOL],
+         headers: {
+           [HEADERS.kind]: "primary",
+           [HEADERS.session]: "oc",

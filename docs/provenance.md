@@ -11,10 +11,10 @@ byte for byte by the base tree recorded below plus patches 1 and 2.
    the published `dist/`: 84 files, zero differences.
 3. The two patch files in `evidence/` regenerate the patched files from upstream's.
 
-This repository's current tree adds patch 3 (containment) and patch 4
-(harness-owned context), which no published tarball carries. Its build is
-recorded separately below; the 0.1.9 identity check above applies to the tree
-before those patches.
+This repository's current tree adds patch 3 (containment), patch 4
+(harness-owned context), and patch 5 (effort, prompt, and fork boundaries),
+which no published tarball carries. Its build is recorded separately below; the
+0.1.9 identity check above applies to the tree before those patches.
 
 ## Canonical build hash
 
@@ -30,10 +30,10 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-Current tree (base + patches 1-4), not published:
+Current tree (base + patches 1-5), not published:
 
 ```text
-f948d90eaf91a66fb0db589d121313ec8447e55ba62837a56c6e1950c69a61ba
+327a5a89235edf56dbe469a15d94f9f97d4733bdb0ff066e5a55eed7f78edb51
 ```
 
 100 files. `bash scripts/repro.sh` checks the current tree against this hash.
@@ -48,6 +48,7 @@ f948d90eaf91a66fb0db589d121313ec8447e55ba62837a56c6e1950c69a61ba
 | Patch 2 (`session-registry.ts`) | sha256 `f8099ba5be47c5b0e1f7f10d35bfb24a0731f8e9a985202dc7847ef6ceca8616` |
 | Patch 3 (containment) | sha256 `8a875580a279a8b963fc1962b9645e7840e0582b7058ac2f228ef33a900a5956` |
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
+| Patch 5 (effort, prompt, and fork boundaries) | sha256 `2985504b5c714ad6068fe573cdbb7ba355c7d07b3f1924038bb2dc4b2435ec10` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
 | Dependency graph | `package-lock.json`, 275 packages |
 
@@ -110,15 +111,42 @@ Patch 4 makes opencode own the context around the model, and is also unpublished
 - `src/fingerprint.ts`, `src/session-registry.ts`, `src/language-model.ts`: fingerprints
   the visible user/assistant transcript, persists it per opencode session, and
   classifies a prompt as `same`, `compacted`, or `diverged`. A rewrite recycles the
-  native session and reseeds; fork-at-boundary remains deferred.
+  native session and reseeds; fork-at-boundary was still deferred in this patch.
 - `src/session.ts`: bridge sessions default to `approvalMode: "allowAll"`, because
   opencode's permission evaluation is the only fence and a second Muse prompt would
   double-ask.
+
+Patch 5 finishes the boundaries left open by patch 4:
+
+- `src/effort.ts`: `"default"` omits `reasoningEffort` instead of guessing the
+  catalog default; a known tier the model does not offer now fails closed instead of
+  falling to its lowest tier; the unused catalog default field is gone.
+- `src/language-model.ts`: a primary request with no bridge tools fails with an
+  actionable error before `session/start`, because Muse's `run.toolset` wildcard
+  cannot resolve zero tools. It also records completed-turn boundaries and forks a
+  `diverged` transcript at the newest completed turn wholly inside the common prefix;
+  `compacted` still reseeds.
+- `src/session.ts`, `src/adapter.ts`, `src/session-registry.ts`: carries
+  `museAgent` + `museInstructions` as `SessionConfig.developerPrompt` on start and
+  resume, so the first user turn is not prefixed; adds `session/fork`, releases the
+  fresh child and resumes it with the source's bridge and developer prompt, and
+  transfers bridge ownership so retiring the source does not kill the child.
+- `src/host-config.ts`, `src/plugin.ts`: reports whether skill enumeration was
+  enumerated, empty, or failed, and warns when the control prompt is the only
+  remaining skill fence.
 
 The containment behavior was measured on Muse CLI 1.4.23 before it was written:
 `run.toolset` is honoured only from `settings.json`, `-c run.toolset=…` and `[]` are
 ignored, and `preset: "empty"` leaves the user's own Muse MCP servers live. The
 experiment rows are in `scratch/toolset-results.md`, which is not committed.
+
+Patch 5's live probes used the same CLI. `config.developerPrompt` was accepted on
+`session/start` and `session/resume`, and the model followed it. A `session/fork` at a
+completed turn created a child that failed its first turn with the bridge wildcard
+unresolved; leaving the fresh child (`stop: true`) and resuming it with the source's
+`config` reattached the bridge and preserved the forked history. The production
+implementation does that release/resume step and retires the source before the child's
+first turn; a live smoke completed the child turn after the source was closed.
 
 ## What this does not prove
 

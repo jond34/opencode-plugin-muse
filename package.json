@@ -1,7 +1,7 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
   "version": "0.1.12",
-  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with four patches.",
+  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with five patches.",
   "license": "MIT",
   "repository": {
     "type": "git",

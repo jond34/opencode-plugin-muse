@@ -4,11 +4,12 @@ Most of the code here is the npm package
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 (MIT, "Copyright (c) 2026 The opencode-muse authors"), published by the npm user
 `rasyid_rafi`. The adapter, provider, session registry, tool bridge, and test suite come
-from it; this repository adds four patches and the record describing them. The first
+from it; this repository adds five patches and the record describing them. The first
 two reconcile the base tree with the published 0.1.9 tarball; the third contains Muse
-to inference and the fourth makes opencode own the context (effort, titles,
-compaction, transcript reconciliation, and approvals). Neither has a published
-counterpart yet.
+to inference, the fourth makes opencode own the context (effort, titles, compaction,
+transcript reconciliation, and approvals), and the fifth finishes the effort,
+developer-prompt, empty-toolset, and fork boundaries. None of the last three has a
+published counterpart yet.
 
 Credit stops at the npm publisher on purpose. A GitHub repository presents itself as the
 source of that package, nothing public connects it to the npm account, so it is not
@@ -39,8 +40,8 @@ If upstream ships these fixes, use upstream's.
 
 `edb5d52f9fa6e9571cc5741bb5f3c996e63996a7` (2026-11-15T12:02:37Z, "Name contributor
 models the way models.dev does"). The base tree plus patches 1 and 2 rebuilds the 0.1.9
-tarball byte for byte; patches 3 and 4 add containment and harness-owned context on
-top and are not in that tarball. The patches and their evidence are in
+tarball byte for byte; patches 3 through 5 add containment, harness-owned context, and
+their boundaries on top and are not in that tarball. The patches and their evidence are in
 `docs/provenance.md` and `evidence/`.
 
 That commit is asserted here, not certified upstream. `docs/provenance.md` says what the
