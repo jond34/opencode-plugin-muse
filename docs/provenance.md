@@ -141,9 +141,9 @@ Patch 5's live probes used the same CLI. `config.developerPrompt` was accepted o
 `session/start` and `session/resume`, and the model followed it. A native
 `session/fork` at a completed turn could be made to work by leaving the fresh child
 (`stop: true`) and resuming it with the source's `config`, but the token measurement in
-`evidence/measurements.md` showed 2x the fresh input and 1.4x the total input of a
-reseed in all four production-shaped reps. The fork path was removed; rewritten
-histories reseed.
+`evidence/measurements.md` showed 2.4x the fresh input and 1.9x the total input of a
+reseed in all five production-shaped reps, and 2.7x / 1.9x in a tool-call workload.
+The fork path was removed; rewritten histories reseed.
 
 ## What this does not prove
 
