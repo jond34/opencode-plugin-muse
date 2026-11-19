@@ -9,8 +9,8 @@ Tested with Muse CLI 1.4.23 and opencode 2.3.2. Republished build of
 with five patches: [`CREDITS.md`](CREDITS.md) has the diffs, `docs/provenance.md` the
 build hash and what it does and does not prove. The first two reconcile the published
 0.1.9 tarball; the third contains Muse to inference, the fourth makes opencode own
-the context, and the fifth finishes the effort, prompt, and fork boundaries. None of
-the last three is published yet.
+the context, and the fifth finishes the effort, prompt, and rewritten-history
+boundaries. None of the last three is published yet.
 
 Not affiliated with Meta or opencode. Best-effort maintenance by one person, with no
 support commitment.
@@ -34,8 +34,8 @@ support commitment.
 - maps opencode's reasoning-effort variants to Muse's per-turn effort (`default` omits
   the field), and answers titles and compaction locally instead of spending a Muse turn
 - starts Muse with its skills, observer reminders, workflow triggers, and context
-  messages off, then forks a diverged transcript at a completed turn instead of
-  reseeding; compaction still reseeds
+  messages off, then reseeds a rewritten transcript from the full prompt; a native
+  fork measured 2.4x the fresh input of a reseed, so the plugin does not fork
 
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a subscription
 covers requests that client makes, and `api.meta.ai` refuses requests carrying a
@@ -90,9 +90,9 @@ adds patches 3 through 5, so its hash differs.
 npm run check:offline   # typecheck plus the offline test suite
 ```
 
-`npm run check:offline` runs 78 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 75 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment`, `fork-live`, `model-live`,
-`conformance`, `restart-live`) that spawn a real `muse serve` host: 85 tests in total,
+`conformance`, `restart-live`) that spawn a real `muse serve` host: 82 tests in total,
 all needing a logged-in Muse Code CLI. One reuses a tool result on the next turn;
 another resumes a session after its host has been restarted; `containment` proves the
 host sees only bridge tools.

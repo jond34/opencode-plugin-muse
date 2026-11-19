@@ -12,9 +12,9 @@ byte for byte by the base tree recorded below plus patches 1 and 2.
 3. The two patch files in `evidence/` regenerate the patched files from upstream's.
 
 This repository's current tree adds patch 3 (containment), patch 4
-(harness-owned context), and patch 5 (effort, prompt, and fork boundaries),
-which no published tarball carries. Its build is recorded separately below; the
-0.1.9 identity check above applies to the tree before those patches.
+(harness-owned context), and patch 5 (effort, prompt, and rewritten-history
+boundaries), which no published tarball carries. Its build is recorded separately
+below; the 0.1.9 identity check above applies to the tree before those patches.
 
 ## Canonical build hash
 
@@ -33,7 +33,7 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 Current tree (base + patches 1-5), not published:
 
 ```text
-327a5a89235edf56dbe469a15d94f9f97d4733bdb0ff066e5a55eed7f78edb51
+d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 ```
 
 100 files. `bash scripts/repro.sh` checks the current tree against this hash.
@@ -48,7 +48,7 @@ Current tree (base + patches 1-5), not published:
 | Patch 2 (`session-registry.ts`) | sha256 `f8099ba5be47c5b0e1f7f10d35bfb24a0731f8e9a985202dc7847ef6ceca8616` |
 | Patch 3 (containment) | sha256 `8a875580a279a8b963fc1962b9645e7840e0582b7058ac2f228ef33a900a5956` |
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
-| Patch 5 (effort, prompt, and fork boundaries) | sha256 `2985504b5c714ad6068fe573cdbb7ba355c7d07b3f1924038bb2dc4b2435ec10` |
+| Patch 5 (effort, prompt, and rewritten-history boundaries) | sha256 `8283f7f5f9b168230d9085f3cc7834971c7e1d3237ac97f40fc9c545bba74fdd` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
 | Dependency graph | `package-lock.json`, 275 packages |
 
@@ -123,14 +123,11 @@ Patch 5 finishes the boundaries left open by patch 4:
   falling to its lowest tier; the unused catalog default field is gone.
 - `src/language-model.ts`: a primary request with no bridge tools fails with an
   actionable error before `session/start`, because Muse's `run.toolset` wildcard
-  cannot resolve zero tools. It also records completed-turn boundaries and forks a
-  `diverged` transcript at the newest completed turn wholly inside the common prefix;
-  `compacted` still reseeds.
+  cannot resolve zero tools. A `diverged` or `compacted` transcript still retires the
+  native session and reseeds from the full prompt.
 - `src/session.ts`, `src/adapter.ts`, `src/session-registry.ts`: carries
   `museAgent` + `museInstructions` as `SessionConfig.developerPrompt` on start and
-  resume, so the first user turn is not prefixed; adds `session/fork`, releases the
-  fresh child and resumes it with the source's bridge and developer prompt, and
-  transfers bridge ownership so retiring the source does not kill the child.
+  resume, so the first user turn is not prefixed.
 - `src/host-config.ts`, `src/plugin.ts`: reports whether skill enumeration was
   enumerated, empty, or failed, and warns when the control prompt is the only
   remaining skill fence.
@@ -141,12 +138,11 @@ ignored, and `preset: "empty"` leaves the user's own Muse MCP servers live. The
 experiment rows are in `scratch/toolset-results.md`, which is not committed.
 
 Patch 5's live probes used the same CLI. `config.developerPrompt` was accepted on
-`session/start` and `session/resume`, and the model followed it. A `session/fork` at a
-completed turn created a child that failed its first turn with the bridge wildcard
-unresolved; leaving the fresh child (`stop: true`) and resuming it with the source's
-`config` reattached the bridge and preserved the forked history. The production
-implementation does that release/resume step and retires the source before the child's
-first turn; a live smoke completed the child turn after the source was closed.
+`session/start` and `session/resume`, and the model followed it. A native
+`session/fork` at a completed turn could be made to work by leaving the fresh child
+(`stop: true`) and resuming it with the source's `config`, but the token measurement in
+`evidence/measurements.md` showed 2.4x the fresh input and 1.7x the total input of a
+reseed in all four reps. The fork path was removed; rewritten histories reseed.
 
 ## What this does not prove
 
