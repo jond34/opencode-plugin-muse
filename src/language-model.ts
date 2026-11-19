@@ -124,6 +124,16 @@ export class MuseLanguageModel implements LanguageModelV3 {
     if (typeof sessionID !== "string" || sessionID.length === 0) {
       throw new Error("Muse model request is missing the session header");
     }
+    if (toolDefs.length === 0) {
+      // Muse validates `run.toolset` before the turn starts, and the private
+      // host config pins it to the bridge namespace. With no bridge tools that
+      // wildcard cannot resolve, so the turn would fail with an opaque
+      // `unknown tool` error. Fail here with something actionable instead of
+      // inventing a no-op tool to satisfy the wildcard.
+      throw new Error(
+        "The Muse bridge has no tools; enable at least one tool or run without the bridge.",
+      );
+    }
 
     // Titles and other utility requests carry no tools; they must not clear
     // the list a primary step is using on the same session.

@@ -14,6 +14,12 @@ import {
   type SessionHost,
 } from "../src/index.js";
 
+const BRIDGE_TOOL = {
+  type: "function" as const,
+  name: "lookup",
+  inputSchema: { type: "object" },
+};
+
 interface RecordedCommand {
   method: string;
   params: Record<string, unknown>;
@@ -297,7 +303,7 @@ describe("LiveSession step settling", () => {
     const request = (messages: unknown[]) =>
       ({
         prompt: messages,
-        tools: [],
+        tools: [BRIDGE_TOOL],
         headers: {
           [HEADERS.kind]: "primary",
           [HEADERS.session]: "oc",
@@ -446,7 +452,7 @@ describe("reasoning effort", () => {
     const request = (variant: string, messages: unknown[]) =>
       ({
         prompt: messages,
-        tools: [],
+        tools: [BRIDGE_TOOL],
         headers: {
           [HEADERS.kind]: "primary",
           [HEADERS.session]: "oc",
@@ -487,7 +493,7 @@ describe("reasoning effort", () => {
     const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
     const request = {
       prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
-      tools: [],
+      tools: [BRIDGE_TOOL],
       headers: {
         [HEADERS.kind]: "primary",
         [HEADERS.session]: "oc",
@@ -500,6 +506,39 @@ describe("reasoning effort", () => {
     const start = commands.find((entry) => entry.method === "turn/start");
     expect(start?.params).not.toHaveProperty("reasoningEffort");
     await stream.stream.cancel();
+  });
+});
+
+describe("empty bridge preflight", () => {
+  test("a primary request with no tools fails before opening a session", async () => {
+    let opened = false;
+    const adapter = {
+      listModels: async () => [],
+      openSession: async () => {
+        opened = true;
+        return MuseHarnessSession.fromNativeSession(
+          fakeHost().host,
+          { sessionId: "oc", cwd: "/tmp" },
+          "native",
+        );
+      },
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+    const request = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      tools: [],
+      headers: {
+        [HEADERS.kind]: "primary",
+        [HEADERS.session]: "oc",
+        [HEADERS.directory]: "/tmp",
+      },
+    } as unknown as LanguageModelV3CallOptions;
+
+    await expect(model.doStream(request)).rejects.toThrow(
+      "The Muse bridge has no tools; enable at least one tool or run without the bridge.",
+    );
+    expect(opened).toBe(false);
   });
 });
 
@@ -532,7 +571,7 @@ describe("transcript reconciliation", () => {
     const request = (messages: unknown[]) =>
       ({
         prompt: messages,
-        tools: [],
+        tools: [BRIDGE_TOOL],
         headers: {
           [HEADERS.kind]: "primary",
           [HEADERS.session]: "oc",
