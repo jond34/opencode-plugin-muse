@@ -100,6 +100,7 @@ export class LiveSession {
   private terminalError: Error | null = null;
   private preamble = "";
   private preambleSent = false;
+  private readonly nativeDeveloperPrompt: boolean;
   private fresh = true;
   private model: string | null;
   private fullSeed = false;
@@ -125,10 +126,17 @@ export class LiveSession {
     return value;
   }
 
-  /** Prepend the agent role/instructions once, and again when they change. */
+  /**
+   * Prepend the agent role/instructions once, and again when they change.
+   *
+   * A session created with `developerPrompt` already carries the first value
+   * natively, so the first turn must not repeat it. A later, different value
+   * still travels in the next user turn; Muse has no per-session mutation for
+   * that field.
+   */
   prependPreamble(preamble: string): boolean {
     if (preamble.length === 0) return false;
-    if (this.preambleSent && this.preamble === preamble) return false;
+    if (this.preamble === preamble && (this.preambleSent || this.nativeDeveloperPrompt)) return false;
     this.preamble = preamble;
     this.preambleSent = true;
     return true;
@@ -138,10 +146,14 @@ export class LiveSession {
     openCodeSessionId: string,
     muse: MuseHarnessSession,
     private readonly toolsRef: { current: ToolDefinition[] } = { current: [] },
+    developerPrompt = "",
   ) {
     this.openCodeSessionId = openCodeSessionId;
     this.muse = muse;
     this.model = muse.info.model;
+    const initial = developerPrompt.trim();
+    this.preamble = initial;
+    this.nativeDeveloperPrompt = initial.length > 0;
     void this.pump();
   }
 
@@ -521,6 +533,11 @@ export class MuseSessionRegistry {
      * Omitted for utility requests, which must leave the live list alone.
      */
     tools?: ReadonlyArray<ToolDefinition>,
+    /**
+     * Agent role and instructions for a session this call creates. An existing
+     * session keeps its native prompt; a changed value travels in the next turn.
+     */
+    developerPrompt?: string,
   ): Promise<LiveSession> {
     const existing = this.sessions.get(openCodeSessionId);
     if (existing) {
@@ -558,9 +575,12 @@ export class MuseSessionRegistry {
       cwd,
       ...(model === undefined ? {} : { model }),
       ...(own !== undefined ? { resumeSessionId: own } : {}),
+      ...(developerPrompt === undefined || developerPrompt.trim().length === 0
+        ? {}
+        : { developerPrompt }),
       toolBridge: bridge,
     });
-    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef);
+    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession, toolsRef, developerPrompt);
     if (seedFull) live.requestFullSeed();
     const transcript = parseFingerprints(await this.store?.get(`${openCodeSessionId}:transcript`));
     const compactions = parseFingerprints(await this.store?.get(`${openCodeSessionId}:compaction`));

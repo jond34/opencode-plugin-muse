@@ -135,10 +135,25 @@ export class MuseLanguageModel implements LanguageModelV3 {
       );
     }
 
+    const providerOptions = options.providerOptions?.[this.providerOptionKey] as
+      | Record<string, unknown>
+      | undefined;
+    const agent = typeof providerOptions?.[AGENT_OPTION] === "string" ? providerOptions[AGENT_OPTION] : "";
+    const instructions =
+      typeof providerOptions?.[INSTRUCTIONS_OPTION] === "string" ? providerOptions[INSTRUCTIONS_OPTION] : "";
+    const preamble = [agent, instructions].filter((text) => text.length > 0).join("\n\n");
+
     // Titles and other utility requests carry no tools; they must not clear
     // the list a primary step is using on the same session.
     const sessionTools = kind === "primary" ? toolDefs : undefined;
-    let live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
+    let live = await this.registry.get(
+      sessionID,
+      directory,
+      forkSource,
+      this.modelId,
+      sessionTools,
+      preamble,
+    );
     let reseed = false;
     const fingerprints = fingerprintTranscript(options.prompt);
     const verdict = reconcileTranscript(
@@ -154,7 +169,14 @@ export class MuseLanguageModel implements LanguageModelV3 {
       // `stop: true` is what makes the old native id unusable; a plain resume
       // would keep the stale transcript.
       await this.registry.close(sessionID);
-      live = await this.registry.get(sessionID, directory, forkSource, this.modelId, sessionTools);
+      live = await this.registry.get(
+        sessionID,
+        directory,
+        forkSource,
+        this.modelId,
+        sessionTools,
+        preamble,
+      );
       reseed = true;
     }
     if (live.isFresh) {
@@ -199,13 +221,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
         }
       }
       if (!live.hasActiveTurn) {
-        const providerOptions = options.providerOptions?.[this.providerOptionKey] as
-          | Record<string, unknown>
-          | undefined;
-        const agent = typeof providerOptions?.[AGENT_OPTION] === "string" ? providerOptions[AGENT_OPTION] : "";
-        const instructions =
-          typeof providerOptions?.[INSTRUCTIONS_OPTION] === "string" ? providerOptions[INSTRUCTIONS_OPTION] : "";
-        const preamble = [agent, instructions].filter((text) => text.length > 0).join("\n\n");
         // After a history rewrite the fresh native session has seen nothing,
         // so seed it with the whole condensed conversation, not just the
         // delta. A forked session is in the same position on its first turn.

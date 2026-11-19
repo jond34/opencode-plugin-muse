@@ -180,6 +180,12 @@ export interface CreateSessionInput {
   readonly approvalMode?: string;
   /** Native Muse session id to resume instead of starting a new session. */
   readonly resumeSessionId?: string;
+  /**
+   * Developer instructions for this session only. Muse trims the text; a
+   * nonblank value replaces the settings-derived developer context, including
+   * the agent catalog and memory snapshot.
+   */
+  readonly developerPrompt?: string;
 }
 
 /**
@@ -249,18 +255,31 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const bridgeServer = input.toolBridge
       ? await startToolBridgeServer(input.toolBridge)
       : undefined;
-    const config = bridgeServer
-      ? {
-          mcpServers: {
-            [BRIDGE_MCP_SERVER_NAME]: {
-              transport: "streamableHttp",
-              url: bridgeServer.url,
-              headers: { Authorization: `Bearer ${bridgeServer.token}` },
-              mode: "required",
-            },
-          },
-        }
-      : undefined;
+    // `SessionConfig` is open: `mcpServers` and `developerPrompt` share it on
+    // both start and resume. A blank developer prompt is the explicit clear and
+    // would disable Muse's suppressible developer context, so only nonblank
+    // text is forwarded.
+    const developerPrompt = input.developerPrompt?.trim();
+    const config =
+      bridgeServer !== undefined || (developerPrompt !== undefined && developerPrompt.length > 0)
+        ? {
+            ...(bridgeServer === undefined
+              ? {}
+              : {
+                  mcpServers: {
+                    [BRIDGE_MCP_SERVER_NAME]: {
+                      transport: "streamableHttp",
+                      url: bridgeServer.url,
+                      headers: { Authorization: `Bearer ${bridgeServer.token}` },
+                      mode: "required",
+                    },
+                  },
+                }),
+            ...(developerPrompt === undefined || developerPrompt.length === 0
+              ? {}
+              : { developerPrompt }),
+          }
+        : undefined;
 
     // A bridge session is driven by opencode, whose permission evaluation is
     // the only fence. Asking Muse as well would double-ask, and a parked Muse

@@ -20,6 +20,8 @@ export interface MuseAdapterOptions {
 export interface MuseOpenSessionInput extends OpenSessionInput {
   /** Native Muse session id to resume instead of starting a new session. */
   readonly resumeSessionId?: string;
+  /** Per-session developer instructions, forwarded to `SessionConfig`. */
+  readonly developerPrompt?: string;
 }
 
 /**
@@ -65,6 +67,7 @@ export class MuseHarnessAdapter implements HarnessAdapter {
       ...(input.toolBridge === undefined ? {} : { toolBridge: input.toolBridge }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       ...(input.resumeSessionId === undefined ? {} : { resumeSessionId: input.resumeSessionId }),
+      ...(input.developerPrompt === undefined ? {} : { developerPrompt: input.developerPrompt }),
     };
     return MuseHarnessSession.create(host, createInput);
   }

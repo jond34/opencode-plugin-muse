@@ -126,6 +126,35 @@ describe("MuseHarnessSession construction", () => {
     await session.close();
   });
 
+  test("start forwards a developer prompt in SessionConfig", async () => {
+    const { host, commands } = fakeHost({
+      "session/start": { session: { sessionId: "fresh-native", modelId: "muse-spark-1.3" } },
+    });
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc-start",
+      cwd: "/tmp",
+      developerPrompt: "Be terse.",
+    });
+    expect(commands[0]?.method).toBe("session/start");
+    expect(commands[0]?.params.config).toEqual({ developerPrompt: "Be terse." });
+    await session.close();
+  });
+
+  test("resume forwards a developer prompt in SessionConfig", async () => {
+    const { host, commands } = fakeHost({
+      "session/resume": { session: { sessionId: "source-native", modelId: "muse-spark-1.3" } },
+    });
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc-resume",
+      cwd: "/tmp",
+      resumeSessionId: "source-native",
+      developerPrompt: "Be terse.",
+    });
+    expect(commands[0]?.method).toBe("session/resume");
+    expect(commands[0]?.params.config).toEqual({ developerPrompt: "Be terse." });
+    await session.close();
+  });
+
   test("a fresh start forwards the model", async () => {
     const { host, commands } = fakeHost({
       "session/start": { session: { sessionId: "fresh-native", modelId: "muse-spark-1.3" } },
@@ -506,6 +535,57 @@ describe("reasoning effort", () => {
     const start = commands.find((entry) => entry.method === "turn/start");
     expect(start?.params).not.toHaveProperty("reasoningEffort");
     await stream.stream.cancel();
+  });
+});
+
+describe("developer prompt", () => {
+  test("the first turn does not repeat a prompt Muse already holds", async () => {
+    const { host, commands } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp", model: "muse-spark-1.3" },
+      "native",
+      "muse-spark-1.3",
+    );
+    const opened: Array<Record<string, unknown>> = [];
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) => {
+        opened.push(input);
+        return session;
+      },
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+    const request = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
+      tools: [BRIDGE_TOOL],
+      providerOptions: { muse: { museAgent: "Be terse." } },
+      headers: {
+        [HEADERS.kind]: "primary",
+        [HEADERS.session]: "oc",
+        [HEADERS.directory]: "/tmp",
+      },
+    } as unknown as LanguageModelV3CallOptions;
+
+    const stream = await model.doStream(request);
+    expect(opened[0]?.developerPrompt).toBe("Be terse.");
+    const start = commands.find((entry) => entry.method === "turn/start");
+    expect(start?.params.input).toEqual([{ type: "text", text: "first" }]);
+    await stream.stream.cancel();
+  });
+
+  test("a changed prompt travels in the next user turn", async () => {
+    const { host } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const live = new LiveSession("oc", session, { current: [] }, "Be terse.");
+    try {
+      expect(live.prependPreamble("Be terse.")).toBe(false);
+      expect(live.prependPreamble("Be thorough.")).toBe(true);
+      expect(live.prependPreamble("Be thorough.")).toBe(false);
+    } finally {
+      await live.close();
+    }
   });
 });
 
