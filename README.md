@@ -35,7 +35,8 @@ support commitment.
   the field), and answers titles and compaction locally instead of spending a Muse turn
 - starts Muse with its skills, observer reminders, workflow triggers, and context
   messages off, then reseeds a rewritten transcript from the full prompt; a native
-  fork measured 2.4x the fresh input of a reseed, so the plugin does not fork
+  fork measured 2x the fresh input and 1.4x the total input of a reseed, so the
+  plugin does not fork
 
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a subscription
 covers requests that client makes, and `api.meta.ai` refuses requests carrying a

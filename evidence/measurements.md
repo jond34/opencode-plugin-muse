@@ -71,39 +71,56 @@ logged-in CLI.
 
 Run on 2026-11-18 against Muse CLI 1.4.23 with `muse-spark-1.3`, the provider's
 default effort, and the same developer prompt and one bridge tool in both arms. The
-harness is `scratch/fork-tokens.ts`; it is not committed. Each of four reps ran five
-completed source turns (~20-21k characters of visible transcript), forked at the last
-completed turn, and answered one divergent question twice:
+harness is `scratch/fork-tokens.ts`; it is not committed. Only the turn after the cut
+is compared. `freshInput` is `inputTokens - cachedInputTokens - cacheWriteTokens`.
 
-- **fork:** the forked child received only the new question.
-- **reseed:** a fresh native session received `fullConversationText()` of the same
-  system prompt, source turns, and question, which is what production does after a
-  rewritten history.
+### Production shape: a rewritten turn
 
-The measured turn is the divergent answer only. `freshInput` is
-`inputTokens - cachedInputTokens - cacheWriteTokens`.
+Four reps each ran five source turns (~17k characters of visible transcript before
+the rewrite). The fifth turn was then rewritten away, the fork cut at turn four, and
+the replacement question answered twice:
 
-| Rep | Source final input | Fork input (total / fresh / cached) | Reseed input (total / fresh / cached) |
-| --- | --- | --- | --- |
-| 1 | 9,960 (8,433 cached) | 10,378 / 10,378 / 0 | 5,472 / 3,951 / 1,521 |
-| 2 | 11,349 (9,457 cached) | 12,034 / 12,034 / 0 | 5,836 / 5,836 / 0 |
-| 3 | 9,243 (7,665 cached) | 9,605 / 9,605 / 0 | 5,677 / 4,156 / 1,521 |
-| 4 | 9,230 (7,537 cached) | 9,603 / 9,603 / 0 | 5,808 / 4,287 / 1,521 |
+- **fork:** the child held turns one through four and received only the replacement
+  question.
+- **reseed:** a fresh native session received `fullConversationText()` of the system
+  prompt, turns one through four, and the replacement question, which is what
+  production does after a rewritten history.
 
-Medians: fork `freshInput` 9,991.5 and total input 9,991.5; reseed `freshInput`
-4,221.5 and total input 5,742.5. Fork used 2.4x the fresh input and 1.7x the total
-input, won 0 of 4 reps, and wrote no cache entries. The pre-registered rule required at
-least 4 valid reps, a 20% lower median `freshInput`, total input within 2%, no higher
-cache writes, and at least 3 of 4 reps lower. Every validity check passed (all turns
-completed, the canary code word survived in both arms, no tool calls), and the win rule
-failed.
+| Rep | Fork input (total / fresh / cached) | Reseed input (total / fresh / cached) |
+| --- | --- | --- |
+| 1 | 7,300 / 7,300 / 0 | 4,926 / 3,405 / 1,521 |
+| 2 | 5,831 / 5,831 / 0 | 4,978 / 3,457 / 1,521 |
+| 3 | 9,490 / 8,737 / 753 | 4,906 / 3,385 / 1,521 |
+| 4 | 6,762 / 6,762 / 0 | 4,966 / 4,966 / 0 |
 
-A cache-scope preflight sent the same 1,200-word text to two fresh sessions in a row;
-the second reported `cachedInputTokens: 0`, so the provider cache did not carry across
-session ids here. The fork child also reported 0 cached input in all four reps: the
-leave/resume fork starts cold. It carries the source's full native context, which
-measured 9,230-11,349 input tokens on the final source turn, while the reseeded text
-measured 5,472-5,836. The fork is larger, not a cached version of the reseed.
+Medians: fork `freshInput` 7,031 and total input 7,031; reseed `freshInput` 3,431 and
+total input 4,946. Fork used 2.0x the fresh input and 1.4x the total input, won 0 of 4
+reps, and wrote no cache entries. The pre-registered rule required at least 4 valid
+reps, a 20% lower median `freshInput`, total input within 2%, no higher cache writes,
+and at least 3 of 4 reps lower. Every validity check passed (all turns completed, the
+canary code word survived in both arms, no tool calls), and the win rule failed.
+
+The children's input tracked the source's context at the cut (7,541, 6,107, 8,925, and
+6,999 tokens), while the reseed's fresh input was 3,405-4,966 tokens. The native
+context carries items that `fullConversationText()` does not.
+
+### What this does and does not cover
+
+`SessionForkParams` carries only `commandId`, `cutPoint`, `excludeItems`, and
+`sessionId`; `excludeItems` only skips inline history in the result. There is no
+cache-preservation option to enable. A cache-scope preflight sent the same 1,200-word
+text to two fresh sessions in a row; the second reported `cachedInputTokens: 0`, so the
+provider cache did not carry across session ids here.
+
+A first run measured a continuation instead: the source turns were kept whole, the fork
+cut at the last turn, and a new question was added. Production classifies an appended
+prompt as `same` and never forks there, so that shape is not the trigger. It is kept in
+`scratch/fork-tokens-append.json`; it showed 2.4x the fresh input and 1.7x the total
+input, the same direction with a larger margin. The rewrite shape above is the one that
+matches the production branch.
+
+A three-turn dry run that cut at turn two (a smaller retained prefix) also lost 2.0x.
+The newest possible cut is the best case for reuse; the earlier cut did not reverse it.
 
 Consequence: the production fork path and its tests were reverted. A rewritten history
 reseeds from `fullConversationText()`; there is no native-fork branch.
