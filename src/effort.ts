@@ -8,7 +8,8 @@
  *
  * The vocabulary is closed on purpose: a typo must fail loudly instead of
  * silently running at Muse's default. A tier the model knows but does not offer
- * falls to its lowest offered tier, which is the same choice pi makes.
+ * also fails, because choosing another tier would change the request the user
+ * made. Only an omitted variant or `"default"` leaves the choice to Muse.
  */
 
 export const EFFORT_ORDER = [
@@ -25,8 +26,6 @@ export const EFFORT_ORDER = [
 export type EffortTier = (typeof EFFORT_ORDER)[number];
 
 export interface ModelEffort {
-  /** Catalog `defaultReasoningEffort`, if the row publishes one. */
-  readonly defaultEffort?: string;
   /** Tiers this model offers, in catalog order. */
   readonly variants?: readonly string[];
 }
@@ -42,33 +41,21 @@ function isTier(value: unknown): value is EffortTier {
   return typeof value === "string" && (EFFORT_ORDER as readonly string[]).includes(value);
 }
 
-function lowestOffered(tiers: readonly EffortTier[]): EffortTier | undefined {
-  let lowest: EffortTier | undefined;
-  for (const tier of tiers) {
-    if (lowest === undefined || EFFORT_ORDER.indexOf(tier) < EFFORT_ORDER.indexOf(lowest)) {
-      lowest = tier;
-    }
-  }
-  return lowest;
-}
-
 /**
  * Resolve one request's effort.
  *
- * - no variant: omit the field and let Muse use the model's own default
- * - `"default"`: the catalog's `defaultReasoningEffort`
+ * - no variant or `"default"`: omit the field and let Muse use its own default
  * - `"off"`: `"none"`
  * - an unknown tier: throw, because the request names something Muse cannot run
- * - a known tier the model does not offer: its lowest offered tier
+ * - a known tier the model does not offer: throw, because substituting another
+ *   tier would not be the request the user made
  */
 export function resolveEffort(
   model: ModelEffort | undefined,
   variant: string | undefined,
 ): EffortTier | undefined {
   if (variant === undefined || variant.length === 0) return undefined;
-  if (variant === "default") {
-    return isTier(model?.defaultEffort) ? model.defaultEffort : undefined;
-  }
+  if (variant === "default") return undefined;
   if (variant === "off") return "none";
   if (!isTier(variant)) {
     throw new UnsupportedEffortError(
@@ -82,13 +69,9 @@ export function resolveEffort(
     );
   }
   if (offered.includes(variant)) return variant;
-  const lowest = lowestOffered(offered);
-  if (lowest === undefined) {
-    throw new UnsupportedEffortError(
-      `Reasoning effort "${variant}" is not offered by this model`,
-    );
-  }
-  return lowest;
+  throw new UnsupportedEffortError(
+    `Reasoning effort "${variant}" is not offered by this model; expected one of ${offered.join(", ")}`,
+  );
 }
 
 /** Build the per-model effort table from the Muse catalog rows. */
@@ -110,12 +93,7 @@ export function buildEffortCatalog(
           )
           .filter((variant): variant is string => variant !== undefined)
       : [];
-    catalog.set(modelId, {
-      ...(typeof model.defaultReasoningEffort === "string"
-        ? { defaultEffort: model.defaultReasoningEffort }
-        : {}),
-      variants,
-    });
+    catalog.set(modelId, { variants });
   }
   return catalog;
 }

@@ -440,7 +440,7 @@ describe("reasoning effort", () => {
     } as unknown as MuseHarnessAdapter;
     const registry = new MuseSessionRegistry(adapter);
     const efforts = new Map([
-      ["muse-spark-1.3", { defaultEffort: "max", variants: ["low", "medium", "high", "max"] }],
+      ["muse-spark-1.3", { variants: ["low", "medium", "high", "max"] }],
     ]);
     const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
     const request = (variant: string, messages: unknown[]) =>
@@ -471,6 +471,35 @@ describe("reasoning effort", () => {
 
     await first.stream.cancel();
     await second.stream.cancel();
+  });
+
+  test("default omits reasoningEffort when the catalog names one", async () => {
+    const { host, commands } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const adapter = {
+      listModels: async () => [],
+      openSession: async () => session,
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const efforts = new Map([
+      ["muse-spark-1.3", { variants: ["low", "medium", "high", "max"] }],
+    ]);
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse", efforts);
+    const request = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
+      tools: [],
+      headers: {
+        [HEADERS.kind]: "primary",
+        [HEADERS.session]: "oc",
+        [HEADERS.directory]: "/tmp",
+        [HEADERS.variant]: "default",
+      },
+    } as unknown as LanguageModelV3CallOptions;
+
+    const stream = await model.doStream(request);
+    const start = commands.find((entry) => entry.method === "turn/start");
+    expect(start?.params).not.toHaveProperty("reasoningEffort");
+    await stream.stream.cancel();
   });
 });
 

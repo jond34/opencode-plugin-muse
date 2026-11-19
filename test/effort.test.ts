@@ -11,13 +11,11 @@ describe("resolveEffort", () => {
     expect(resolveEffort(undefined, "")).toBeUndefined();
   });
 
-  test("default resolves the catalog's default effort", () => {
-    expect(
-      resolveEffort({ defaultEffort: "max", variants: ["low", "high", "max"] }, "default"),
-    ).toBe("max");
-  });
-
-  test("default without a catalog default stays undefined", () => {
+  test("default leaves the host default alone even when the catalog names one", () => {
+    const catalog = buildEffortCatalog([
+      { modelId: "muse-spark-1.3", defaultReasoningEffort: "max", variants: ["low", "high", "max"] },
+    ]);
+    expect(resolveEffort(catalog.get("muse-spark-1.3"), "default")).toBeUndefined();
     expect(resolveEffort({ variants: ["low", "high"] }, "default")).toBeUndefined();
   });
 
@@ -29,8 +27,10 @@ describe("resolveEffort", () => {
     expect(() => resolveEffort({ variants: ["low"] }, "turbo")).toThrow(UnsupportedEffortError);
   });
 
-  test("a known tier the model does not offer falls to its lowest offered", () => {
-    expect(resolveEffort({ variants: ["medium", "high", "xhigh"] }, "ultra")).toBe("medium");
+  test("a known tier the model does not offer fails closed", () => {
+    expect(() => resolveEffort({ variants: ["medium", "high", "xhigh"] }, "ultra")).toThrow(
+      UnsupportedEffortError,
+    );
   });
 
   test("a model with no offered tiers fails closed", () => {
@@ -40,7 +40,7 @@ describe("resolveEffort", () => {
 });
 
 describe("buildEffortCatalog", () => {
-  test("reads modelId, default, and string or object variants", () => {
+  test("reads modelId and string or object variants, ignoring the catalog default", () => {
     const catalog = buildEffortCatalog([
       {
         modelId: "muse-spark-1.3",
@@ -51,10 +51,7 @@ describe("buildEffortCatalog", () => {
       { displayLabel: "no id" },
     ]);
 
-    expect(catalog.get("muse-spark-1.3")).toEqual({
-      defaultEffort: "max",
-      variants: ["low", "high", "max"],
-    });
+    expect(catalog.get("muse-spark-1.3")).toEqual({ variants: ["low", "high", "max"] });
     expect(catalog.get("muse-ember-1.0")).toEqual({ variants: [] });
     expect(catalog.size).toBe(2);
   });
