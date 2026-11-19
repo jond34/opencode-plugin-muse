@@ -115,6 +115,17 @@ export function promptContainsCompactionFingerprint(
   return false;
 }
 
+/** Length of the shared visible prefix, in fingerprints. */
+export function commonPrefixLength(
+  previous: readonly string[],
+  current: readonly string[],
+): number {
+  const limit = Math.min(previous.length, current.length);
+  let index = 0;
+  while (index < limit && previous[index] === current[index]) index += 1;
+  return index;
+}
+
 /**
  * Classify the current transcript against the native session's history.
  *

@@ -7,7 +7,7 @@ import type {
 } from "@ai-sdk/provider";
 import type { HarnessToolResult } from "./contract/index.js";
 import { resolveEffort, type ModelEffort } from "./effort.js";
-import { fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
+import { commonPrefixLength, fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
 import type { MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
 import { toAIUsage } from "./session-registry.js";
 import {
@@ -156,28 +156,49 @@ export class MuseLanguageModel implements LanguageModelV3 {
     );
     let reseed = false;
     const fingerprints = fingerprintTranscript(options.prompt);
+    const previous = live.transcriptFingerprints;
     const verdict = reconcileTranscript(
-      live.transcriptFingerprints,
+      previous,
       fingerprints,
       this.registry.compactionFingerprintsFor(sessionID),
       options.prompt,
     );
-    if (verdict !== "same" && live.transcriptFingerprints.length > 0) {
-      // OpenCode rewrote the history (compaction, rewind, or a restored
-      // session). The native session still holds the old context, so stop it,
-      // start a clean one, and reseed from the full prompt below. Closing with
-      // `stop: true` is what makes the old native id unusable; a plain resume
-      // would keep the stale transcript.
-      await this.registry.close(sessionID);
-      live = await this.registry.get(
-        sessionID,
-        directory,
-        forkSource,
-        this.modelId,
-        sessionTools,
-        preamble,
-      );
-      reseed = true;
+    if (verdict !== "same" && previous.length > 0) {
+      // A divergence with a proven common prefix can branch the native session
+      // at the last completed turn inside that prefix. Compaction has no such
+      // prefix, so it always reseeds.
+      let forked = false;
+      if (verdict === "diverged") {
+        const point = live.forkPoint(commonPrefixLength(previous, fingerprints));
+        if (point !== undefined) {
+          try {
+            await this.registry.fork(
+              sessionID,
+              point,
+              previous.slice(0, point.fingerprintLength),
+            );
+            forked = true;
+          } catch {
+            // Any fork failure falls back to the reseed below.
+          }
+        }
+      }
+      if (!forked) {
+        // The native session holds context the new prompt no longer has, so
+        // stop it and reseed from the full prompt below. Closing with
+        // `stop: true` is what makes the old native id unusable; a plain
+        // resume would keep the stale transcript.
+        await this.registry.close(sessionID);
+        live = await this.registry.get(
+          sessionID,
+          directory,
+          forkSource,
+          this.modelId,
+          sessionTools,
+          preamble,
+        );
+        reseed = true;
+      }
     }
     if (live.isFresh) {
       // A resumed session already holds the conversation Muse has seen, so
@@ -231,7 +252,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
           ? `${preamble}\n\n${body}`
           : body;
         const turnId = `muse_turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        await live.muse.startTurn({
+        const started = await live.muse.startTurn({
           turnId,
           ...(effort === undefined ? {} : { reasoningEffort: effort }),
           message: {
@@ -245,6 +266,13 @@ export class MuseLanguageModel implements LanguageModelV3 {
             ],
           },
         });
+        if (started.nativeRef.id !== null) {
+          live.recordTurnStart(
+            started.nativeRef.id,
+            Math.max(0, options.prompt.length - 1),
+            Math.max(0, fingerprints.length - 1),
+          );
+        }
         live.setActiveTurn(true, turnId);
       }
     }

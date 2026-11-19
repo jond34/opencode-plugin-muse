@@ -78,9 +78,23 @@ export function toAIUsage(usage: Usage): LanguageModelV3Usage {
  * `doStream` again with the result, which resolves the parked call and lets
  * Muse continue.
  */
+export interface TurnBoundary {
+  readonly nativeTurnId: string;
+  readonly promptStart: number;
+  readonly fingerprintStart: number;
+  completed: boolean;
+}
+
+export interface ForkPoint {
+  readonly nativeTurnId: string;
+  readonly promptLength: number;
+  readonly fingerprintLength: number;
+  readonly turnIndex: number;
+}
+
 export class LiveSession {
   readonly openCodeSessionId: string;
-  readonly muse: MuseHarnessSession;
+  muse: MuseHarnessSession;
   readonly pending = new Map<string, PendingCall>();
 
   private readonly converter = new StreamConverter();
@@ -101,6 +115,8 @@ export class LiveSession {
   private preamble = "";
   private preambleSent = false;
   private readonly nativeDeveloperPrompt: boolean;
+  private readonly boundaries: TurnBoundary[] = [];
+  private nativeGeneration = 0;
   private fresh = true;
   private model: string | null;
   private fullSeed = false;
@@ -206,6 +222,77 @@ export class LiveSession {
     this.currentTurnId = value ? (turnId ?? null) : null;
   }
 
+  /** Record where a native turn began in the prompt and its fingerprint chain. */
+  recordTurnStart(
+    nativeTurnId: string,
+    promptStart: number,
+    fingerprintStart: number,
+  ): void {
+    this.boundaries.push({ nativeTurnId, promptStart, fingerprintStart, completed: false });
+  }
+
+  /** Mark the newest native turn as finished; only completed turns are forkable. */
+  markTurnCompleted(): void {
+    const last = this.boundaries[this.boundaries.length - 1];
+    if (last) last.completed = true;
+  }
+
+  /**
+   * Choose the newest completed turn whose output is wholly inside the common
+   * visible prefix. A turn's end is the next turn's start, or the transcript
+   * the native session was last told it had.
+   */
+  forkPoint(commonFingerprints: number): ForkPoint | undefined {
+    for (let index = this.boundaries.length - 1; index >= 0; index -= 1) {
+      const boundary = this.boundaries[index];
+      if (!boundary || !boundary.completed) continue;
+      const next = this.boundaries[index + 1];
+      const fingerprintLength = next?.fingerprintStart ?? this.transcript.length;
+      const promptLength = next?.promptStart ?? this.lastPromptLength;
+      if (fingerprintLength <= commonFingerprints && promptLength > boundary.promptStart) {
+        return {
+          nativeTurnId: boundary.nativeTurnId,
+          promptLength,
+          fingerprintLength,
+          turnIndex: index,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Replace this step's native session with a forked child.
+   *
+   * The child already holds the turns through the cut, so the prompt resumes
+   * after it; the old pump is retired by the generation check. The caller owns
+   * closing the old native session after this returns.
+   */
+  adoptNative(
+    muse: MuseHarnessSession,
+    promptLength: number,
+    fingerprints: readonly string[],
+    turnIndex: number,
+  ): void {
+    this.nativeGeneration += 1;
+    this.muse = muse;
+    this.model = muse.info.model;
+    this.lastPromptLength = promptLength;
+    this.transcript = [...fingerprints];
+    this.boundaries.splice(turnIndex + 1);
+    this.fresh = false;
+    this.fullSeed = false;
+    this.turnActive = false;
+    this.currentTurnId = null;
+    this.terminalError = null;
+    this.stepUsage = {};
+    this.queue = [];
+    this.controller = null;
+    this.stepEnded = false;
+    this.stepAborted = false;
+    void this.pump();
+  }
+
   /**
    * Switch the standing model. A no-op when the session already uses it, so a
    * step never pays for a redundant host command.
@@ -226,11 +313,13 @@ export class LiveSession {
 
   /** Subscribe the session's event stream once and pump it into the current step. */
   private async pump(): Promise<void> {
+    const generation = this.nativeGeneration;
     try {
       for await (const event of this.muse.subscribe()) {
-        if (this.closed) return;
+        if (this.closed || generation !== this.nativeGeneration) return;
         for (const part of this.converter.convert(event)) this.enqueue(part);
         if (event.type === "turn.terminal") {
+          this.markTurnCompleted();
           this.setActiveTurn(false);
           if (event.turn.status === "failed") {
             this.terminalError = new Error(event.failure?.message ?? "Muse turn failed");
@@ -593,6 +682,30 @@ export class MuseSessionRegistry {
       await this.store.set(openCodeSessionId, live.muse.nativeSessionId).catch(() => undefined);
     }
     return live;
+  }
+
+  /**
+   * Replace a diverged native session with a fork at a completed turn. The
+   * caller supplies the prompt/fingerprint boundary that the child already
+   * holds; only the suffix is seeded afterwards.
+   */
+  async fork(
+    openCodeSessionId: string,
+    point: ForkPoint,
+    fingerprints: readonly string[],
+  ): Promise<void> {
+    const live = this.sessions.get(openCodeSessionId);
+    if (!live) throw new Error(`Session ${openCodeSessionId} is not live`);
+    const old = live.muse;
+    const child = await old.forkAt({ lastTurnId: point.nativeTurnId });
+    try {
+      live.adoptNative(child, point.promptLength, fingerprints, point.turnIndex);
+    } catch (error) {
+      await child.close().catch(() => undefined);
+      throw error;
+    }
+    await old.close().catch(() => undefined);
+    await this.store?.set(openCodeSessionId, child.nativeSessionId).catch(() => undefined);
   }
 
   peek(openCodeSessionId: string): LiveSession | undefined {

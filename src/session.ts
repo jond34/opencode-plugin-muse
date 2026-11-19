@@ -152,6 +152,30 @@ function textContent(text: string): ReadonlyArray<HarnessContentBlock> {
   return [{ type: "text", text }];
 }
 
+/** Build the `SessionConfig` both `session/start` and `session/resume` accept. */
+function sessionConfig(
+  bridgeServer: ToolBridgeServer | undefined,
+  developerPrompt: string | undefined,
+): Record<string, unknown> | undefined {
+  const prompt = developerPrompt?.trim();
+  if (bridgeServer === undefined && (prompt === undefined || prompt.length === 0)) return undefined;
+  return {
+    ...(bridgeServer === undefined
+      ? {}
+      : {
+          mcpServers: {
+            [BRIDGE_MCP_SERVER_NAME]: {
+              transport: "streamableHttp",
+              url: bridgeServer.url,
+              headers: { Authorization: `Bearer ${bridgeServer.token}` },
+              mode: "required",
+            },
+          },
+        }),
+    ...(prompt === undefined || prompt.length === 0 ? {} : { developerPrompt: prompt }),
+  };
+}
+
 /** Convert contract content blocks into MSP turn input parts. */
 export function toTurnInputParts(message: HarnessUserMessage): Array<Record<string, unknown>> {
   const parts: Array<Record<string, unknown>> = [];
@@ -203,6 +227,11 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private readonly capabilities = MUSE_CAPABILITIES;
   private readonly toolBridge: import("./contract/index.js").HarnessToolBridge | undefined;
   private readonly bridgeServer: ToolBridgeServer | undefined;
+  private readonly cwd: string;
+  private readonly approvalMode: string | undefined;
+  private readonly developerPrompt: string | undefined;
+  /** A forked child takes the shared bridge; only its owner closes it. */
+  private ownsBridge: boolean;
   private readonly turns = new Map<string, ActiveTurn>();
   private readonly turnUsage = new Map<string, TurnUsage>();
   private lastContextUsage: ContextUsage | null = null;
@@ -228,12 +257,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     startedAt: string,
     toolBridge?: import("./contract/index.js").HarnessToolBridge,
     bridgeServer?: ToolBridgeServer,
+    ownsBridge = true,
   ) {
     this.host = host;
     this.id = input.sessionId;
     this.nativeId = nativeSessionId;
+    this.cwd = input.cwd;
+    this.approvalMode = input.approvalMode;
+    this.developerPrompt = input.developerPrompt?.trim();
     this.toolBridge = toolBridge;
     this.bridgeServer = bridgeServer;
+    this.ownsBridge = ownsBridge;
     this.sessionInfo = {
       id: input.sessionId,
       adapterId: ADAPTER_ID,
@@ -255,31 +289,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const bridgeServer = input.toolBridge
       ? await startToolBridgeServer(input.toolBridge)
       : undefined;
-    // `SessionConfig` is open: `mcpServers` and `developerPrompt` share it on
-    // both start and resume. A blank developer prompt is the explicit clear and
-    // would disable Muse's suppressible developer context, so only nonblank
-    // text is forwarded.
-    const developerPrompt = input.developerPrompt?.trim();
-    const config =
-      bridgeServer !== undefined || (developerPrompt !== undefined && developerPrompt.length > 0)
-        ? {
-            ...(bridgeServer === undefined
-              ? {}
-              : {
-                  mcpServers: {
-                    [BRIDGE_MCP_SERVER_NAME]: {
-                      transport: "streamableHttp",
-                      url: bridgeServer.url,
-                      headers: { Authorization: `Bearer ${bridgeServer.token}` },
-                      mode: "required",
-                    },
-                  },
-                }),
-            ...(developerPrompt === undefined || developerPrompt.length === 0
-              ? {}
-              : { developerPrompt }),
-          }
-        : undefined;
+    const config = sessionConfig(bridgeServer, input.developerPrompt);
 
     // A bridge session is driven by opencode, whose permission evaluation is
     // the only fence. Asking Muse as well would double-ask, and a parked Muse
@@ -333,10 +343,103 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       createdAt,
       input.toolBridge,
       bridgeServer,
+      true,
     );
     host.registerSink(created);
     created.emit({ type: "session.updated", session: created.info });
     return created;
+  }
+
+  /**
+   * Branch this native session at a completed turn.
+   *
+   * `session/fork` creates and loads the child before returning it, but the
+   * child inherits no per-session MCP configuration: its `run.toolset`
+   * wildcard would fail on its first turn. Releasing the fresh child and
+   * resuming it with the source's `SessionConfig` reattaches the bridge and
+   * keeps the forked history. The source stays loaded and usable.
+   */
+  async forkAt(cutPoint: { lastTurnId: string }): Promise<MuseHarnessSession> {
+    this.assertOpen();
+    const result = await this.host.connection.command(
+      "session/fork",
+      {
+        sessionId: this.nativeId,
+        cutPoint,
+        excludeItems: true,
+      },
+      { commandId: this.host.connection.mintCommandId() },
+    );
+    const envelope = result.session as Record<string, unknown> | undefined;
+    const childId = typeof envelope?.sessionId === "string" ? envelope.sessionId : undefined;
+    if (childId === undefined) throw new Error("session/fork returned no child session id");
+
+    await this.host.connection.command(
+      "session/leave",
+      { sessionId: childId, stop: true },
+      { commandId: this.host.connection.mintCommandId() },
+    );
+
+    // `session/leave` is admission-only; the runtime releases asynchronously.
+    // Resume retries until that release lands, then returns the forked history
+    // with the bridge and developer prompt attached.
+    const config = sessionConfig(this.bridgeServer, this.developerPrompt);
+    let resumed: Record<string, unknown> | undefined;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        resumed = await this.host.connection.command(
+          "session/resume",
+          {
+            sessionId: childId,
+            ...(this.sessionInfo.model === null ? {} : { modelId: this.sessionInfo.model }),
+            ...(config === undefined ? {} : { config }),
+          },
+          { commandId: this.host.connection.mintCommandId() },
+        );
+        break;
+      } catch (error) {
+        if (attempt === 19) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    if (resumed === undefined) throw new Error("session/resume returned no fork envelope");
+    if (this.approvalMode !== undefined) {
+      // `session/resume` has no approval-mode member, and a fork starts on the
+      // host default. Re-select the source's mode so the child does not park on
+      // a Muse approval that opencode already decided.
+      await this.host.connection.command(
+        "session/setApprovalMode",
+        { sessionId: childId, mode: this.approvalMode },
+        { commandId: this.host.connection.mintCommandId() },
+      );
+    }
+
+    const childEnvelope = resumed.session as Record<string, unknown> | undefined;
+    const childModel =
+      typeof childEnvelope?.modelId === "string" ? childEnvelope.modelId : this.sessionInfo.model;
+    const createdAt =
+      typeof childEnvelope?.createdAt === "string" ? childEnvelope.createdAt : now();
+    const child = new MuseHarnessSession(
+      this.host,
+      {
+        sessionId: this.id,
+        cwd: this.cwd,
+        ...(childModel === null ? {} : { model: childModel }),
+        ...(this.approvalMode === undefined ? {} : { approvalMode: this.approvalMode }),
+        ...(this.developerPrompt === undefined ? {} : { developerPrompt: this.developerPrompt }),
+      },
+      childId,
+      createdAt,
+      this.toolBridge,
+      this.bridgeServer,
+      false,
+    );
+    // The child now owns the shared bridge; this session's close must not close
+    // the server the child is using.
+    this.ownsBridge = false;
+    child.ownsBridge = true;
+    this.host.registerSink(child);
+    return child;
   }
 
   /**
@@ -355,6 +458,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       { ...input, model },
       nativeSessionId,
       now(),
+      undefined,
+      undefined,
+      false,
     );
     host.registerSink(created);
     return created;
@@ -599,12 +705,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       this.updateSession("stopped");
       this.closed = true;
       this.bus.close();
-      try {
-        await this.toolBridge?.close?.();
-      } catch {
-        // Bridge cleanup is best-effort.
+      if (this.ownsBridge) {
+        try {
+          await this.toolBridge?.close?.();
+        } catch {
+          // Bridge cleanup is best-effort.
+        }
+        await this.bridgeServer?.close();
       }
-      await this.bridgeServer?.close();
     })();
     return this.closing;
   }
