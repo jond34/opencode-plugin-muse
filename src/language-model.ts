@@ -2,21 +2,29 @@ import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
   LanguageModelV3FunctionTool,
+  LanguageModelV3Prompt,
   LanguageModelV3StreamPart,
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 import type { HarnessToolResult } from "./contract/index.js";
 import { resolveEffort, type ModelEffort } from "./effort.js";
-import { fingerprintTranscript, reconcileTranscript } from "./fingerprint.js";
+import { fingerprintTranscript, findCompactionFingerprint, reconcileTranscript } from "./fingerprint.js";
+import { nativeHistoryEnabled } from "./flags.js";
+import { decideHistory, isToolOnlyRewrite } from "./history.js";
 import type { MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
 import { toAIUsage } from "./session-registry.js";
 import {
   allImages,
-  fullConversationText,
   latestUserTurn,
   toolResultsByCallId,
   type ToolResult,
 } from "./prompt.js";
+import {
+  promptHasHistory,
+  renderTranscriptDetailed,
+  type TranscriptRender,
+} from "./transcript.js";
+import { appendUsage } from "./usage-ledger.js";
 
 export const PROVIDER_ID = "muse";
 
@@ -24,15 +32,38 @@ export const HEADERS = {
   kind: "x-opencode-muse-kind",
   session: "x-opencode-session-id",
   directory: "x-opencode-muse-directory",
-  forkSource: "x-opencode-muse-fork-source",
   variant: "x-opencode-muse-variant",
 } as const;
 
 export const AGENT_OPTION = "museAgent";
 export const INSTRUCTIONS_OPTION = "museInstructions";
 
+/** How a full seed is rendered; the bench injects a legacy arm here. */
+export type TranscriptRenderer = (prompt: LanguageModelV3Prompt) => TranscriptRender;
+
 /** Mirrors OpenCode's `SessionRequestKind`: only `primary` drives the live turn. */
 export type RequestKind = "primary" | "compaction" | "title" | "generate";
+
+/**
+ * Decide whether this step opens a native session that must be seeded whole.
+ *
+ * `fresh` is true only for the first step of a LiveSession, so later steps are
+ * always deltas. `reseed` is a rebuilt session after a rewrite. A resumed
+ * session already holds the history, so replaying the prompt there would
+ * duplicate it; only a native session with no history needs the transcript.
+ * A first-ever request has no history beyond the new user turn, which the
+ * delta already carries.
+ */
+export function needsFullSeed(input: {
+  readonly fresh: boolean;
+  readonly nativeHasHistory: boolean;
+  readonly reseed: boolean;
+  readonly prompt: LanguageModelV3CallOptions["prompt"];
+}): boolean {
+  if (!input.fresh) return false;
+  if (input.reseed) return true;
+  return !input.nativeHasHistory && promptHasHistory(input.prompt);
+}
 
 /** Convert an AI SDK tool result into the harness bridge shape. */
 export function toToolResult(result: ToolResult): HarnessToolResult {
@@ -95,6 +126,8 @@ export class MuseLanguageModel implements LanguageModelV3 {
     private readonly providerOptionKey = PROVIDER_ID,
     /** Per-model catalog effort, keyed by Muse model id. */
     private readonly efforts: ReadonlyMap<string, ModelEffort> = new Map(),
+    /** Production renders faithfully; only the bench substitutes this. */
+    private readonly render: TranscriptRenderer = renderTranscriptDetailed,
   ) {}
 
   async doGenerate(_options: LanguageModelV3CallOptions): Promise<never> {
@@ -106,7 +139,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
     const kind = (headers[HEADERS.kind] as RequestKind | undefined) ?? "primary";
     const sessionID = headers[HEADERS.session];
     const directory = headers[HEADERS.directory] ?? process.cwd();
-    const forkSource = headers[HEADERS.forkSource];
     const effort = resolveEffort(this.efforts.get(this.modelId), headers[HEADERS.variant]);
 
     const tools = functionTools(options);
@@ -149,44 +181,121 @@ export class MuseLanguageModel implements LanguageModelV3 {
     let live = await this.registry.get(
       sessionID,
       directory,
-      forkSource,
       this.modelId,
       sessionTools,
       preamble,
     );
     let reseed = false;
+    const previous = [...live.transcriptFingerprints];
     const fingerprints = fingerprintTranscript(options.prompt);
+    const toolOnly = isToolOnlyRewrite(previous, fingerprints);
+    const compactionFingerprints = this.registry.compactionFingerprintsFor(sessionID);
     const verdict = reconcileTranscript(
-      live.transcriptFingerprints,
+      previous,
       fingerprints,
-      this.registry.compactionFingerprintsFor(sessionID),
+      compactionFingerprints,
       options.prompt,
     );
-    if (verdict !== "same" && live.transcriptFingerprints.length > 0) {
-      // OpenCode rewrote the history (compaction, rewind, or a restored
-      // session). The native session still holds the old context, so stop it,
-      // start a clean one, and reseed from the full prompt below. Closing with
-      // `stop: true` is what makes the old native id unusable; a plain resume
-      // would keep the stale transcript.
+    // The checkpoint is the digest the compaction hook supplied. It is only
+    // trusted when this request follows that hook, or when a fresh process
+    // successfully resumed the native session. A rewind can still contain the
+    // digest, so "compacted" alone is not enough.
+    const marker =
+      kind === "primary" ? this.registry.consumeNativeCompaction(sessionID) : undefined;
+    const checkpointIndex =
+      nativeHistoryEnabled() && kind === "primary"
+        ? findCompactionFingerprint(
+            options.prompt,
+            marker === undefined ? compactionFingerprints : [marker.fingerprint],
+          )
+        : -1;
+    const justCompacted = marker !== undefined;
+    const resumedCheckpoint = live.isFresh && live.resumed;
+    // A marker whose digest never appears is not a checkpoint. The prompt was
+    // rewritten or the hook's window was dropped; in either case the native
+    // session must be rebuilt rather than silently treated as current.
+    const nativeMissing = justCompacted && checkpointIndex < 0 && verdict !== "same";
+    const trustedCheckpoint =
+      checkpointIndex >= 0 &&
+      !live.resumeFallback &&
+      (justCompacted || resumedCheckpoint);
+    // A prefix (`same`) is also a checkpoint: a resumed session whose stored
+    // transcript was lost has nothing to reconcile, but its native window is
+    // still the digest. Only a real divergence must rebuild.
+    const nativeCheckpoint = trustedCheckpoint && verdict !== "diverged";
+    if (nativeCheckpoint) {
+      live.markNativeCheckpoint();
+      live.recordHistory("compaction", "opencode_compaction", {
+        direction: "native",
+        source: "opencode",
+        native: true,
+        windowMessages: marker?.windowMessages ?? 1,
+      });
+    }
+    // Stop the old native session, start a clean one, and reseed below.
+    // Closing with `stop: true` is what makes the old native id unusable; a
+    // plain resume would keep the stale transcript.
+    const rebuild = async (): Promise<void> => {
       await this.registry.close(sessionID);
       live = await this.registry.get(
         sessionID,
         directory,
-        forkSource,
         this.modelId,
         sessionTools,
         preamble,
       );
+      live.markNativeEmpty();
+    };
+    if (verdict !== "same" && previous.length > 0 && !nativeCheckpoint) {
+      // OpenCode rewrote the history (compaction, rewind, or a restored
+      // session). The native session still holds the old context. A native
+      // checkpoint is the exception: the native session *is* the history.
+      await rebuild();
       reseed = true;
     }
-    if (live.isFresh) {
+    // Pressure and a pending Muse compaction are pre-emptions: Muse may have
+    // rewritten its native history without opencode knowing. A full seed into
+    // the same session would only add tokens, so the session is rebuilt at the
+    // next user turn below.
+    const pressure = live.pressureReseed;
+    let wasFresh = live.isFresh;
+    if (wasFresh) {
       // A resumed session already holds the conversation Muse has seen, so
       // seed the diff just before the new user message.
       const lastIsUser = options.prompt.length > 0 && options.prompt[options.prompt.length - 1]?.role === "user";
       live.promptLength = Math.max(0, options.prompt.length - (lastIsUser ? 1 : 0));
       live.markSeen();
     }
-    const fresh = options.prompt.slice(live.promptLength);
+    // The digest is the first message of the native window, so it must not be
+    // sliced back in as a user turn. This also survives a restart, where the
+    // resumed session already holds the digest. An untrusted checkpoint (a
+    // rewind, or a legacy digest reseed) is different: the digest is history
+    // that the full seed must carry, so the baseline stays at the last user.
+    if (nativeCheckpoint && checkpointIndex >= 0) live.promptLength = checkpointIndex + 1;
+    let fresh = options.prompt.slice(live.promptLength);
+
+    // A mid-session native rewrite is only safe to heal at a new user turn: a
+    // tool-loop continuation may finish on Muse's summary, but the next user
+    // message must start from opencode's whole transcript.
+    // A native checkpoint already holds the history. Rebuilding it here would
+    // close the session Muse is holding the history in, so pressure and a
+    // Muse-side compaction are not reasons to reseed.
+    const pendingCompaction = live.nativeCheckpoint ? false : live.compactionPending;
+    const pendingPressure = live.nativeCheckpoint ? false : pressure;
+    const deliveringUser = latestUserTurn(fresh) !== undefined;
+    if (
+      !live.hasActiveTurn &&
+      deliveringUser &&
+      !live.nativeCheckpoint &&
+      (pendingCompaction || pendingPressure)
+    ) {
+      await rebuild();
+      reseed = true;
+      wasFresh = true;
+      live.markSeen();
+      live.promptLength = 0;
+      fresh = options.prompt;
+    }
 
     // Resolve tool calls Muse parked on.
     for (const [id, result] of toolResultsByCallId(fresh)) {
@@ -194,6 +303,9 @@ export class MuseLanguageModel implements LanguageModelV3 {
     }
 
     // Deliver a new user message: start a turn, or steer the running one.
+    let seedFull = false;
+    let seedReason = "first";
+    let rendered: TranscriptRender = { text: "", toolBlocks: 0, truncated: false };
     const turn = latestUserTurn(fresh);
     if (turn) {
       const running = live.hasActiveTurn ? live.activeTurnId : null;
@@ -221,11 +333,38 @@ export class MuseLanguageModel implements LanguageModelV3 {
         }
       }
       if (!live.hasActiveTurn) {
-        // After a history rewrite the fresh native session has seen nothing,
-        // so seed it with the whole condensed conversation, not just the
-        // delta. A forked session is in the same position on its first turn.
-        const seedFull = reseed || live.takeFullSeed();
-        const body = seedFull ? fullConversationText(options.prompt) : turn.text;
+        // After a rewrite, a Muse compaction, or on a forked session the native
+        // session cannot be trusted to match the prompt, so seed it with the
+        // whole conversation, tool calls and results included.
+        const decision = decideHistory({
+          fresh: wasFresh,
+          nativeHasHistory: live.nativeHasHistory,
+          reseed,
+          resumed: live.resumed,
+          resumeFallback: live.resumeFallback,
+          nativeMissing,
+          reconciliation: verdict,
+          toolOnly,
+          compactionPending: pendingCompaction,
+          pressure: pendingPressure,
+          promptHasHistory: promptHasHistory(options.prompt),
+        });
+        seedFull = decision.mode === "full";
+        seedReason = decision.reason;
+        if (seedFull) {
+          // The compaction is explained by this seed; do not reseed the next
+          // user turn for the same event.
+          if (decision.reason === "muse_compaction" || decision.reason === "pressure") {
+            live.consumeCompaction();
+          }
+          live.recordHistory(decision.reason === "pressure" ? "pressure" : "reseed", decision.reason, {
+            direction: "full",
+          });
+        }
+        rendered = seedFull
+          ? this.render(options.prompt)
+          : { text: "", toolBlocks: 0, truncated: false };
+        const body = seedFull ? rendered.text : turn.text;
         const attachments = seedFull ? allImages(options.prompt) : turn.images;
         const text = live.prependPreamble(preamble) && preamble.length > 0
           ? `${preamble}\n\n${body}`
@@ -251,6 +390,13 @@ export class MuseLanguageModel implements LanguageModelV3 {
 
     live.promptLength = options.prompt.length;
     await this.registry.rememberTranscript(sessionID, fingerprints);
+    const stepStats = {
+      renderedChars: (seedFull ? rendered.text : turn?.text ?? "").length,
+      promptMessages: options.prompt.length,
+      toolBlocks: rendered.toolBlocks,
+      truncated: rendered.truncated,
+      hostFingerprint: this.registry.hostFingerprint,
+    };
 
     // Cancelling the step must stop Muse: a native turn left running would keep
     // producing events, and its finish would leak into the next step.
@@ -275,6 +421,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
         } catch {
           // Closed.
         }
+        live.beginStep(seedFull ? "full" : "delta", seedReason, stepStats);
         live.attach(value);
       },
       cancel: () => {
@@ -293,6 +440,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
     directory: string,
     tools: ToolDefinition[],
   ): Promise<LanguageModelV3StreamResult> {
+    const started = Date.now();
     const content: Array<{ type: "text"; text: string }> = [];
     for (const message of options.prompt) {
       if (message.role !== "system" && message.role !== "user") continue;
@@ -328,6 +476,20 @@ export class MuseLanguageModel implements LanguageModelV3 {
       controller.enqueue({ type: "text-start", id: "utility-0" });
       try {
         const result = await this.registry.runOnce(directory, content, options.abortSignal, tools, this.modelId);
+        void appendUsage({
+          ts: new Date().toISOString(),
+          sessionID: (options.headers?.[HEADERS.session] as string | undefined) ?? "utility",
+          step: 0,
+          kind,
+          model: this.modelId,
+          input: result.usage.inputTokens ?? 0,
+          cached: result.usage.cachedInputTokens ?? 0,
+          cacheWrite: result.usage.cacheWriteTokens ?? 0,
+          output: result.usage.outputTokens ?? 0,
+          toolCalls: 0,
+          wallMs: Math.max(0, Date.now() - started),
+          seed: "delta",
+        });
         controller.enqueue({ type: "text-delta", id: "utility-0", delta: result.text });
         controller.enqueue({ type: "text-end", id: "utility-0" });
         controller.enqueue({

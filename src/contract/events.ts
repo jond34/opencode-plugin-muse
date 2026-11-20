@@ -48,6 +48,18 @@ export type HarnessEvent = {
     readonly type: "tool.completed";
     readonly item: HarnessToolItem;
 } | {
+    readonly type: "history.compacted";
+    /** The native compaction item id, unique per event. */
+    readonly itemId: string;
+    readonly turnId?: string;
+    readonly tokensBefore?: number;
+    readonly tokensAfter?: number;
+    readonly trigger?: string;
+    readonly strategy?: string;
+    readonly summarizedThrough?: string;
+    readonly outcome?: string;
+    readonly reason?: string;
+} | {
     readonly type: "request.updated";
     readonly request: HarnessRuntimeRequest;
 } | {

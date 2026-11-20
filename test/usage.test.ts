@@ -96,7 +96,7 @@ describe("usage accounting", () => {
 
   test("simple turn reports its session/tokenUsage on the terminal", async () => {
     const { events } = await replayFixture("simple");
-    expect(terminalOf(events)).toEqual({
+    expect(terminalOf(events)).toMatchObject({
       inputTokens: 18721,
       outputTokens: 17,
       reasoningTokens: 7,
@@ -108,7 +108,7 @@ describe("usage accounting", () => {
 
   test("multi-completion turn keeps the last context and sums completions", async () => {
     const { events } = await replayFixture("tool");
-    expect(terminalOf(events)).toEqual({
+    expect(terminalOf(events)).toMatchObject({
       inputTokens: 34751,
       outputTokens: 89 + 309 + 254 + 158 + 549,
       reasoningTokens: 17 + 196 + 185 + 86 + 453,
@@ -143,6 +143,40 @@ describe("usage accounting", () => {
       { method: "turn/completed", params: { turnId: "t1", sessionId: "native-session", terminal: "completed" } },
     ]);
     expect(terminalOf(events)).toMatchObject({ inputTokens: 100, outputTokens: 10, totalTokens: 110 });
+  });
+
+  test("prices a turn from cumulative cost and sums billed prompt tokens", async () => {
+    const report = (totalTokens: number, promptTokens: number, outputTokens: number, usd: number, partial = false) => ({
+      method: "session/tokenUsage" as const,
+      params: {
+        turnId: "t1",
+        sessionId: "native-session",
+        promptTokens,
+        totalTokens,
+        cumulative: { cost: { usd, partial } },
+        usage: {
+          inputTokens: promptTokens,
+          outputTokens,
+          reasoningTokens: 0,
+          cachedTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+      },
+    });
+    const { events } = await replayFrames([
+      { method: "turn/started", params: { turnId: "t1", sessionId: "native-session" } },
+      report(110, 10_000, 10, 0.01),
+      report(220, 12_000, 20, 0.03, true),
+      { method: "turn/completed", params: { turnId: "t1", sessionId: "native-session", terminal: "completed" } },
+    ]);
+    expect(terminalOf(events)).toMatchObject({
+      // Context is the last report; billing is the sum of both completions.
+      inputTokens: 12_000,
+      billedPromptTokens: 22_000,
+      costUsd: 0.03,
+      costPartial: true,
+    });
   });
 
   test("turn/completed usage is the fallback when no tokenUsage arrived", async () => {

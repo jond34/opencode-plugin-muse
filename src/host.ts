@@ -3,8 +3,10 @@ import { join } from "node:path";
 import {
   spawnMspConnection,
   type Connection,
+  type FingerprintWarning,
   type MuseServeChild,
   type ProcessExit,
+  type SpawnedMspConnection,
 } from "@muse-code/sdk";
 
 /** Suffix Muse appends to a model id to select its contributor variant. */
@@ -101,7 +103,10 @@ export interface MuseHostOptions {
  */
 export class MuseHost {
   readonly connection: Connection;
-  readonly initializeResult: { readonly museHome: string };
+  /** The SDK's full initialize result; narrowing it hides schema drift. */
+  readonly initializeResult: SpawnedMspConnection["initializeResult"];
+  /** The SDK's advisory schema-fingerprint warning, when it served one. */
+  readonly fingerprintWarning: FingerprintWarning | undefined;
   readonly exited: Promise<ProcessExit>;
   private readonly child: MuseServeChild;
   private readonly sinks = new Map<string, NotificationSink>();
@@ -109,12 +114,14 @@ export class MuseHost {
 
   private constructor(
     connection: Connection,
-    initializeResult: { readonly museHome: string },
+    initializeResult: SpawnedMspConnection["initializeResult"],
+    fingerprintWarning: FingerprintWarning | undefined,
     child: MuseServeChild,
     exited: Promise<ProcessExit>,
   ) {
     this.connection = connection;
     this.initializeResult = initializeResult;
+    this.fingerprintWarning = fingerprintWarning;
     this.child = child;
     this.exited = exited;
   }
@@ -151,6 +158,7 @@ export class MuseHost {
     const host = new MuseHost(
       spawned.connection,
       spawned.initializeResult,
+      spawned.fingerprintWarning,
       spawned.child,
       spawned.exited,
     );

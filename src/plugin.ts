@@ -1,13 +1,23 @@
+import { randomUUID } from "node:crypto";
 import { Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
 import { buildEffortCatalog } from "./effort.js";
 import { fingerprintCompactionOutput } from "./fingerprint.js";
-import { writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
+import { nativeHistoryEnabled } from "./flags.js";
+import { containmentVerdict, evaluateContainment, formatContainmentReport, type HostConfigFacts } from "./containment.js";
+import { BRIDGE_TOOLSET, MUSE_REMINDERS, writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
+import { describeHostFacts, hasSchemaDrift, sessionMcpGranted, type HostFacts } from "./host-facts.js";
 import { CONTRIBUTOR_SUFFIX } from "./host.js";
 import { HEADERS, MuseLanguageModel } from "./language-model.js";
-import { makeCompactionDigest, makeLocalTitle } from "./meta.js";
+import { resolveModelLimits } from "./model-limits.js";
+import { parsePromptDelivery, promptProbeKey, type PromptDelivery } from "./prompt-policy.js";
+import { makeCompactionDigest, makeLocalTitle, nativeCompactionResult } from "./meta.js";
 import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
 import { setGlobalRegistry } from "./shared.js";
+import { appendLedgerRow } from "./usage-ledger.js";
+
+export const ADAPTER_VERSION = "0.1.12";
+export const CONTRACT_VERSION = "1";
 
 export const PLUGIN_ID = "opencode-muse";
 export const PROVIDER_ID = "muse";
@@ -69,11 +79,25 @@ function instructionsText(system: ReadonlyArray<SystemPart>): string {
   return texts.join("\n\n");
 }
 
-export function toModelInfo(providerID: ReturnType<typeof Provider.ID.make>, model: Record<string, unknown>) {
+/**
+ * Model metadata for the provider catalog.
+ *
+ * Do not set `settings.compaction = native` here. opencode 2.3.2 validates
+ * that setting while resolving a model and rejects AI SDK providers with
+ * `UnsupportedCompactionError` before the compaction hook can answer. The
+ * session compaction hook's `event.result` is checked first by core, so the
+ * native window still reaches history without the model mark.
+ */
+export function toModelInfo(
+  providerID: ReturnType<typeof Provider.ID.make>,
+  model: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = process.env,
+) {
   const modelId = String(model.modelId ?? "");
   const base = Model.Info.default(providerID, Model.ID.make(modelId));
-  const contextLimit = typeof model.contextLimit === "number" ? model.contextLimit : 1_048_576;
-  const outputLimit = typeof model.outputLimit === "number" ? model.outputLimit : 8_192;
+  const limits = resolveModelLimits(model, env);
+  const contextLimit = limits.context.value;
+  const outputLimit = limits.output.value;
   const variants = Array.isArray(model.variants) ? model.variants : [];
   const displayLabel = typeof model.displayLabel === "string" ? model.displayLabel : modelId;
   const released = typeof model.releaseDate === "string" ? Date.parse(model.releaseDate) : Number.NaN;
@@ -159,6 +183,43 @@ export const MusePlugin = Plugin.define({
     const registry = new MuseSessionRegistry(adapter, store);
     setGlobalRegistry(registry);
 
+    // The SDK already knows the served schema and every grant; keeping them
+    // is what lets the containment report name drift instead of guessing.
+    const containmentMode =
+      process.env.MUSE_CONTAINMENT === "strict"
+        ? "strict"
+        : process.env.MUSE_CONTAINMENT === "off"
+          ? "off"
+          : "warn";
+    let hostFacts: HostFacts | undefined;
+    try {
+      hostFacts = await adapter.getHostFacts();
+      console.info(`[opencode-muse] host ${describeHostFacts(hostFacts)}`);
+      if (containmentMode !== "off") {
+        if (hasSchemaDrift(hostFacts)) {
+          console.warn(
+            "[opencode-muse] Muse schema fingerprint differs from the SDK pin; review the containment report before trusting new behavior.",
+          );
+        }
+        if (!sessionMcpGranted(hostFacts)) {
+          console.warn(
+            "[opencode-muse] the host did not grant sessionMcp; the tool bridge cannot start.",
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("[opencode-muse] host handshake facts unavailable:", error);
+    }
+    if (
+      process.env.MUSE_STRICT_HOST === "1" &&
+      (hostFacts === undefined || hasSchemaDrift(hostFacts) || !sessionMcpGranted(hostFacts))
+    ) {
+      throw new Error(
+        "MUSE_STRICT_HOST: the Muse host is missing a required grant or matches no pinned schema",
+      );
+    }
+    registry.setHostFingerprint(hostFacts?.schemaFingerprint ?? null);
+
     const providerID = Provider.ID.make(PROVIDER_ID);
 
     let models: Array<Record<string, unknown>> = [];
@@ -168,7 +229,112 @@ export const MusePlugin = Plugin.define({
       console.warn("[opencode-muse] model discovery failed:", error);
     }
     const modelInfos = models.map((model) => toModelInfo(providerID, model));
+    if (models.length > 0) {
+      const sources = models.map((model) => resolveModelLimits(model).context.source);
+      const counts = new Map<string, number>();
+      for (const source of sources) counts.set(source, (counts.get(source) ?? 0) + 1);
+      console.info(
+        `[opencode-muse] context limits: ${[...counts.entries()]
+          .map(([source, count]) => `${source}=${count}`)
+          .join(" ")}`,
+      );
+    }
     const efforts = buildEffortCatalog(models);
+
+    // Prompt delivery is probed, never assumed. The probe is one tiny turn and
+    // only runs when asked for, or when strict mode has no cached answer; a
+    // command-line user should not pay for it on every startup.
+    const probeKey = promptProbeKey(hostFacts?.schemaFingerprint ?? null);
+    let promptDelivery: PromptDelivery = parsePromptDelivery(
+      await ctx.storage.get(probeKey).catch(() => undefined),
+    );
+    const shouldProbe =
+      process.env.MUSE_PROBE_PROMPT === "1" ||
+      (containmentMode === "strict" && promptDelivery === "unknown");
+    if (shouldProbe && promptDelivery === "unknown") {
+      const canary = `muse-${randomUUID().slice(0, 8)}`;
+      try {
+        promptDelivery = (await registry.probeDeveloperPrompt(canary, String(models[0]?.modelId ?? "") || undefined))
+          ? "pass"
+          : "fail";
+        await ctx.storage.set(probeKey, promptDelivery);
+      } catch (error) {
+        // No auth, no model, or a refused probe: unknown, and the preamble is
+        // the fallback. Never fail plugin setup over an unproven optimization.
+        console.warn("[opencode-muse] developer-prompt probe unavailable:", error);
+        promptDelivery = "unknown";
+      }
+    }
+    registry.setPromptDelivery(promptDelivery);
+    registry.setContainmentMode(containmentMode);
+    console.info(`[opencode-muse] developer prompt: ${promptDelivery}`);
+
+    // The treaty is evaluated once, from observed facts, and printed in full
+    // on request. Strict mode refuses to start on a critical unknown.
+    const settings = hostConfig?.settings as
+      | {
+          run?: { toolset?: unknown };
+          runtime_capabilities?: Record<string, { enabled?: unknown }>;
+          context_compaction?: { soft_threshold?: unknown; hard_threshold?: unknown };
+        }
+      | undefined;
+    const configFacts: HostConfigFacts = {
+      privateConfig: hostConfig !== undefined,
+      toolset:
+        Array.isArray(settings?.run?.toolset) &&
+        settings.run.toolset.includes(BRIDGE_TOOLSET[0] as string),
+      remindersOff: MUSE_REMINDERS.every(
+        (name) => settings?.runtime_capabilities?.[`plugin:tbh-reminders:reminder:${name}`]?.enabled === false,
+      ),
+      thresholds:
+        typeof settings?.context_compaction?.hard_threshold === "number" &&
+        settings.context_compaction.hard_threshold >= 0.99,
+      skills: hostConfig?.diagnostics.skills ?? "unknown",
+    };
+    if (containmentMode !== "off") {
+      const checks = evaluateContainment({
+        facts: hostFacts ?? null,
+        hostConfig: hostConfig === undefined ? null : configFacts,
+        promptDelivery,
+        capabilities: await adapter.getCapabilities(),
+      });
+      if (process.env.MUSE_DEBUG_CONTAINMENT === "1") {
+        console.info(formatContainmentReport(checks));
+      }
+      const verdict = containmentVerdict(checks);
+      if (containmentMode === "strict" && verdict.level === "blocked") {
+        throw new Error(
+          `MUSE_CONTAINMENT=strict: ${verdict.criticalFailures
+            .map((entry) => `${entry.id}=${entry.status}`)
+            .join(" ")}`,
+        );
+      }
+      if (verdict.level !== "ok") {
+        console.warn(
+          `[opencode-muse] containment ${verdict.level}: ${checks
+            .filter((entry) => entry.status !== "enforced")
+            .map((entry) => `${entry.id}=${entry.status}`)
+            .join(" ")}`,
+        );
+      }
+    }
+    void appendLedgerRow({
+      type: "host",
+      ts: new Date().toISOString(),
+      serverName: hostFacts?.serverName ?? null,
+      serverVersion: hostFacts?.serverVersion ?? null,
+      schemaVersion: hostFacts?.schemaVersion ?? null,
+      schemaFingerprint: hostFacts?.schemaFingerprint ?? null,
+      grantedCapabilities: hostFacts?.grantedCapabilities ?? [],
+      sessionDurability: hostFacts?.sessionDurability ?? null,
+      platform: hostFacts?.platform === null || hostFacts?.platform === undefined
+        ? null
+        : `${hostFacts.platform.os}/${hostFacts.platform.family}`,
+      fingerprintWarning: hostFacts === undefined ? false : hasSchemaDrift(hostFacts),
+      promptDelivery,
+      adapterVersion: ADAPTER_VERSION,
+      contractVersion: CONTRACT_VERSION,
+    });
 
     await ctx.provider.transform((editor) => {
       editor.add({
@@ -203,7 +369,8 @@ export const MusePlugin = Plugin.define({
       { providerID },
     );
 
-    // Tag every request with the session, directory, and fork lineage.
+    // Tag every request with the session and directory. Opencode owns forking:
+    // a fork arrives as a new session id, so the provider needs no lineage.
     await ctx.session.hook(
       "model.request",
       async (event) => {
@@ -220,8 +387,6 @@ export const MusePlugin = Plugin.define({
         try {
           const session = await ctx.session.get({ sessionID: event.sessionID });
           event.headers[HEADERS.directory] = session.location.directory;
-          const fork = (session as { fork?: { sessionID?: string } }).fork;
-          if (fork?.sessionID) event.headers[HEADERS.forkSource] = fork.sessionID;
         } catch {
           // Keep the default directory.
         }
@@ -265,12 +430,34 @@ export const MusePlugin = Plugin.define({
           typeof event.options.maxOutputTokens === "number"
             ? event.options.maxOutputTokens
             : undefined;
-        const summary = makeCompactionDigest(
-          event.messages as unknown as Parameters<typeof makeCompactionDigest>[0],
-          budget,
-        );
-        await registry.recordCompaction(String(event.sessionID), fingerprintCompactionOutput(summary));
-        event.result = { summary };
+        const native = nativeHistoryEnabled();
+        const result = native
+          ? nativeCompactionResult(
+              event.messages as unknown as Parameters<typeof nativeCompactionResult>[0],
+              budget,
+            )
+          : {
+              summary: makeCompactionDigest(
+                event.messages as unknown as Parameters<typeof makeCompactionDigest>[0],
+                budget,
+              ),
+            };
+        const digestText = result.native
+          ? (result.native.messages[0]?.content[0]?.text ?? result.summary)
+          : result.summary;
+        const fingerprint = fingerprintCompactionOutput(digestText);
+        await registry.recordCompaction(String(event.sessionID), fingerprint);
+        // The marker tells the next primary request that the checkpoint came
+        // from this hook, not from a rewind that happens to still contain it.
+        // Carry the fingerprint and window size so a dropped window is named
+        // instead of looking like an ordinary rewrite.
+        if (native && result.native) {
+          registry.markNativeCompaction(String(event.sessionID), {
+            fingerprint,
+            windowMessages: result.native.messages.length,
+          });
+        }
+        event.result = result;
       },
       { providerID },
     );

@@ -4,7 +4,7 @@
  * Adapters throw `HarnessError` for expected failure modes. The `code` is the
  * stable machine-readable contract; `message` is for humans and logs only.
  */
-export type HarnessErrorCode = "open_failed" | "close_failed" | "session_stopped" | "protocol_error" | "unsupported" | "interrupt_timeout" | "request_failed" | "event_stream_failed" | "usage_limit" | "auth_required" | "invalid_input";
+export type HarnessErrorCode = "open_failed" | "close_failed" | "session_stopped" | "protocol_error" | "unsupported" | "interrupt_timeout" | "request_failed" | "event_stream_failed" | "usage_limit" | "auth_required" | "invalid_input" | "containment_breach";
 export interface HarnessErrorOptions {
     readonly code: HarnessErrorCode;
     readonly adapterId: string;

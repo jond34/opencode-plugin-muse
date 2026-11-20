@@ -1,4 +1,5 @@
 import type { LanguageModelV3FilePart, LanguageModelV3Prompt } from "@ai-sdk/provider";
+import { renderTranscript } from "./transcript.js";
 
 /**
  * Prompt extraction for the Muse language model.
@@ -89,26 +90,16 @@ export function allImages(prompt: LanguageModelV3Prompt): ImageAttachment[] {
   return images;
 }
 
-/** System, user, and assistant text in order, for reseeding a fresh native session. */
+/**
+ * The full prompt for a freshly rebuilt native session.
+ *
+ * @deprecated Use `renderTranscript` from `./transcript.js`. This name is kept
+ * for importers, but it now includes tool calls and tool results: the old
+ * text-only body lost them on every fork, restart, and rewrite, so the model
+ * was told about work whose output it never received.
+ */
 export function fullConversationText(prompt: LanguageModelV3Prompt): string {
-  const parts: string[] = [];
-  for (const message of prompt) {
-    if (message.role === "system") {
-      if (message.content.length > 0) parts.push(message.content);
-      continue;
-    }
-    // Assistant answers are part of the conversation the fresh session must
-    // see; only the text carries over (tool calls replay live via the bridge).
-    if (message.role === "assistant") {
-      const text = textOfContent(message.content);
-      if (text.length > 0) parts.push(text);
-      continue;
-    }
-    if (message.role !== "user") continue;
-    const text = textOfContent(message.content);
-    if (text.length > 0) parts.push(text);
-  }
-  return parts.join("\n\n");
+  return renderTranscript(prompt);
 }
 
 /** Tool results carried by `tool` messages (and assistant tool-result parts). */

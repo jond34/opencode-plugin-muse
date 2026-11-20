@@ -1,11 +1,10 @@
 import type {
-  HarnessAdapter,
   HarnessAdapterInfo,
   HarnessCapabilities,
-  HarnessSession,
-  OpenSessionInput,
 } from "./contract/index.js";
+import type { LanguageAdapter, LanguageOpenSessionInput, LanguageSession } from "./language.js";
 import { MuseHost, type MuseHostOptions } from "./host.js";
+import { hostFactsFrom, type HostFacts } from "./host-facts.js";
 import { MuseHarnessSession, type CreateSessionInput } from "./session.js";
 import { MUSE_CAPABILITIES } from "./capabilities.js";
 
@@ -16,13 +15,8 @@ export interface MuseAdapterOptions {
   readonly hostOptions?: MuseHostOptions;
 }
 
-/** OpenCode's open-session input plus Muse-specific resume material. */
-export interface MuseOpenSessionInput extends OpenSessionInput {
-  /** Native Muse session id to resume instead of starting a new session. */
-  readonly resumeSessionId?: string;
-  /** Per-session developer instructions, forwarded to `SessionConfig`. */
-  readonly developerPrompt?: string;
-}
+/** Muse uses the language seam as-is; the name is kept for importers. */
+export type MuseOpenSessionInput = LanguageOpenSessionInput;
 
 /**
  * Muse Code adapter for the harness-agnostic contract.
@@ -31,7 +25,7 @@ export interface MuseOpenSessionInput extends OpenSessionInput {
  * host per adapter instance (unless a host is injected) and translates every
  * session's native protocol into the normalized event stream.
  */
-export class MuseHarnessAdapter implements HarnessAdapter {
+export class MuseHarnessAdapter implements LanguageAdapter {
   readonly info: HarnessAdapterInfo = {
     id: "muse",
     label: "Muse Code",
@@ -58,7 +52,16 @@ export class MuseHarnessAdapter implements HarnessAdapter {
     return host.listSelectableModels();
   }
 
-  async openSession(input: MuseOpenSessionInput): Promise<HarnessSession> {
+  /**
+   * The host's own handshake facts. Spawns the host if it has not started;
+   * callers that cannot tolerate a spawn failure catch and degrade.
+   */
+  async getHostFacts(): Promise<HostFacts> {
+    const host = await this.ensureHost();
+    return hostFactsFrom(host.initializeResult, host.fingerprintWarning);
+  }
+
+  async openSession(input: LanguageOpenSessionInput): Promise<LanguageSession> {
     const host = await this.ensureHost();
     const createInput: CreateSessionInput = {
       sessionId: input.sessionId,
@@ -68,6 +71,7 @@ export class MuseHarnessAdapter implements HarnessAdapter {
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       ...(input.resumeSessionId === undefined ? {} : { resumeSessionId: input.resumeSessionId }),
       ...(input.developerPrompt === undefined ? {} : { developerPrompt: input.developerPrompt }),
+      ...(input.containment === undefined ? {} : { containment: input.containment }),
     };
     return MuseHarnessSession.create(host, createInput);
   }

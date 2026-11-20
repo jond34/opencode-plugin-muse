@@ -29,6 +29,39 @@ import {
 
 const ADAPTER_ID = "muse";
 
+/**
+ * Item kinds the adapter understands. Anything else is recorded, not fatal:
+ * a new MSP kind must never take a chat down, but it must be visible.
+ */
+const KNOWN_ITEM_KINDS: ReadonlySet<string> = new Set([
+  "userMessage",
+  "agentMessage",
+  "reasoning",
+  "toolCall",
+  "compaction",
+  "userShell",
+  "webSearch",
+]);
+
+/** Item statuses that mean the item will not change again. */
+const TERMINAL_ITEM_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "aborted",
+]);
+
+function itemStatus(item: Record<string, unknown>): string {
+  return typeof item.status === "string" ? item.status : "";
+}
+
+function isTerminalItem(item: Record<string, unknown>): boolean {
+  return TERMINAL_ITEM_STATUSES.has(itemStatus(item));
+}
+
+export type HistoryCompactedEvent = Extract<HarnessEvent, { type: "history.compacted" }>;
+
 interface EventConsumer {
   queue: HarnessEvent[];
   notify: (() => void) | null;
@@ -114,6 +147,15 @@ interface TurnUsage {
   cachedInputTokens?: number;
   cacheWriteTokens?: number;
   totalTokens?: number;
+  /** Cumulative-cost delta reported by Muse for this turn, in USD. */
+  costUsd?: number;
+  /** At least one completion's cost is provisional. */
+  costPartial?: boolean;
+  /** Prompt tokens summed over completions, which is what gets billed. */
+  billedPromptTokens?: number;
+  billedCacheRead?: number;
+  billedCacheWrite?: number;
+  billedOutput?: number;
 }
 
 export interface ContextUsage {
@@ -186,6 +228,8 @@ export interface CreateSessionInput {
    * the agent catalog and memory snapshot.
    */
   readonly developerPrompt?: string;
+  /** How a non-bridge tool call is treated. Defaults to warn. */
+  readonly containment?: "strict" | "warn" | "off";
 }
 
 /**
@@ -203,9 +247,20 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private readonly capabilities = MUSE_CAPABILITIES;
   private readonly toolBridge: import("./contract/index.js").HarnessToolBridge | undefined;
   private readonly bridgeServer: ToolBridgeServer | undefined;
+  private readonly containment: "strict" | "warn" | "off";
+  private containmentBreaches = 0;
+  private containmentReported = false;
   private readonly turns = new Map<string, ActiveTurn>();
   private readonly turnUsage = new Map<string, TurnUsage>();
+  /** Last cumulative cost seen for this native session; deltas price a turn. */
+  private lastCumulativeUsd: number | undefined;
   private lastContextUsage: ContextUsage | null = null;
+  private readonly pendingCompactions = new Map<string, Record<string, unknown>>();
+  private readonly emittedCompactions = new Set<string>();
+  private compactionCountValue = 0;
+  private lastCompactionValue: HistoryCompactedEvent | null = null;
+  /** Item kinds this adapter does not model, with counts. */
+  private readonly unexpectedKindCounts = new Map<string, number>();
   private readonly hostToNative = new Map<string, string>();
   private readonly nativeToHost = new Map<string, string>();
   private readonly messages = new Map<string, HarnessMessage>();
@@ -220,6 +275,12 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private closing: Promise<void> | null = null;
   private closed = false;
   private sessionInfo: HarnessSessionInfo;
+  /**
+   * How this session's native id was obtained. A resume that fell back to a
+   * fresh start leaves the native session empty even though a stored id was
+   * present, so the caller must not send a delta against it.
+   */
+  readonly resumeOutcome: "started" | "resumed" | "resume_fallback";
 
   private constructor(
     host: SessionHost,
@@ -228,12 +289,15 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     startedAt: string,
     toolBridge?: import("./contract/index.js").HarnessToolBridge,
     bridgeServer?: ToolBridgeServer,
+    resumeOutcome: "started" | "resumed" | "resume_fallback" = "started",
   ) {
     this.host = host;
     this.id = input.sessionId;
+    this.resumeOutcome = resumeOutcome;
     this.nativeId = nativeSessionId;
     this.toolBridge = toolBridge;
     this.bridgeServer = bridgeServer;
+    this.containment = input.containment ?? "warn";
     this.sessionInfo = {
       id: input.sessionId,
       adapterId: ADAPTER_ID,
@@ -299,6 +363,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       });
 
     let result: Record<string, unknown>;
+    let resumeOutcome: "started" | "resumed" | "resume_fallback" = "started";
     if (input.resumeSessionId !== undefined) {
       try {
         result = await host.connection.command(
@@ -310,9 +375,13 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
           },
           { commandId },
         );
+        resumeOutcome = "resumed";
       } catch {
-        // The retained session is gone (pruned, or a different host).
+        // The retained session is gone (pruned, or a different host). The
+        // fallback is a fresh native session, not a resume: callers must seed
+        // the whole prompt instead of sending the tail as a delta.
         result = await startFresh();
+        resumeOutcome = "resume_fallback";
       }
     } else {
       result = await host.connection.command("session/start", startParams(), { commandId });
@@ -333,6 +402,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       createdAt,
       input.toolBridge,
       bridgeServer,
+      resumeOutcome,
     );
     host.registerSink(created);
     created.emit({ type: "session.updated", session: created.info });
@@ -377,6 +447,63 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   /** Latest `session/contextUsage` for this session, if the host sent one. */
   get contextUsage(): ContextUsage | null {
     return this.lastContextUsage;
+  }
+
+  /** How many Muse-side compactions this session reported. */
+  get compactionCount(): number {
+    return this.compactionCountValue;
+  }
+
+  /** The most recent Muse compaction, if any. */
+  get lastCompaction(): HistoryCompactedEvent | null {
+    return this.lastCompactionValue;
+  }
+
+  /** Unknown item kinds, for the containment report. */
+  get unexpectedItemKinds(): ReadonlyMap<string, number> {
+    return this.unexpectedKindCounts;
+  }
+
+  /** Non-bridge tool calls observed on this session. */
+  get containmentBreachCount(): number {
+    return this.containmentBreaches;
+  }
+
+  private noteItemKind(kind: string): void {
+    if (kind.length === 0 || KNOWN_ITEM_KINDS.has(kind)) return;
+    this.unexpectedKindCounts.set(kind, (this.unexpectedKindCounts.get(kind) ?? 0) + 1);
+  }
+
+  /**
+   * Report a native compaction exactly once, at its terminal.
+   *
+   * A compaction rewrites the native history. opencode owns that history, so
+   * the next user turn has to reseed; dropping the item leaves the adapter
+   * sending deltas against a context it believes is whole.
+   */
+  private emitCompaction(item: Record<string, unknown>): void {
+    const itemId = typeof item.itemId === "string" ? item.itemId : undefined;
+    if (itemId === undefined || this.emittedCompactions.has(itemId)) return;
+    this.emittedCompactions.add(itemId);
+    this.pendingCompactions.delete(itemId);
+    const turnId = this.resolveTurnId(item.turnId);
+    const event: HistoryCompactedEvent = {
+      type: "history.compacted",
+      itemId,
+      ...(turnId.length === 0 ? {} : { turnId }),
+      ...(typeof item.tokensBefore === "number" ? { tokensBefore: item.tokensBefore } : {}),
+      ...(typeof item.tokensAfter === "number" ? { tokensAfter: item.tokensAfter } : {}),
+      ...(typeof item.trigger === "string" ? { trigger: item.trigger } : {}),
+      ...(typeof item.strategyId === "string" ? { strategy: item.strategyId } : {}),
+      ...(typeof item.summarizedThrough === "string"
+        ? { summarizedThrough: item.summarizedThrough }
+        : {}),
+      ...(typeof item.outcome === "string" ? { outcome: item.outcome } : {}),
+      ...(typeof item.reason === "string" ? { reason: item.reason } : {}),
+    };
+    this.compactionCountValue += 1;
+    this.lastCompactionValue = event;
+    this.emit(event);
   }
 
   subscribe(): AsyncIterable<HarnessEvent> {
@@ -720,25 +847,60 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const breakdown = toTokenUsage(params.usage);
     const promptTokens = typeof params.promptTokens === "number" ? params.promptTokens : undefined;
     const totalTokens = typeof params.totalTokens === "number" ? params.totalTokens : undefined;
-    if (breakdown === undefined && promptTokens === undefined && totalTokens === undefined) return;
     // The SDK folds running session totals into `cumulative` (replace, never
-    // sum); only the per-completion fields above describe this turn.
+    // sum). Its cost is the precise meter; the subscription's own usage/read
+    // is integer percent and is too coarse to price a turn.
+    const cumulative = params.cumulative as Record<string, unknown> | undefined;
+    const cost = cumulative?.cost as Record<string, unknown> | undefined;
+    const cumulativeUsd =
+      typeof cost?.usd === "number" && Number.isFinite(cost.usd) ? cost.usd : undefined;
+    const costPartial = cost?.partial === true;
+    if (
+      breakdown === undefined &&
+      promptTokens === undefined &&
+      totalTokens === undefined &&
+      cumulativeUsd === undefined
+    ) {
+      return;
+    }
     const prev = this.turnUsage.get(nativeTurnId);
     const advanced =
       totalTokens !== undefined && (prev?.totalTokens === undefined || totalTokens > prev.totalTokens);
+    const counted = prev === undefined || advanced;
+    let costDelta: number | undefined;
+    if (cumulativeUsd !== undefined) {
+      // A resumed session starts with the prior turns already in the meter, so
+      // its first report is a baseline, not a spike that belongs to this row.
+      const baseline =
+        this.lastCumulativeUsd ?? (this.resumeOutcome === "resumed" ? cumulativeUsd : 0);
+      costDelta = cumulativeUsd - baseline;
+      this.lastCumulativeUsd = cumulativeUsd;
+    }
     const next: TurnUsage = {
       inputTokens: max(prev?.inputTokens, promptTokens ?? breakdown?.inputTokens),
       cachedInputTokens: max(prev?.cachedInputTokens, breakdown?.cachedInputTokens),
       cacheWriteTokens: max(prev?.cacheWriteTokens, breakdown?.cacheWriteTokens),
       totalTokens: max(prev?.totalTokens, totalTokens ?? breakdown?.totalTokens),
       outputTokens:
-        prev === undefined || advanced
-          ? (prev?.outputTokens ?? 0) + (breakdown?.outputTokens ?? 0)
-          : prev.outputTokens,
+        counted ? (prev?.outputTokens ?? 0) + (breakdown?.outputTokens ?? 0) : prev.outputTokens,
       reasoningTokens:
-        prev === undefined || advanced
+        counted
           ? (prev?.reasoningTokens ?? 0) + (breakdown?.reasoningTokens ?? 0)
           : prev.reasoningTokens,
+      ...(costDelta === undefined ? {} : { costUsd: (prev?.costUsd ?? 0) + costDelta }),
+      ...(costPartial || prev?.costPartial === true ? { costPartial: true } : {}),
+      billedPromptTokens:
+        (prev?.billedPromptTokens ?? 0) +
+        (counted ? (promptTokens ?? breakdown?.inputTokens ?? 0) : 0),
+      billedCacheRead:
+        (prev?.billedCacheRead ?? 0) +
+        (counted ? (breakdown?.cachedInputTokens ?? 0) : 0),
+      billedCacheWrite:
+        (prev?.billedCacheWrite ?? 0) +
+        (counted ? (breakdown?.cacheWriteTokens ?? 0) : 0),
+      billedOutput:
+        (prev?.billedOutput ?? 0) +
+        (counted ? (breakdown?.outputTokens ?? 0) : 0),
     };
     this.turnUsage.set(nativeTurnId, next);
   }
@@ -763,6 +925,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const kind = typeof item.kind === "string" ? item.kind : "";
     const turnId = this.resolveTurnId(item.turnId);
     const timestamp = now();
+    this.noteItemKind(kind);
+
+    if (kind === "compaction") {
+      // Started items may already be terminal on a replayed frame; emit once.
+      this.pendingCompactions.set(itemId, item);
+      if (isTerminalItem(item)) this.emitCompaction(item);
+      return;
+    }
 
     if (kind === "agentMessage" || kind === "reasoning") {
       const message: HarnessMessage = {
@@ -780,10 +950,35 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
 
     if (kind === "toolCall") {
+      const rawTool = typeof item.tool === "string" ? item.tool : "";
+      // The bridge namespace is the only tool authority opencode granted. A
+      // tool outside it means a containment lever did not hold; report once,
+      // never let the call look bridge-normalized.
+      if (
+        this.toolBridge !== undefined &&
+        this.containment !== "off" &&
+        rawTool.length > 0 &&
+        !rawTool.startsWith(`mcp__${BRIDGE_MCP_SERVER_NAME}__`)
+      ) {
+        this.containmentBreaches += 1;
+        if (!this.containmentReported) {
+          this.containmentReported = true;
+          console.warn(`[opencode-muse] containment breach: non-bridge tool ${rawTool}`);
+          this.emit({
+            type: "session.error",
+            error: {
+              class: "protocol",
+              code: "containment_breach",
+              message: `Muse called a tool outside the opencode bridge: ${rawTool}`,
+              retryable: false,
+            },
+          });
+        }
+      }
       const tool: HarnessToolItem = {
         id: itemId,
         turnId,
-        name: normalizeToolName(typeof item.tool === "string" ? item.tool : "unknown"),
+        name: normalizeToolName(rawTool.length > 0 ? rawTool : "unknown"),
         input: parseToolArgs(item.args),
         status: "running",
         startedAt: timestamp,
@@ -833,6 +1028,12 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const kind = typeof item.kind === "string" ? item.kind : "";
     const status = typeof item.status === "string" ? item.status : "completed";
     const timestamp = now();
+    this.noteItemKind(kind);
+
+    if (kind === "compaction") {
+      this.emitCompaction(item);
+      return;
+    }
 
     if (kind === "agentMessage" || kind === "reasoning") {
       const message = this.messages.get(itemId);
@@ -989,6 +1190,11 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   /** Settle every message, tool, and request still open for this turn. */
   private settleTurnItems(active: ActiveTurn): void {
     const timestamp = now();
+    // A compaction that started but never completed still rewrote the native
+    // history; report it before the turn terminal closes the window.
+    for (const item of [...this.pendingCompactions.values()]) {
+      if (this.resolveTurnId(item.turnId) === active.turn.id) this.emitCompaction(item);
+    }
     for (const message of this.messages.values()) {
       if (message.turnId !== active.turn.id) continue;
       if (message.status === "pending" || message.status === "streaming") {

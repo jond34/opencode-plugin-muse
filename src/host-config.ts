@@ -85,8 +85,11 @@ export interface HostConfigOptions {
   /** Toolset allowlist; defaults to the bridge namespace. */
   readonly toolset?: readonly string[];
   /**
-   * Compaction thresholds. Muse requires soft < hard and refuses 1/1.
-   * Defaults sit above opencode's own limit so Muse stops compacting first.
+   * Compaction thresholds. Opencode owns compaction: Muse compacts only its
+   * own native history, and a Muse-side compaction would rewrite context this
+   * plugin cannot see or fingerprint. The host requires soft < hard and
+   * refuses 1/1, so the defaults sit at the window's edge, above opencode's
+   * own limit, leaving the decision to opencode.
    */
   readonly softThreshold?: number;
   readonly hardThreshold?: number;
@@ -232,8 +235,9 @@ export async function writeMuseHostConfig(
       foreign_personal_rules: false,
       foreign_personal_skills: false,
     },
-    // Muse compacts its own history below opencode's limit. Deferring both
-    // thresholds to the window's edge leaves compaction to opencode.
+    // Muse must not compact. Deferring both thresholds to the window's edge
+    // (the host refuses 1/1, and exposes no disable switch) leaves compaction
+    // to opencode, which owns the transcript this provider is asked to render.
     context_compaction: {
       soft_threshold: options.softThreshold ?? 0.99,
       hard_threshold: options.hardThreshold ?? 0.995,

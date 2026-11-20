@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { LanguageModelV3Prompt } from "@ai-sdk/provider";
+import type { LanguageModelV3Prompt, LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
+import { toolCallInputText, toolResultIsError, toolResultText } from "./transcript.js";
 
 /**
  * Transcript identity for the native Muse session.
@@ -7,12 +8,13 @@ import type { LanguageModelV3Prompt } from "@ai-sdk/provider";
  * Muse keeps its own conversation. opencode may rewrite the visible transcript
  * (compaction, rewind, or a restored session), and the native session then holds
  * context the new prompt no longer has. Comparing a hash chain of the visible
- * user/assistant messages detects that without trusting message counts: a
- * rewrite that keeps the same number of messages is still caught.
+ * messages detects that without trusting message counts: a rewrite that keeps
+ * the same number of messages is still caught.
  *
- * Tool calls, tool results, reasoning, and system text are deliberately absent.
- * They change shape between steps and are not part of the conversation a user
- * would recognize as rewritten.
+ * Tool calls and results are part of the chain. A rewrite can change nothing
+ * but a tool output (opencode pruning or replacing one), and a text-only chain
+ * would call that "same", leaving the native session with a result the prompt
+ * no longer contains. System text stays out: opencode rebuilds it every step.
  */
 
 export type Reconciliation = "same" | "compacted" | "diverged";
@@ -51,16 +53,38 @@ function fileSignature(part: Record<string, unknown>): string | undefined {
 }
 
 /**
- * One fingerprint per visible message, in order.
+ * One fingerprint per visible message part, in order.
  *
- * A fingerprint covers the role plus every text and file part of that message.
- * Tool-only assistant messages produce no entry, so a parked step and its
- * follow-up step share the same chain.
+ * A text-only message contributes one role+content entry, as before. Every tool
+ * call and result contributes its own entry at that message's position, keyed
+ * by call id and content hash. Repeated ids count once, matching the renderer.
  */
 export function fingerprintTranscript(prompt: LanguageModelV3Prompt): string[] {
   const fingerprints: string[] = [];
+  const seenCalls = new Set<string>();
+  const seenResults = new Set<string>();
+
+  const pushResult = (part: Record<string, unknown>): void => {
+    const id = typeof part.toolCallId === "string" ? part.toolCallId : "";
+    if (id.length > 0 && seenResults.has(id)) return;
+    if (id.length > 0) seenResults.add(id);
+    const name = typeof part.toolName === "string" ? part.toolName : "";
+    const output = part.output as LanguageModelV3ToolResultOutput;
+    const status = toolResultIsError(output) ? "error" : "ok";
+    fingerprints.push(`tool-result:${id}:${name}:${status}:${sha256(toolResultText(output))}`);
+  };
+
   for (const message of prompt) {
+    if (message.role === "tool") {
+      for (const part of message.content) {
+        if (typeof part !== "object" || part === null) continue;
+        const record = part as unknown as Record<string, unknown>;
+        if (record.type === "tool-result") pushResult(record);
+      }
+      continue;
+    }
     if (message.role !== "user" && message.role !== "assistant") continue;
+
     const chunks: string[] = [];
     for (const part of message.content) {
       if (typeof part === "string") {
@@ -77,8 +101,21 @@ export function fingerprintTranscript(prompt: LanguageModelV3Prompt): string[] {
       if (file !== undefined) chunks.push(file);
     }
     const text = chunks.join("").trim();
-    if (text.length === 0) continue;
-    fingerprints.push(sha256(`${message.role}:${text}`));
+    if (text.length > 0) fingerprints.push(sha256(`${message.role}:${text}`));
+
+    for (const part of message.content) {
+      if (typeof part !== "object" || part === null) continue;
+      const record = part as unknown as Record<string, unknown>;
+      if (record.type === "tool-call") {
+        const id = typeof record.toolCallId === "string" ? record.toolCallId : "";
+        if (id.length > 0 && seenCalls.has(id)) continue;
+        if (id.length > 0) seenCalls.add(id);
+        const name = typeof record.toolName === "string" ? record.toolName : "";
+        fingerprints.push(`tool-call:${id}:${name}:${sha256(toolCallInputText(record.input))}`);
+        continue;
+      }
+      if (record.type === "tool-result") pushResult(record);
+    }
   }
   return fingerprints;
 }
@@ -98,21 +135,47 @@ export function promptContainsCompactionFingerprint(
   prompt: LanguageModelV3Prompt,
   fingerprint: string,
 ): boolean {
-  for (const message of prompt) {
-    if (message.role !== "user" && message.role !== "assistant") continue;
-    for (const part of message.content) {
+  return findCompactionFingerprint(prompt, [fingerprint]) >= 0;
+}
+
+/**
+ * Index of the first prompt message carrying one of these compaction digests.
+ *
+ * The index is the checkpoint boundary: the native window starts there, and
+ * everything after it is a delta. `-1` means no digest this plugin produced is
+ * present, so the caller must not treat the prompt as a native checkpoint.
+ */
+export function findCompactionFingerprint(
+  prompt: LanguageModelV3Prompt,
+  fingerprints: readonly string[],
+): number {
+  if (fingerprints.length === 0) return -1;
+  const matches = (text: string): boolean =>
+    fingerprints.some((fingerprint) => sha256(text) === fingerprint);
+  for (let index = 0; index < prompt.length; index += 1) {
+    const message = prompt[index];
+    if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
+    const content: unknown = message.content;
+    // OpenCode usually sends parts, but a string body is legal on the wire and
+    // iterating it would check one character at a time.
+    if (typeof content === "string") {
+      if (matches(content)) return index;
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
       if (typeof part === "string") {
-        if (sha256(part) === fingerprint) return true;
+        if (matches(part)) return index;
         continue;
       }
       if (typeof part !== "object" || part === null) continue;
-      const record = part as unknown as Record<string, unknown>;
-      if (record.type === "text" && typeof record.text === "string") {
-        if (sha256(record.text) === fingerprint) return true;
+      const record = part as Record<string, unknown>;
+      if (record.type === "text" && typeof record.text === "string" && matches(record.text)) {
+        return index;
       }
     }
   }
-  return false;
+  return -1;
 }
 
 /**

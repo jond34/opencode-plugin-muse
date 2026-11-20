@@ -66,6 +66,11 @@ describe("contributorModelEntries", () => {
 });
 
 describe("toModelInfo", () => {
+  test("does not mark provider compaction, which opencode rejects for AI SDK providers", () => {
+    const info = toModelInfo(providerID, { modelId: "muse-spark-1.3" });
+    expect(info.settings?.compaction).toBeUndefined();
+  });
+
   test("names contributor entries the way models.dev does", () => {
     const name = (modelId: string) =>
       toModelInfo(providerID, { modelId, displayLabel: modelId }).name;
