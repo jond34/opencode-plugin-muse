@@ -45,7 +45,6 @@ export interface SteerTurnInput {
     /** Applies to the running turn and every turn after it. */
     readonly reasoningEffort?: string;
 }
-export type HarnessApprovalDecision = "accept" | "accept_for_session" | "accept_always" | "decline" | "cancel";
 /**
  * Answer to a runtime request. `optionId` must be one of the ids the harness
  * supplied in `HarnessRuntimeRequest.options`; the adapter translates it to the
@@ -53,7 +52,6 @@ export type HarnessApprovalDecision = "accept" | "accept_for_session" | "accept_
  */
 export interface HarnessRequestResponse {
     readonly requestId: string;
-    readonly decision?: HarnessApprovalDecision;
     readonly optionId?: string;
     readonly feedback?: string;
     readonly answers?: Record<string, unknown>;

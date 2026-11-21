@@ -12,6 +12,20 @@ import {
   type PromptDelivery,
 } from "./prompt-policy.js";
 
+/**
+ * Split by lifetime, not by order: `MuseHarnessSession` (`session.ts`) owns one
+ * Muse native session — its events, containment, compaction, and turn usage —
+ * while `LiveSession` here owns OpenCode's step state: the stream controller,
+ * the parked bridge calls, and per-step bookkeeping. One native session, many
+ * steps.
+ *
+ * In file order: `ToolDefinition` (what a session may call); `SessionStore`,
+ * `NativeCompactionMarker`, `STORE_VERSION` and `storeKey` (the durable
+ * OpenCode → Muse session-id map); `PendingCall`, `Usage`, `StepStats` and
+ * `toAIUsage` (step accounting); `LiveSession` (one OpenCode step, and the
+ * parked bridge calls it owns, with `parseFingerprints` as its helper);
+ * `MuseSessionRegistry` (the object the plugin holds).
+ */
 export interface ToolDefinition {
   readonly name: string;
   readonly description?: string;
@@ -38,7 +52,7 @@ export interface NativeCompactionMarker {
  * forces one clean reseed per existing session instead of matching a shape the
  * new code cannot verify.
  */
-export const STORE_VERSION = "v2";
+const STORE_VERSION = "v2";
 
 /** Namespace a durable session key. */
 export function storeKey(sessionID: string, suffix = ""): string {
@@ -848,11 +862,35 @@ export class MuseSessionRegistry {
         const current = live;
         if (!current) throw new Error("Session is not ready");
         const id = `muse_tool_${current.toolCounter}`;
-        const result = new Promise<HarnessToolResult>((resolve, reject) => {
-          current.pending.set(id, { id, name: call.name, input: call.input, resolve, reject });
+        return new Promise<HarnessToolResult>((resolve, reject) => {
+          // The opencode-side tool cannot be aborted from here, but the wait
+          // can: release the parked call so it does not leak. The caller sees
+          // the rejection and sends no result for the cancelled request.
+          const onAbort = () => {
+            current.pending.delete(id);
+            reject(new Error("Tool call cancelled"));
+          };
+          const cleanup = () => call.signal?.removeEventListener("abort", onAbort);
+          current.pending.set(id, {
+            id,
+            name: call.name,
+            input: call.input,
+            resolve: (value) => {
+              cleanup();
+              resolve(value);
+            },
+            reject: (error) => {
+              cleanup();
+              reject(error);
+            },
+          });
+          if (call.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          call.signal?.addEventListener("abort", onAbort, { once: true });
+          current.emitToolCall({ toolCallId: id, toolName: call.name, input: call.input });
         });
-        current.emitToolCall({ toolCallId: id, toolName: call.name, input: call.input });
-        return result;
       },
     };
 

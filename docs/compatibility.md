@@ -19,7 +19,7 @@ and unused. Record the actual host version in every live run; do not generalize
 from a version that was not run.
 
 W2 evidence for this pair: `npm run check:offline` green (197 tests at W2; the
-suite is 234 today, tsc clean),
+suite is 240 today, tsc clean),
 the four live suites green (`model-live`, `restart-live`, `fork-live`,
 `containment-live`), and a live handshake with no schema drift
 (`sha256:b7fb9137267aa35c92424df37a5ac56287006a0e546b197bf0930d593fecbdb1`,
@@ -110,6 +110,89 @@ host config.
 The native session is a cache. If it is pruned, locked, or unavailable, the
 plugin falls back to opencode's transcript and digest rather than treating the
 native id as authority.
+
+## Adapter decisions at the seam
+
+Five seam decisions: what the plugin does where the wire leaves a choice, or
+where the adapter is deliberately more defensive than the wire. Each names the
+failure it avoids and the evidence behind it. The wider client-side review —
+turn ordering, queueing, tool errors, server requests, approvals, grants, and
+the model catalog — is `seam-review.md`; this section keeps only the choices
+that change observable behaviour at the seam.
+
+1. **A turn ack without `turnId`.** The ack's `turnId` is authoritative
+   (`msp.d.ts:3883-3884`); the command id is registered as the turn's native id
+   *before* `turn/start` is sent, so a `turn/started` that arrives first binds to
+   the same host turn through the event's `commandId` rather than minting a
+   second one (`pendingStarts`, `startTurn`/`resolveTurnId`, `src/session.ts`).
+   The ack then corrects the mapping if it names a different id. When the ack
+   itself omits `turnId`, the command id stands in and is recorded as an
+   assumption, adopted when the host later names the turn
+   (`resolveTurnId`/`adoptTurnId`); the turn's `nativeRef` and every later event
+   move with it, because the plugin needs an id for `turn/steer` and
+   `turn/interrupt`. The two-unconfirmed-assumptions ambiguity cannot arise:
+   `startTurn` refuses while a turn is non-terminal (see item 3), so the
+   `size === 1` check is defence only. Covered by `test/lifecycle.test.ts` ("a
+   turn/started before the ack binds by command id", "a turn ack without an id
+   is reconciled when the host names the turn"). `turnId == commandId` for a
+   fresh turn (`msp.d.ts:3889-3890`), so the fallback is an identity, not a
+   guess; the adoption rule only matters if a host names a different turn than
+   the one it acknowledged.
+
+2. **Unknown notifications are ignored.** The dispatch `default` is `break`
+   (`src/session.ts:839`). MCP requires the receiver not to respond to a
+   notification (JSON-RPC 2.0: the server MUST NOT reply), and MSP adds kinds;
+   throwing on one would take the chat down on a host upgrade. The switch
+   covers the 15 kinds the adapter knows. The cost is silent loss of a new
+   state-bearing kind, which is still better than a failed session.
+
+3. **Approvals require a choice id.** `respondToRequest` sends
+   `approval/decide` with the selected `choiceId` and the current
+   `requirementId`; a missing option id is `invalid_input`, not a default answer
+   (`src/session.ts:669`). Multi-stage approvals reject a decision that does
+   not name a current choice, which is why `approval/updated` stores
+   `currentRequirementId`. The harness contract's request response carries no
+   decision kind — opencode's plugin API has no permission callback to route one
+   from (`@opencode/plugin@2.3.2` exposes `storage`, `provider`, `aisdk`,
+   `session`, `agent` only) — but the wire choices do carry `decision` and
+   `acceptsFeedback` (`msp.d.ts:45-51`). Both are copied onto
+   `HarnessApprovalOption`, and `respondToRequest` refuses `feedback` unless the
+   chosen option accepts it, because sending it otherwise is a protocol error
+   (`msp.d.ts:142-152`). No caller in `src/` answers a runtime request: bridge
+   sessions force `approvalMode: "allowAll"` (`create`; an explicit conflicting
+   mode is refused), so Muse is not expected to ask. Answering one means calling
+   `respondToRequest`, which is the host's job, not the plugin's.
+
+4. **Cancellation stops the call and sends nothing.** The bridge keeps a map of
+   in-flight request id to controller (`src/bridge.ts:83-99`). A
+   `notifications/cancelled` aborts that controller and destroys the response,
+   and a POST whose connection drops is treated the same way, so a tool that
+   ignores the signal cannot leave the caller waiting. Both protocol eras are
+   covered: up to 2025-11-25 the client cancels with the notification (the
+   receiver SHOULD stop and SHOULD NOT answer the cancelled request); from
+   2026-07-28 the notification is stdio-only and a Streamable HTTP client cancels
+   by closing the POST, which the server MUST treat as cancellation.
+   `HarnessToolCall.signal` (`src/contract/tool-bridge.ts:25`) carries the abort
+   to the host, and the registry releases the parked call so it cannot leak
+   (`src/session-registry.ts:861`). The opencode-side tool itself still runs —
+   the plugin never holds its handle — so a cancelled mutating tool can finish
+   after the user stopped it; only the wait and the response stop. The 202 is
+   still returned for the notification itself (`src/bridge.ts:276`), which is a
+   notification, not the cancelled request. Covered by `test/bridge.test.ts`:
+   loopback bind, bearer rejection, initialize, and the cancel path. The
+   turn-level path is separate and does stop Muse: `AbortSignal` aborts the step
+   and calls `turn/interrupt` (`src/language-model.ts:413-421`).
+
+5. **The completed frame wins.** Deltas are emitted to opencode and never
+   accumulated; `item/completed`, or a terminal `item/updated`, is the only text
+   stored, using `item.text` for messages and `item.visibleOutput` for tools
+   (`src/session.ts:1055-1115`). A delta stream can be replayed or end early,
+   while the completed frame is what the host recorded, and the protocol defines
+   no reconciliation rule between them. `test/fixtures/tool.jsonl:12-13` shows an
+   in-progress `visibleOutput` that differs from the completed envelope, and the
+   replay tests assert the completed text. If a host completed an item with no
+   text after sending deltas, the transcript would hold an empty message; not
+   observed.
 
 ## Upgrade checklist
 

@@ -48,10 +48,14 @@ function readBody(request: IncomingMessage, maxBytes = 8 * 1024 * 1024): Promise
   });
 }
 
+type InFlight = Map<string, { controller: AbortController; response: ServerResponse }>;
+
 async function handleMessage(
   message: Record<string, unknown>,
   bridge: HarnessToolBridge,
   sessionId: string | null,
+  signal: AbortSignal,
+  inFlight: InFlight,
 ): Promise<Record<string, unknown> | null> {
   const method = typeof message.method === "string" ? message.method : "";
   const id = message.id;
@@ -76,7 +80,23 @@ async function handleMessage(
     } as unknown as Record<string, unknown>;
   }
 
-  if (method === "notifications/initialized" || method === "notifications/cancelled") {
+  if (method === "notifications/cancelled") {
+    // The receiver should stop and send no response. The tool may ignore the
+    // signal, so the response is also destroyed: the client must not wait for a
+    // result that will never be meaningful.
+    const params = (message.params ?? {}) as Record<string, unknown>;
+    const requestId = params.requestId;
+    if (typeof requestId === "string" || typeof requestId === "number") {
+      const target = inFlight.get(String(requestId));
+      if (target) {
+        target.controller.abort();
+        if (!target.response.destroyed) target.response.destroy();
+      }
+    }
+    return null;
+  }
+
+  if (method === "notifications/initialized") {
     return null;
   }
 
@@ -104,7 +124,18 @@ async function handleMessage(
         ? (params.arguments as Record<string, unknown>)
         : {};
     try {
-      const result = await bridge.callTool({ id: randomUUID(), name, input });
+      const tools = await bridge.listTools();
+      if (!tools.some((tool) => tool.name === name)) {
+        // Unknown tool is a protocol error, not a tool result: MCP 2026-07-28
+        // tools §Error Handling. Returning isError would attribute a failure to
+        // a tool that never existed and hide the protocol mistake.
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: `Unknown tool: ${rawName}` },
+        };
+      }
+      const result = await bridge.callTool({ id: randomUUID(), name, input, signal });
       return {
         jsonrpc: "2.0",
         id,
@@ -114,6 +145,8 @@ async function handleMessage(
         },
       };
     } catch (error) {
+      // A cancelled request gets no result; the handler closes the response.
+      if (signal.aborted) return null;
       // A failing host tool is a tool error, not a protocol error: the model
       // can correct.
       return {
@@ -143,13 +176,14 @@ export async function startToolBridgeServer(bridge: HarnessToolBridge): Promise<
   const token = randomBytes(32).toString("hex");
   let mcpSessionId: string | null = null;
   let issuedSessionId: string | null = null;
+  const inFlight: InFlight = new Map();
 
   const server = createServer((request, response) => {
     void handleRequest(request, response, bridge, token, () => mcpSessionId, (value) => {
       mcpSessionId = value;
     }, () => issuedSessionId, (value) => {
       issuedSessionId = value;
-    });
+    }, inFlight);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -183,6 +217,7 @@ async function handleRequest(
   setSession: (value: string) => void,
   getIssued: () => string | null,
   setIssued: (value: string) => void,
+  inFlight: InFlight,
 ): Promise<void> {
   if (request.method === "GET") {
     // The streamable-HTTP transport may open a server-to-client SSE stream.
@@ -224,7 +259,30 @@ async function handleRequest(
     return;
   }
 
-  const result = await handleMessage(message, bridge, getSession());
+  const key =
+    typeof message.id === "string" || typeof message.id === "number"
+      ? String(message.id)
+      : undefined;
+  const controller = new AbortController();
+  if (key !== undefined) inFlight.set(key, { controller, response });
+  // A dropped POST is a cancellation too (streamable HTTP, 2026-07-28): the
+  // client closes the connection instead of sending a notification.
+  response.on("close", () => {
+    if (!response.writableEnded) controller.abort();
+  });
+
+  const result = await handleMessage(
+    message,
+    bridge,
+    getSession(),
+    controller.signal,
+    inFlight,
+  );
+  if (key !== undefined) inFlight.delete(key);
+  if (controller.signal.aborted) {
+    if (!response.destroyed) response.destroy();
+    return;
+  }
   if (result === null) {
     response.writeHead(202);
     response.end();

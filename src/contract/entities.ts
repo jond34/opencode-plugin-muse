@@ -28,7 +28,7 @@ export interface HarnessSessionInfo {
     readonly updatedAt: string;
 }
 export type HarnessTurnStatus = "pending" | "running" | "completed" | "interrupted" | "cancelled" | "failed";
-export interface HarnessTokenUsage {
+interface HarnessTokenUsage {
     readonly inputTokens?: number;
     readonly outputTokens?: number;
     readonly reasoningTokens?: number;
@@ -47,7 +47,7 @@ export interface HarnessTurn {
     readonly completedAt: string | null;
     readonly tokenUsage?: HarnessTokenUsage;
 }
-export type HarnessMessageRole = "user" | "assistant" | "system";
+type HarnessMessageRole = "user" | "assistant" | "system";
 export type HarnessMessageStatus = "pending" | "streaming" | "completed" | "failed";
 export interface HarnessMessage {
     /** Adapter-assigned id. The host uses it as the primary key for rendering. */
@@ -76,17 +76,21 @@ export interface HarnessToolItem {
     readonly startedAt: string | null;
     readonly completedAt: string | null;
 }
-export type HarnessRequestKind = "approval" | "user_input" | "auth_refresh" | "dynamic_tool_call";
+type HarnessRequestKind = "approval" | "user_input" | "auth_refresh" | "dynamic_tool_call";
 export type HarnessRequestStatus = "pending" | "resolved" | "expired" | "cancelled";
 /**
  * Approval options are passed through from the harness unchanged. `id` is the
  * harness's own option id and must be echoed back in the response; hosts must
  * not invent ids of their own.
  */
-export interface HarnessApprovalOption {
+interface HarnessApprovalOption {
     readonly id: string;
     readonly label: string;
     readonly warning?: string;
+    /** The harness's own decision for this choice (`approved`, `denied`, ...). */
+    readonly decision?: string;
+    /** True when the decision accepts `feedback`, which reaches the model. */
+    readonly acceptsFeedback?: boolean;
 }
 export interface HarnessRuntimeRequest {
     /** Adapter-assigned id. The host uses it as the primary key for rendering. */

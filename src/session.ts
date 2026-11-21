@@ -7,9 +7,13 @@ import type {
   HarnessSession,
   HarnessSessionInfo,
   HarnessSnapshot,
+  HarnessToolBridge,
   HarnessToolItem,
   HarnessTurn,
   HarnessUserMessage,
+  InterruptTurnInput,
+  StartTurnInput,
+  SteerTurnInput,
 } from "./contract/index.js";
 import { HarnessError, nativeRef } from "./contract/index.js";
 import type { MuseNotification, NotificationSink } from "./host.js";
@@ -27,6 +31,15 @@ import {
   toUserInputStatus,
 } from "./events.js";
 
+/**
+ * One Muse native session, and everything the harness contract needs from it:
+ * turn commands, the normalized event stream, and the notification handlers
+ * that translate Muse frames into that stream.
+ *
+ * Layout, in file order: shared turn/usage/context shapes and the host seam,
+ * then `MuseHarnessSession` — construction and resume, accessors, the turn API,
+ * notification dispatch, and finally one handler per Muse notification kind.
+ */
 const ADAPTER_ID = "muse";
 
 /**
@@ -165,7 +178,7 @@ export interface ContextUsage {
 }
 
 /** The minimal host surface a session needs, so tests can supply a fake. */
-export interface SessionConnection {
+interface SessionConnection {
   mintCommandId(): string;
   command(
     method: string,
@@ -178,6 +191,8 @@ export interface SessionHost {
   readonly connection: SessionConnection;
   registerSink(sink: NotificationSink): void;
   unregisterSink(sessionId: string): void;
+  /** Grants from the handshake, when the host can report them. */
+  grantedCapabilities?(): readonly string[];
 }
 
 function now(): string {
@@ -195,7 +210,7 @@ function textContent(text: string): ReadonlyArray<HarnessContentBlock> {
 }
 
 /** Convert contract content blocks into MSP turn input parts. */
-export function toTurnInputParts(message: HarnessUserMessage): Array<Record<string, unknown>> {
+function toTurnInputParts(message: HarnessUserMessage): Array<Record<string, unknown>> {
   const parts: Array<Record<string, unknown>> = [];
   for (const block of message.content) {
     if (block.type === "text") {
@@ -211,15 +226,18 @@ export function toTurnInputParts(message: HarnessUserMessage): Array<Record<stri
   return parts;
 }
 
+/** Mirrors MSP's closed `ApprovalMode` (`msp.d.ts:187`). */
+export type AdapterApprovalMode = "allowAll" | "promptUnmatched" | "onRequest" | "denyUnmatched";
+
 export interface CreateSessionInput {
   /** Host-assigned session id, echoed in `HarnessSessionInfo.id`. */
   readonly sessionId: string;
   readonly cwd: string;
   readonly model?: string | null;
-  readonly toolBridge?: import("./contract/index.js").HarnessToolBridge;
+  readonly toolBridge?: HarnessToolBridge;
   readonly signal?: AbortSignal;
   /** Starting approval mode; omitted selects the host default. */
-  readonly approvalMode?: string;
+  readonly approvalMode?: AdapterApprovalMode;
   /** Native Muse session id to resume instead of starting a new session. */
   readonly resumeSessionId?: string;
   /**
@@ -245,7 +263,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private readonly nativeId: string;
   private readonly bus = new EventBus();
   private readonly capabilities = MUSE_CAPABILITIES;
-  private readonly toolBridge: import("./contract/index.js").HarnessToolBridge | undefined;
+  private readonly toolBridge: HarnessToolBridge | undefined;
   private readonly bridgeServer: ToolBridgeServer | undefined;
   private readonly containment: "strict" | "warn" | "off";
   private containmentBreaches = 0;
@@ -263,6 +281,10 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private readonly unexpectedKindCounts = new Map<string, number>();
   private readonly hostToNative = new Map<string, string>();
   private readonly nativeToHost = new Map<string, string>();
+  /** Native ids assumed from a command id because the ack omitted `turnId`. */
+  private readonly assumedTurnIds = new Map<string, string>();
+  /** Command ids whose `turn/start` is in flight, and the host turn they own. */
+  private readonly pendingStarts = new Map<string, string>();
   private readonly messages = new Map<string, HarnessMessage>();
   private readonly tools = new Map<string, HarnessToolItem>();
   private readonly requests = new Map<string, HarnessRuntimeRequest>();
@@ -287,7 +309,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     input: CreateSessionInput,
     nativeSessionId: string,
     startedAt: string,
-    toolBridge?: import("./contract/index.js").HarnessToolBridge,
+    toolBridge?: HarnessToolBridge,
     bridgeServer?: ToolBridgeServer,
     resumeOutcome: "started" | "resumed" | "resume_fallback" = "started",
   ) {
@@ -315,6 +337,31 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     host: SessionHost,
     input: CreateSessionInput,
   ): Promise<MuseHarnessSession> {
+    // A bridge session is driven by opencode, whose permission evaluation is
+    // the only fence. Only `allowAll` can be honoured: nothing in this plugin
+    // answers a Muse approval, so any asking mode would park the turn.
+    if (
+      input.toolBridge !== undefined &&
+      input.approvalMode !== undefined &&
+      input.approvalMode !== "allowAll"
+    ) {
+      throw new HarnessError({
+        code: "invalid_input",
+        adapterId: ADAPTER_ID,
+        message: `approvalMode ${input.approvalMode} cannot be answered here; bridge sessions use allowAll`,
+      });
+    }
+    // Starting a bridge the handshake did not grant would fail `session/start`
+    // as a whole, after the server is listening. An absent accessor means a
+    // replay host or test double that does not model the handshake.
+    const granted = host.grantedCapabilities?.();
+    if (input.toolBridge !== undefined && granted !== undefined && !granted.includes("sessionMcp")) {
+      throw new HarnessError({
+        code: "open_failed",
+        adapterId: ADAPTER_ID,
+        message: "Muse did not grant sessionMcp; the tool bridge cannot start",
+      });
+    }
     const commandId = host.connection.mintCommandId();
     const bridgeServer = input.toolBridge
       ? await startToolBridgeServer(input.toolBridge)
@@ -348,7 +395,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     // A bridge session is driven by opencode, whose permission evaluation is
     // the only fence. Asking Muse as well would double-ask, and a parked Muse
     // approval would hang a turn opencode has already decided.
-    const approvalMode = input.approvalMode ?? (input.toolBridge ? "allowAll" : undefined);
+    const approvalMode = input.toolBridge !== undefined ? "allowAll" : input.approvalMode;
     const startParams = () => ({
       workspaceRoot: input.cwd,
       ...(input.model ? { modelId: input.model } : {}),
@@ -524,9 +571,51 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
   }
 
-  private resolveTurnId(nativeTurnId: unknown): string {
+  /**
+   * Muse's turn id, in opencode's turn-id space. A turn this side never minted
+   * surfaces under its native id instead of vanishing. When the ack omitted
+   * `turnId` and the host later names the turn, the single unconfirmed
+   * assumption is adopted rather than left as a phantom pending turn.
+   */
+  private resolveTurnId(nativeTurnId: unknown, commandId?: unknown): string {
     if (typeof nativeTurnId !== "string") return "";
-    return this.nativeToHost.get(nativeTurnId) ?? nativeTurnId;
+    const known = this.nativeToHost.get(nativeTurnId);
+    if (known !== undefined) return known;
+    // `turn/started` names the command that submitted it, which closes the
+    // window before the ack without assuming `turnId == commandId`.
+    if (typeof commandId === "string") {
+      const hostTurnId = this.pendingStarts.get(commandId);
+      if (hostTurnId !== undefined) {
+        this.pendingStarts.delete(commandId);
+        this.hostToNative.set(hostTurnId, nativeTurnId);
+        this.nativeToHost.set(nativeTurnId, hostTurnId);
+        return hostTurnId;
+      }
+    }
+    if (this.assumedTurnIds.size === 1) {
+      const [entry] = [...this.assumedTurnIds];
+      if (entry !== undefined) {
+        const [assumed, hostTurnId] = entry;
+        this.adoptTurnId(assumed, nativeTurnId, hostTurnId);
+        return hostTurnId;
+      }
+    }
+    return nativeTurnId;
+  }
+
+  /** Re-key an assumed turn id once the host names the turn for real. */
+  private adoptTurnId(assumed: string, actual: string, hostTurnId: string): void {
+    this.assumedTurnIds.delete(assumed);
+    if (this.nativeToHost.get(assumed) === hostTurnId) this.nativeToHost.delete(assumed);
+    this.hostToNative.set(hostTurnId, actual);
+    this.nativeToHost.set(actual, hostTurnId);
+    const active = this.turns.get(hostTurnId);
+    if (active) {
+      active.turn = {
+        ...active.turn,
+        nativeRef: nativeRef(actual, this.capabilities.identity.nativeTurnIds),
+      };
+    }
   }
 
   private nativeTurnId(hostTurnId: string): string | undefined {
@@ -535,22 +624,72 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
 
   // ------------------------------------------------------------------ turns
 
-  async startTurn(input: import("./contract/index.js").StartTurnInput): Promise<HarnessTurn> {
+  async startTurn(input: StartTurnInput): Promise<HarnessTurn> {
     this.assertOpen();
+    // Muse absorbs a submit into the running turn (`ifBusy` defaults to
+    // `queue`), but this adapter models one native turn per host turn. opencode
+    // steers instead of submitting while a turn runs, so refusing is the honest
+    // answer; a queued turn would share the running turn's native id.
+    for (const [turnId, active] of this.turns) {
+      if (!active.terminal) {
+        throw new HarnessError({
+          code: "unsupported",
+          adapterId: ADAPTER_ID,
+          retryable: true,
+          message: `Turn ${turnId} is still running; steer or interrupt it first`,
+        });
+      }
+    }
     const commandId = this.host.connection.mintCommandId();
-    const result = await this.host.connection.command(
-      "turn/start",
-      {
-        sessionId: this.nativeId,
-        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
-        input: toTurnInputParts(input.message),
-      },
-      { commandId },
-    );
-    const nativeTurnId =
-      typeof result?.turnId === "string" ? result.turnId : commandId;
+    // Register before sending: `turn/started` can arrive before the ack, and it
+    // carries this command id, so the event binds to this host turn instead of
+    // minting a second one under the native id.
+    this.pendingStarts.set(commandId, input.turnId);
+    this.hostToNative.set(input.turnId, commandId);
+    this.nativeToHost.set(commandId, input.turnId);
+    let result: Record<string, unknown>;
+    try {
+      result = await this.host.connection.command(
+        "turn/start",
+        {
+          sessionId: this.nativeId,
+          ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
+          input: toTurnInputParts(input.message),
+        },
+        { commandId },
+      );
+    } catch (error) {
+      // A refused start must not leave a phantom turn or mapping behind. The
+      // turn can only exist here if `turn/started` beat the refusal.
+      this.pendingStarts.delete(commandId);
+      if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
+      if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
+      this.assumedTurnIds.delete(commandId);
+      const started = this.turns.get(input.turnId);
+      if (started !== undefined && !started.terminal) this.turns.delete(input.turnId);
+      throw error;
+    }
+    this.pendingStarts.delete(commandId);
+    const acked = typeof result?.turnId === "string" ? result.turnId : undefined;
+    const nativeTurnId = acked ?? commandId;
     this.hostToNative.set(input.turnId, nativeTurnId);
     this.nativeToHost.set(nativeTurnId, input.turnId);
+    if (nativeTurnId !== commandId && this.nativeToHost.get(commandId) === input.turnId) {
+      this.nativeToHost.delete(commandId);
+    }
+    if (acked === undefined) this.assumedTurnIds.set(nativeTurnId, input.turnId);
+    else this.assumedTurnIds.delete(commandId);
+
+    const existing = this.turns.get(input.turnId);
+    if (existing !== undefined) {
+      // `turn/started` already created the turn. Keep the status it reported
+      // (running) and only correct the native ref the ack names.
+      existing.turn = {
+        ...existing.turn,
+        nativeRef: nativeRef(nativeTurnId, this.capabilities.identity.nativeTurnIds),
+      };
+      return existing.turn;
+    }
 
     const turn: HarnessTurn = {
       id: input.turnId,
@@ -582,7 +721,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     this.sessionInfo = { ...this.sessionInfo, model, updatedAt: now() };
   }
 
-  async interruptTurn(input: import("./contract/index.js").InterruptTurnInput): Promise<void> {
+  async interruptTurn(input: InterruptTurnInput): Promise<void> {
     this.assertOpen();
     const nativeTurnId = this.nativeTurnId(input.turnId);
     if (nativeTurnId === undefined) {
@@ -598,7 +737,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     );
   }
 
-  async steerTurn(input: import("./contract/index.js").SteerTurnInput): Promise<void> {
+  async steerTurn(input: SteerTurnInput): Promise<void> {
     this.assertOpen();
     const nativeTurnId = this.nativeTurnId(input.turnId);
     if (nativeTurnId === undefined) {
@@ -638,6 +777,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
           code: "invalid_input",
           adapterId: ADAPTER_ID,
           message: `Approval ${input.requestId} needs an optionId`,
+        });
+      }
+      const option = request.options?.find((entry) => entry.id === choiceId);
+      if (input.feedback !== undefined && option?.acceptsFeedback !== true) {
+        throw new HarnessError({
+          code: "invalid_input",
+          adapterId: ADAPTER_ID,
+          message: `Choice ${choiceId} does not accept feedback`,
         });
       }
       const requirementId = this.requestRequirements.get(request.id);
@@ -741,6 +888,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   handleNotification(notification: MuseNotification): void {
     if (this.closed) return;
     const params = notification.params ?? {};
+    // The closing `default` is deliberate: MSP gains notification kinds, and
+    // an adapter that threw on the first unknown one would take a chat down.
     switch (notification.method) {
       case "turn/started":
         this.onTurnStarted(params);
@@ -795,7 +944,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private onTurnStarted(params: Record<string, unknown>): void {
     const nativeTurnId = typeof params.turnId === "string" ? params.turnId : undefined;
     if (nativeTurnId === undefined) return;
-    const hostTurnId = this.resolveTurnId(nativeTurnId);
+    const hostTurnId = this.resolveTurnId(nativeTurnId, params.commandId);
     const existing = this.turns.get(hostTurnId);
     if (existing && existing.turn.status !== "pending") return;
 
@@ -820,6 +969,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     if (!active || active.terminal) return;
 
     this.settleTurnItems(active);
+    // Absent reason reads as failure: a turn is only reported successful when
+    // the host says so.
     const terminal = typeof params.terminal === "string" ? params.terminal : "failed";
     const status = toTurnStatus(terminal);
     const failure = status === "failed" ? toFailure(params.error) : null;
@@ -993,6 +1144,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const item = params.item as Record<string, unknown> | undefined;
     if (!item) return;
     const status = typeof item.status === "string" ? item.status : "inProgress";
+    // Only a settled item has anything to store here: while it runs, text and
+    // output arrive through `item/delta`, so a partial frame would overwrite
+    // the item with the same state it already has.
     if (status === "inProgress") return;
     // A terminal whole-item update is equivalent to item/completed.
     this.onItemCompleted({ item });
@@ -1067,6 +1221,23 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
   }
 
+  /**
+   * Copy the wire choices, keeping the decision and whether it accepts
+   * feedback. A host that only sees labels cannot tell a denial from an
+   * approval, and feedback sent on a non-accepting choice is a protocol error.
+   */
+  private approvalOptions(choices: unknown[]): HarnessRuntimeRequest["options"] {
+    return choices.map((raw) => {
+      const choice = raw as Record<string, unknown>;
+      return {
+        id: String(choice.choiceId ?? ""),
+        label: String(choice.label ?? ""),
+        ...(typeof choice.decision === "string" ? { decision: choice.decision } : {}),
+        ...(choice.acceptsFeedback === true ? { acceptsFeedback: true } : {}),
+      };
+    });
+  }
+
   private onApprovalRequested(params: Record<string, unknown>): void {
     const approvalId = typeof params.approvalId === "string" ? params.approvalId : undefined;
     if (approvalId === undefined) return;
@@ -1077,10 +1248,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       nativeRef: nativeRef(approvalId, this.capabilities.identity.nativeRequestIds),
       kind: "approval",
       status: "pending",
-      options: choices.map((choice) => ({
-        id: String((choice as Record<string, unknown>).choiceId ?? ""),
-        label: String((choice as Record<string, unknown>).label ?? ""),
-      })),
+      options: this.approvalOptions(choices),
       createdAt: now(),
       resolvedAt: null,
     };
@@ -1107,10 +1275,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
     const updated: HarnessRuntimeRequest = {
       ...request,
-      options: choices.map((choice) => ({
-        id: String((choice as Record<string, unknown>).choiceId ?? ""),
-        label: String((choice as Record<string, unknown>).label ?? ""),
-      })),
+      options: this.approvalOptions(choices),
     };
     this.requests.set(approvalId, updated);
     this.emit({ type: "request.updated", request: updated });

@@ -1,19 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { HarnessEvent } from "../src/contract/index.js";
-import {
-  HEADERS,
-  LiveSession,
-  fingerprintCompactionOutput,
-  MuseHarnessAdapter,
-  MuseHarnessSession,
-  MuseLanguageModel,
-  MuseSessionRegistry,
-  storeKey,
-  toToolResult,
-  type MuseNotification,
-  type SessionHost,
-} from "../src/index.js";
+import { MuseHarnessAdapter } from "../src/adapter.js";
+import { fingerprintCompactionOutput } from "../src/fingerprint.js";
+import type { MuseNotification } from "../src/host.js";
+import { HEADERS, MuseLanguageModel, toToolResult } from "../src/language-model.js";
+import { MuseHarnessSession, type SessionHost } from "../src/session.js";
+import { LiveSession, MuseSessionRegistry, storeKey } from "../src/session-registry.js";
 
 const BRIDGE_TOOL = {
   type: "function" as const,
@@ -31,8 +24,15 @@ interface FakeHost {
   commands: RecordedCommand[];
 }
 
-/** A host that records commands and answers from a fixed method -> result map. */
-function fakeHost(results: Record<string, Record<string, unknown>> = {}): FakeHost {
+/**
+ * A host that records commands and answers from a fixed method -> result map.
+ * Pass `grants` to model a handshake; omit it to leave the accessor absent,
+ * which is how a replay host or a double without a handshake looks.
+ */
+function fakeHost(
+  results: Record<string, Record<string, unknown>> = {},
+  grants?: readonly string[],
+): FakeHost {
   const commands: RecordedCommand[] = [];
   let counter = 0;
   const host: SessionHost = {
@@ -45,6 +45,7 @@ function fakeHost(results: Record<string, Record<string, unknown>> = {}): FakeHo
     },
     registerSink: () => {},
     unregisterSink: () => {},
+    ...(grants === undefined ? {} : { grantedCapabilities: () => grants }),
   };
   return { host, commands };
 }
@@ -232,6 +233,109 @@ describe("MuseHarnessSession turns", () => {
     expect(started?.type === "turn.started" ? started.turn.status : undefined).toBe("running");
   });
 
+  test("a turn ack without an id is reconciled when the host names the turn", async () => {
+    const { host, commands } = fakeHost();
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "native-real", sessionId: "native" },
+      } satisfies MuseNotification);
+      await session.steerTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "more" }] },
+      });
+    });
+    const started = events.filter((event) => event.type === "turn.started");
+    expect(started).toHaveLength(1);
+    expect(started[0]?.type === "turn.started" ? started[0].turn.id : undefined).toBe("t1");
+    expect(started[0]?.type === "turn.started" ? started[0].turn.nativeRef.id : undefined).toBe(
+      "native-real",
+    );
+    const steer = commands.find((entry) => entry.method === "turn/steer");
+    expect(steer?.params.expectedTurnId).toBe("native-real");
+  });
+
+  test("a turn/started before the ack binds by command id", async () => {
+    // The host can name the turn before it answers `turn/start`. The event
+    // carries the submitting command id, so the turn is bound without assuming
+    // the native id equals the command id, and no second turn is minted.
+    const commands: RecordedCommand[] = [];
+    let counter = 0;
+    let release: ((result: Record<string, unknown>) => void) | undefined;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => `cmd-${counter++}`,
+        command: (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start"
+            ? new Promise<Record<string, unknown>>((resolve) => {
+                release = resolve;
+              })
+            : Promise.resolve({});
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const events = await drive(session, async () => {
+      const pending = session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "native-real", commandId: "cmd-0", sessionId: "native" },
+      } satisfies MuseNotification);
+      release?.({ turnId: "native-real" });
+      const turn = await pending;
+      expect(turn.nativeRef.id).toBe("native-real");
+      await session.steerTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "more" }] },
+      });
+    });
+    const started = events.filter((event) => event.type === "turn.started");
+    expect(started).toHaveLength(1);
+    expect(started[0]?.type === "turn.started" ? started[0].turn.id : undefined).toBe("t1");
+    const steer = commands.find((entry) => entry.method === "turn/steer");
+    expect(steer?.params.expectedTurnId).toBe("native-real");
+  });
+
+  test("a second turn is refused while one is running", async () => {
+    const { host, commands } = fakeHost();
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    await drive(session, async () => {
+      await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      await expect(
+        session.startTurn({ turnId: "t2", message: { content: [{ type: "text", text: "again" }] } }),
+      ).rejects.toThrow(/still running/);
+      expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(1);
+      // The host's own id here is the command id, because the ack omitted one.
+      session.handleNotification({
+        method: "turn/completed",
+        params: { turnId: "cmd-0", sessionId: "native", terminal: "completed" },
+      } satisfies MuseNotification);
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "again" }] },
+      });
+      expect(next.id).toBe("t2");
+    });
+  });
+
   test("approval/updated refreshes the choices and requirement", async () => {
     const { host, commands } = fakeHost({ "approval/decide": { status: "accepted" } });
     const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
@@ -257,7 +361,6 @@ describe("MuseHarnessSession turns", () => {
       } satisfies MuseNotification);
       await session.respondToRequest({
         requestId: "ap1",
-        decision: "accept",
         optionId: "allow-stage-2",
       });
     });
@@ -483,6 +586,109 @@ describe("LiveSession cancellation", () => {
 });
 
 describe("MuseHarnessSession approvals", () => {
+  test("approval options carry the decision and feedback capability", async () => {
+    const { host, commands } = fakeHost({ "approval/decide": { status: "accepted" } });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    await drive(session, async () => {
+      session.handleNotification({
+        method: "approval/requested",
+        params: {
+          approvalId: "ap2",
+          sessionId: "native",
+          turnId: "t1",
+          availableChoices: [
+            { choiceId: "allow", label: "Allow", decision: "approved", acceptsFeedback: false },
+            { choiceId: "deny", label: "Deny", decision: "denied", acceptsFeedback: true },
+          ],
+        },
+      } satisfies MuseNotification);
+      const request = (await session.getSnapshot()).requests.find((entry) => entry.id === "ap2");
+      expect(request?.options).toEqual([
+        { id: "allow", label: "Allow", decision: "approved" },
+        { id: "deny", label: "Deny", decision: "denied", acceptsFeedback: true },
+      ]);
+      await session.respondToRequest({
+        requestId: "ap2",
+        optionId: "deny",
+        feedback: "not this file",
+      });
+    });
+    const decide = commands.find((entry) => entry.method === "approval/decide");
+    expect(decide?.params.feedback).toBe("not this file");
+  });
+
+  test("feedback is refused on a choice that does not accept it", async () => {
+    const { host, commands } = fakeHost({ "approval/decide": { status: "accepted" } });
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    await drive(session, async () => {
+      session.handleNotification({
+        method: "approval/requested",
+        params: {
+          approvalId: "ap3",
+          sessionId: "native",
+          turnId: "t1",
+          availableChoices: [{ choiceId: "allow", label: "Allow", decision: "approved" }],
+        },
+      } satisfies MuseNotification);
+      await expect(
+        session.respondToRequest({ requestId: "ap3", optionId: "allow", feedback: "no" }),
+      ).rejects.toThrow(/does not accept feedback/);
+    });
+    expect(commands.some((entry) => entry.method === "approval/decide")).toBe(false);
+  });
+
+  test("a bridge session refuses an approval mode it cannot answer", async () => {
+    const { host, commands } = fakeHost({}, ["sessionMcp"]);
+    await expect(
+      MuseHarnessSession.create(host, {
+        sessionId: "oc-bridge",
+        cwd: "/tmp",
+        approvalMode: "onRequest",
+        toolBridge: {
+          listTools: () => [],
+          callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
+        },
+      }),
+    ).rejects.toThrow(/cannot be answered/);
+    expect(commands).toHaveLength(0);
+  });
+
+  test("a bridge session without the sessionMcp grant fails before session/start", async () => {
+    const { host, commands } = fakeHost({}, []);
+    await expect(
+      MuseHarnessSession.create(host, {
+        sessionId: "oc-no-mcp",
+        cwd: "/tmp",
+        toolBridge: {
+          listTools: () => [],
+          callTool: async () => ({ content: [] }),
+        },
+      }),
+    ).rejects.toThrow(/sessionMcp/);
+    expect(commands).toHaveLength(0);
+  });
+
+  test("a bridge session with the sessionMcp grant starts", async () => {
+    const { host, commands } = fakeHost(
+      { "session/start": { session: { sessionId: "native", modelId: "muse-spark-1.3" } } },
+      ["sessionMcp"],
+    );
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc-mcp",
+      cwd: "/tmp",
+      toolBridge: {
+        listTools: () => [],
+        callTool: async () => ({ content: [] }),
+      },
+    });
+    try {
+      expect(commands[0]?.method).toBe("session/start");
+      expect(commands[0]?.params).toHaveProperty("config");
+    } finally {
+      await session.close();
+    }
+  });
+
   test("a bridge session defaults to allowAll", async () => {
     const { host, commands } = fakeHost({
       "session/start": { session: { sessionId: "native", modelId: "muse-spark-1.3" } },
@@ -616,6 +822,42 @@ describe("developer prompt", () => {
     expect(opened[0]?.developerPrompt).toBe("Be terse.");
     const start = commands.find((entry) => entry.method === "turn/start");
     expect(start?.params.input).toEqual([{ type: "text", text: "first" }]);
+    await stream.stream.cancel();
+  });
+
+  test("the prompt is read from the key it was written under, not a fixed name", async () => {
+    const { host } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp", model: "muse-spark-1.3" },
+      "native",
+      "muse-spark-1.3",
+    );
+    const opened: Array<Record<string, unknown>> = [];
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) => {
+        opened.push(input);
+        return session;
+      },
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    registry.setPromptDelivery("pass");
+    // Production passes the model's canonical provider, not PROVIDER_ID.
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "meta");
+    const request = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "first" }] }],
+      tools: [BRIDGE_TOOL],
+      providerOptions: { meta: { museAgent: "Be terse." } },
+      headers: {
+        [HEADERS.kind]: "primary",
+        [HEADERS.session]: "oc",
+        [HEADERS.directory]: "/tmp",
+      },
+    } as unknown as LanguageModelV3CallOptions;
+
+    const stream = await model.doStream(request);
+    expect(opened[0]?.developerPrompt).toBe("Be terse.");
     await stream.stream.cancel();
   });
 
