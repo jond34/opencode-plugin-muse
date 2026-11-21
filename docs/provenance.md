@@ -30,13 +30,17 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-Current tree (base + patches 1-5), not published:
+Recorded tree (base + patches 1-5) at `bcfabcb`, not published:
 
 ```text
 d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 ```
 
-100 files. `bash scripts/repro.sh` checks the current tree against this hash.
+100 files. This hash describes the tree at `bcfabcb`. The working tree has changed
+since, so `bash scripts/repro.sh` fails today: it compares the built `dist/` against
+this hash. Recording a new hash is release work and is blocked until the `dist`
+rebuild is authorised; until then a mismatch is expected, not a defect in this
+record.
 
 ## Inputs
 

@@ -1,7 +1,7 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
   "version": "0.1.12",
-  "description": "Use a Muse Code subscription in opencode. Republished build of @rasyid_rafi/opencode-muse with five patches.",
+  "description": "Use Muse models in opencode through the signed-in muse CLI. Republished build of @rasyid_rafi/opencode-muse with five patches.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,22 +21,25 @@
   "files": [
     "dist",
     "src",
-    "docs",
+    "docs/compatibility.md",
+    "docs/native-history-evidence.md",
+    "docs/provenance.md",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CREDITS.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
-    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts",
+    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
     "repro": "bash scripts/repro.sh"
   },
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
-    "@muse-code/sdk": "1.4.15",
-    "@opencode/plugin": "2.2.7"
+    "@muse-code/sdk": "1.4.24",
+    "@opencode/plugin": "2.3.2"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
