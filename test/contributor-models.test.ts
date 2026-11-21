@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { Provider } from "@opencode/plugin";
-import { contributorModelEntries, serveArgs, toModelInfo, type CatalogRow } from "../src/index.js";
+import {
+  contributorModeFromEnv,
+  contributorModelEntries,
+  serveArgs,
+  type CatalogRow,
+} from "../src/host.js";
+import { toModelInfo } from "../src/plugin.js";
 
 const providerID = Provider.ID.make("muse");
 
@@ -22,6 +28,24 @@ const visible = [
     releaseDate: "2026-10-01",
   },
 ];
+
+describe("contributorModeFromEnv", () => {
+  test("accepts Muse's documented 1 so the same env name means the same thing", () => {
+    expect(contributorModeFromEnv("1")).toBe("on");
+    expect(contributorModeFromEnv(" 1 ")).toBe("on");
+  });
+
+  test("accepts the words a shell user is likely to write", () => {
+    expect(contributorModeFromEnv("on")).toBe("on");
+    expect(contributorModeFromEnv("TRUE")).toBe("on");
+  });
+
+  test("keeps the privacy-safe default for 0, off, and anything unclear", () => {
+    for (const value of [undefined, "", "0", "false", "off", "yes", "1x"]) {
+      expect(contributorModeFromEnv(value)).toBe("off");
+    }
+  });
+});
 
 describe("contributorModelEntries", () => {
   test("clones the base row under the contributor id", () => {
@@ -89,10 +113,16 @@ describe("serveArgs", () => {
       "--contributor-mode",
       "off",
       "--trust-workspace",
+      "--disable-write",
+      "--disable-request-user-input",
     ]);
   });
 
-  test("omits flags that are not set", () => {
-    expect(serveArgs({})).toEqual(["serve"]);
+  test("adds the vendor sandbox fences even when nothing else is set", () => {
+    expect(serveArgs({})).toEqual([
+      "serve",
+      "--disable-write",
+      "--disable-request-user-input",
+    ]);
   });
 });

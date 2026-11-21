@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  MspError,
   spawnMspConnection,
   type Connection,
   type FingerprintWarning,
@@ -8,6 +9,7 @@ import {
   type ProcessExit,
   type SpawnedMspConnection,
 } from "@muse-code/sdk";
+import { packageVersion } from "./version.js";
 
 /** Suffix Muse appends to a model id to select its contributor variant. */
 export const CONTRIBUTOR_SUFFIX = "-contributor";
@@ -47,12 +49,36 @@ export function contributorModelEntries(
   return entries;
 }
 
+/**
+ * Read the plugin's Contributor mode switch.
+ *
+ * Muse documents its own override as `MUSE_CONTRIBUTOR_MODE=1|0`; the plugin
+ * reuses the name, so a user following Meta's docs must not silently get the
+ * opposite of what they asked for. `1`, `true`, and `on` are on; anything else,
+ * including absent and unparseable values, stays off (the privacy-safe default).
+ */
+export function contributorModeFromEnv(value: string | undefined): "on" | "off" {
+  switch (value?.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "on":
+      return "on";
+    default:
+      return "off";
+  }
+}
+
 /** Build the `muse serve` argument list. */
 export function serveArgs(options: MuseHostOptions): string[] {
   const args = ["serve", ...(options.args ?? [])];
   if (options.preset !== undefined) args.push("--preset", options.preset);
   if (options.contributorMode !== undefined) args.push("--contributor-mode", options.contributorMode);
   if (options.trustWorkspace === true) args.push("--trust-workspace");
+  // Vendor sandbox fences. opencode owns shell, writes, and approvals for every
+  // bridged call, so Muse's own copies of those are only a way around the
+  // harness. Keeping them off does not depend on the settings `run.toolset`
+  // key, which the vendor does not document.
+  args.push("--disable-write", "--disable-request-user-input");
   return args;
 }
 
@@ -67,6 +93,47 @@ export interface NotificationSink {
   /** The native Muse session id notifications are addressed to. */
   readonly sessionId: string;
   handleNotification(notification: MuseNotification): void;
+}
+
+/**
+ * Answer one MSP server request.
+ *
+ * Only the two presentation-request methods get the `{}` receipt, and only
+ * when the session they name is registered. Every other method keeps the
+ * `-32601` a bare Connection answers: the receipt is a claim that a surface
+ * presented the request, and a false claim suppresses the re-issue that would
+ * otherwise recover it (`msp.d.ts:2249`).
+ */
+export function answerServerRequest(
+  request: { readonly method?: unknown; readonly params?: unknown },
+  sinkFor: (sessionId: string) => NotificationSink | undefined,
+): Record<string, unknown> {
+  const method = typeof request.method === "string" ? request.method : "";
+  const params =
+    request.params !== null && typeof request.params === "object" && !Array.isArray(request.params)
+      ? (request.params as Record<string, unknown>)
+      : {};
+  const sessionId = typeof params.sessionId === "string" ? params.sessionId : undefined;
+  // `approval/request` and `userInput/request` share params with their
+  // notification twins (`msp.d.ts:4667`, `:4669`).
+  const twin =
+    method === "userInput/request"
+      ? "userInput/requested"
+      : method === "approval/request"
+        ? "approval/requested"
+        : undefined;
+  if (twin !== undefined && sessionId !== undefined) {
+    const sink = sinkFor(sessionId);
+    if (sink !== undefined) {
+      sink.handleNotification({ method: twin, params });
+      return {};
+    }
+  }
+  throw new MspError({
+    code: -32601,
+    message: `method not found: ${method}`,
+    data: { kind: "methodNotFound", retryable: false },
+  });
 }
 
 export interface MuseHostOptions {
@@ -143,7 +210,7 @@ export class MuseHost {
       spawned = await handshake.initialize({
         clientInfo: {
           name: options.clientName ?? "opencode_muse",
-          version: options.clientVersion ?? "0.1.0",
+          version: options.clientVersion ?? packageVersion(),
         },
         capabilities: {
           // Per-session MCP servers (the tool bridge) need this grant.
@@ -170,10 +237,20 @@ export class MuseHost {
     return this.initializeResult.museHome;
   }
 
+  /** Capabilities the handshake actually granted, for seam checks. */
+  grantedCapabilities(): readonly string[] {
+    return this.initializeResult.grantedCapabilities;
+  }
+
   /** Read the visible model catalog (`model/list`). */
   async listModels(): Promise<Array<Record<string, unknown>>> {
     const result = await this.connection.request("model/list", {});
-    return Array.isArray(result?.models) ? (result.models as Array<Record<string, unknown>>) : [];
+    // SDK 1.4.24 types the rows as `ModelCatalogEntry`. The wire shape is the
+    // same camelCase records this file already reads field-by-field; the cast
+    // only restores the loose row type the callers share.
+    return Array.isArray(result?.models)
+      ? (result.models as unknown as Array<Record<string, unknown>>)
+      : [];
   }
 
   /** Read the hidden rows Muse keeps in its on-disk catalog. */
@@ -228,12 +305,13 @@ export class MuseHost {
       this.sinks.get(sessionId)?.handleNotification({ method: notification.method, params });
     });
 
-    // The presentation receipt acknowledges that a surface showed the request.
-    // It changes no state; the decision/answer arrives as approval/decide or
-    // userInput/answer.
-    this.connection.onServerRequest(async () => {
-      return {};
-    });
+    // The receipt says a surface showed the request; the decision or answer
+    // travels later as a command. It is only true for the two presentation
+    // methods on a session this host routes, so every other request is
+    // refused rather than acknowledged.
+    this.connection.onServerRequest(async (request) =>
+      answerServerRequest(request, (sessionId) => this.sinks.get(sessionId)),
+    );
   }
 
   registerSink(sink: NotificationSink): void {

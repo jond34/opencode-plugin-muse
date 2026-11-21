@@ -7,6 +7,7 @@ import { MuseHost, type MuseHostOptions } from "./host.js";
 import { hostFactsFrom, type HostFacts } from "./host-facts.js";
 import { MuseHarnessSession, type CreateSessionInput } from "./session.js";
 import { MUSE_CAPABILITIES } from "./capabilities.js";
+import { packageVersion } from "./version.js";
 
 export interface MuseAdapterOptions {
   /** Reuse an existing host instead of spawning one. */
@@ -14,9 +15,6 @@ export interface MuseAdapterOptions {
   /** Options used when this adapter spawns its own host. */
   readonly hostOptions?: MuseHostOptions;
 }
-
-/** Muse uses the language seam as-is; the name is kept for importers. */
-export type MuseOpenSessionInput = LanguageOpenSessionInput;
 
 /**
  * Muse Code adapter for the harness-agnostic contract.
@@ -29,7 +27,7 @@ export class MuseHarnessAdapter implements LanguageAdapter {
   readonly info: HarnessAdapterInfo = {
     id: "muse",
     label: "Muse Code",
-    version: "1.4.15",
+    version: packageVersion(),
   };
 
   private readonly injectedHost: MuseHost | undefined;

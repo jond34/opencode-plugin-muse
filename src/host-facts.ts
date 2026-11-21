@@ -63,6 +63,41 @@ export function hasSchemaDrift(facts: HostFacts): boolean {
   return facts.fingerprintWarning !== null;
 }
 
+/** True only for the exact opt-in value; anything else stays advisory. */
+export function strictHostRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.MUSE_STRICT_HOST === "1";
+}
+
+/**
+ * The advisory line for a drifted host. A declared-breaking tier names the
+ * larger risk; an additive mismatch keeps the original wording.
+ */
+export function schemaDriftWarning(facts: HostFacts): string {
+  return facts.fingerprintWarning?.tier === "declaredBreaking"
+    ? "Muse declares a breaking schema change; review the containment report before trusting new behavior."
+    : "Muse schema fingerprint differs from the SDK pin; review the containment report before trusting new behavior.";
+}
+
+/**
+ * Why `MUSE_STRICT_HOST=1` refuses this host, or null when it may start.
+ *
+ * Strict fails closed: no handshake, no served fingerprint, any drift tier, or
+ * a denied bridge all refuse. A host that serves no schema is *unknown*, not
+ * compatible, so it refuses too rather than passing on an absent check.
+ */
+export function strictHostRefusal(facts: HostFacts | undefined): string | null {
+  if (facts === undefined) return "the Muse host did not complete its handshake";
+  if (facts.schemaFingerprint === null) return "the host served no schema fingerprint to pin";
+  const warning = facts.fingerprintWarning;
+  if (warning !== null) {
+    return warning.tier === "declaredBreaking"
+      ? `the host declares a breaking schema change (${warning.served})`
+      : `the host schema differs from the pin (${warning.served})`;
+  }
+  if (!sessionMcpGranted(facts)) return "the host did not grant sessionMcp";
+  return null;
+}
+
 /** One line for the startup log; no prompt text, no paths beyond the home. */
 export function describeHostFacts(facts: HostFacts): string {
   const server = [facts.serverName, facts.serverVersion].filter((part) => part !== null).join(" ");
