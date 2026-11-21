@@ -1,16 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { MUSE_CAPABILITIES } from "../src/capabilities.js";
 import {
-  MUSE_CAPABILITIES,
-  MuseHarnessSession,
   containmentVerdict,
   evaluateContainment,
   formatContainmentReport,
-  hostFactsFrom,
   type ContainmentInputs,
   type HostConfigFacts,
-  type HostFacts,
-  type SessionHost,
-} from "../src/index.js";
+} from "../src/containment.js";
+import { hostFactsFrom, type HostFacts } from "../src/host-facts.js";
+import { MuseHarnessSession, type SessionHost } from "../src/session.js";
 import type { SpawnedMspConnection } from "@muse-code/sdk";
 
 type InitializeResult = SpawnedMspConnection["initializeResult"];
@@ -33,7 +31,7 @@ function config(overrides: Partial<HostConfigFacts> = {}): HostConfigFacts {
   return {
     privateConfig: true,
     toolset: true,
-    remindersOff: true,
+    remindersConfiguredOff: true,
     thresholds: true,
     skills: "enumerated",
     ...overrides,
@@ -46,9 +44,68 @@ function input(overrides: Partial<ContainmentInputs> = {}): ContainmentInputs {
     hostConfig: config(),
     promptDelivery: "pass" as const,
     capabilities: MUSE_CAPABILITIES,
+    observedToolset: {
+      status: "observed",
+      observation: {
+        tools: ["mcp__opencode__read", "mcp__opencode__shell"],
+        mode: "named",
+        source: "settings",
+        session: "01a1fbca",
+        recordPath: "/tmp/muse/sessions/x/session.jsonl",
+        recordedAt: "2026-11-20T00:00:00Z",
+      },
+    },
     ...overrides,
   };
 }
+
+describe("toolset attestation from the host record", () => {
+  test("bridge-only names in the host's own record are enforced", () => {
+    const checks = evaluateContainment(input());
+    const observed = checks.find((entry) => entry.id === "tools.bridge-only-observed");
+    expect(observed?.status).toBe("enforced");
+    expect(observed?.evidence).toContain("session 01a1fbca");
+    expect(observed?.evidence).toContain("2 tool(s)");
+  });
+
+  test("a foreign name in the host record is a critical breach naming it", () => {
+    const checks = evaluateContainment(
+      input({
+        observedToolset: {
+          status: "observed",
+          observation: {
+            tools: ["mcp__opencode__read", "shell", "write"],
+            mode: "named",
+            source: "settings",
+            session: "01a1fbcb",
+            recordPath: "/tmp/muse/sessions/x/session.jsonl",
+            recordedAt: "2026-11-20T00:00:00Z",
+          },
+        },
+      }),
+    );
+    const observed = checks.find((entry) => entry.id === "tools.bridge-only-observed");
+    expect(observed?.status).toBe("breached");
+    expect(observed?.evidence).toContain("foreign: shell,write");
+    expect(containmentVerdict(checks).level).toBe("blocked");
+  });
+
+  test("no record yet is degraded, not enforced and not blocking", () => {
+    const checks = evaluateContainment(input({ observedToolset: { status: "absent", root: "/tmp/muse/sessions" } }));
+    const observed = checks.find((entry) => entry.id === "tools.bridge-only-observed");
+    expect(observed?.status).toBe("degraded");
+    expect(observed?.evidence).toBe("no session record yet");
+    expect(containmentVerdict(checks).level).toBe("degraded");
+  });
+
+  test("an unreadable record is unknown and blocks strict startup", () => {
+    const checks = evaluateContainment(
+      input({ observedToolset: { status: "unreadable", root: "/tmp/muse/sessions", error: "no toolset block" } }),
+    );
+    expect(checks.find((entry) => entry.id === "tools.bridge-only-observed")?.status).toBe("unknown");
+    expect(containmentVerdict(checks).level).toBe("blocked");
+  });
+});
 
 describe("containment report", () => {
   test("a fully observed host is enforced everywhere", () => {
@@ -80,20 +137,26 @@ describe("containment report", () => {
   test("a missing private config is unknown, never enforced", () => {
     const checks = evaluateContainment(input({ hostConfig: null }));
     expect(checks.find((entry) => entry.id === "tools.bridge-only")?.status).toBe("unknown");
-    expect(checks.find((entry) => entry.id === "loop.opencode-only")?.status).toBe("unknown");
+    expect(checks.find((entry) => entry.id === "loop.configured-off")?.status).toBe("unknown");
     expect(containmentVerdict(checks).level).toBe("blocked");
   });
 
   test("a loop-owning item kind is a breach", () => {
     const checks = evaluateContainment(input({ loopItemKinds: ["subagent"] }));
-    expect(checks.find((entry) => entry.id === "loop.opencode-only")?.status).toBe("breached");
+    expect(checks.find((entry) => entry.id === "loop.configured-off")?.status).toBe("breached");
+  });
+
+  test("the loop check reports the reminder switch as configuration, not behavior", () => {
+    const loop = evaluateContainment(input()).find((entry) => entry.id === "loop.configured-off");
+    expect(loop?.statement).toContain("configured off");
+    expect(loop?.evidence).toContain("config only");
   });
 
   test("the report names every invariant in one screen", () => {
     const report = formatContainmentReport(evaluateContainment(input()));
     for (const id of [
       "tools.bridge-only",
-      "loop.opencode-only",
+      "loop.configured-off",
       "history.opencode-authority",
       "prompt.instructions",
       "quota.no-utility-turns",

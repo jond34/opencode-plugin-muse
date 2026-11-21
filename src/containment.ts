@@ -1,6 +1,7 @@
 import type { HarnessCapabilities } from "./contract/index.js";
 import type { HostFacts } from "./host-facts.js";
 import type { PromptDelivery } from "./prompt-policy.js";
+import type { ToolsetProbe } from "./toolset-record.js";
 
 /**
  * The containment treaty, in one place.
@@ -11,7 +12,7 @@ import type { PromptDelivery } from "./prompt-policy.js";
  */
 
 export type ContainmentMode = "strict" | "warn" | "off";
-export type ContainmentStatus = "enforced" | "degraded" | "breached" | "unknown";
+type ContainmentStatus = "enforced" | "degraded" | "breached" | "unknown";
 
 export interface ContainmentCheck {
   readonly id: string;
@@ -27,8 +28,13 @@ export interface HostConfigFacts {
   readonly privateConfig: boolean;
   /** The toolset is pinned to the bridge namespace. */
   readonly toolset: boolean;
-  /** Every Muse observer agent is off. */
-  readonly remindersOff: boolean;
+  /**
+   * The private config turns every Muse observer agent off. This is a
+   * configuration fact only: the keys target the reminder plugin, which a clean
+   * config does not install, so no host behavior attests that Muse honoured
+   * them. The `loop.configured-off` check is named and worded for that limit.
+   */
+  readonly remindersConfiguredOff: boolean;
   /** Compaction thresholds sit at the window edge. */
   readonly thresholds: boolean;
   readonly skills: "enumerated" | "empty" | "failed" | "unknown";
@@ -44,6 +50,11 @@ export interface ContainmentInputs {
   /** Loop-owning item kinds the host emitted. */
   readonly loopItemKinds?: readonly string[];
   readonly compactions?: number;
+  /**
+   * The host's own record of the list it applied. Stronger than the config
+   * facts above, which only say what we asked for.
+   */
+  readonly observedToolset?: ToolsetProbe;
 }
 
 function check(
@@ -78,9 +89,39 @@ export function evaluateContainment(input: ContainmentInputs): ContainmentCheck[
       ? "breached"
       : config === null
         ? "unknown"
-        : config.remindersOff
+        : config.remindersConfiguredOff
           ? "enforced"
           : "degraded";
+
+  // Attestation, not assertion. Absent means "no request yet", which is normal
+  // before the first turn and must not block a fresh strict start; unreadable
+  // means the instrument is broken, which is an unknown. A record naming a tool
+  // outside the bridge namespace is a real breach and stays critical.
+  const probe = input.observedToolset;
+  const observedStatus: ContainmentStatus =
+    probe === undefined
+      ? "unknown"
+      : probe.status === "absent"
+        ? "degraded"
+        : probe.status === "unreadable"
+          ? "unknown"
+          : probe.observation.tools.length === 0
+            ? "degraded"
+            : probe.observation.tools.every((name) => name.startsWith("mcp__opencode__"))
+              ? "enforced"
+              : "breached";
+
+  const observedEvidence = ((): string => {
+    if (probe === undefined) return "not read";
+    if (probe.status === "absent") return "no session record yet";
+    if (probe.status === "unreadable") return probe.error;
+    const { observation } = probe;
+    const foreign = observation.tools.filter((name) => !name.startsWith("mcp__opencode__"));
+    const detail = `session ${observation.session} ${observation.tools.length} tool(s) mode=${observation.mode ?? "?"} source=${observation.source ?? "?"}`;
+    return foreign.length === 0
+      ? detail
+      : `${detail}; foreign: ${foreign.slice(0, 5).join(",")}${foreign.length > 5 ? ` (+${foreign.length - 5})` : ""}`;
+  })();
 
   const promptStatus: ContainmentStatus =
     input.promptDelivery === "pass"
@@ -105,15 +146,27 @@ export function evaluateContainment(input: ContainmentInputs): ContainmentCheck[
       "keep the private config dir; never fall back to the user's Muse MCP config",
     ),
     check(
-      "loop.opencode-only",
-      "no reminders, workflows, subagents, or background tasks",
+      "tools.bridge-only-observed",
+      "the host's own record lists only mcp__opencode__*",
+      true,
+      observedStatus,
+      observedEvidence,
+      "keep the private config; a foreign name means Muse gained a tool opencode did not grant",
+    ),
+    // Named for what the evidence supports: the private config says these are
+    // off, while a loop-owning item in the transcript is the only host-side
+    // proof. The reminder plugin is absent from a clean config, so its switch
+    // being `false` is configuration, not observed behavior.
+    check(
+      "loop.configured-off",
+      "reminders, workflows, subagents, and background tasks are configured off",
       true,
       loopStatus,
       loopKinds.length > 0
         ? `item kinds: ${loopKinds.join(",")}`
         : config === null
           ? "no private host config observed"
-          : `remindersOff=${config.remindersOff}`,
+          : `remindersConfiguredOff=${config.remindersConfiguredOff} (config only, not host-observed)`,
       "set runtime_capabilities reminders off; treat an unknown kind as a report, not a crash",
     ),
     check(

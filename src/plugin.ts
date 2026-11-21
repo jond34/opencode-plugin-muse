@@ -1,28 +1,63 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
 import { buildEffortCatalog } from "./effort.js";
 import { fingerprintCompactionOutput } from "./fingerprint.js";
 import { nativeHistoryEnabled } from "./flags.js";
-import { containmentVerdict, evaluateContainment, formatContainmentReport, type HostConfigFacts } from "./containment.js";
+import {
+  containmentModeFromEnv,
+  containmentVerdict,
+  evaluateContainment,
+  formatContainmentReport,
+  type HostConfigFacts,
+} from "./containment.js";
 import { BRIDGE_TOOLSET, MUSE_REMINDERS, writeMuseHostConfig, type HostConfigPaths } from "./host-config.js";
-import { describeHostFacts, hasSchemaDrift, sessionMcpGranted, type HostFacts } from "./host-facts.js";
-import { CONTRIBUTOR_SUFFIX } from "./host.js";
-import { HEADERS, MuseLanguageModel } from "./language-model.js";
+import {
+  describeHostFacts,
+  hasSchemaDrift,
+  schemaDriftWarning,
+  sessionMcpGranted,
+  strictHostRefusal,
+  strictHostRequested,
+  type HostFacts,
+} from "./host-facts.js";
+import { CONTRIBUTOR_SUFFIX, contributorModeFromEnv } from "./host.js";
+import {
+  AGENT_OPTION,
+  HEADERS,
+  INSTRUCTIONS_OPTION,
+  MuseLanguageModel,
+  PROVIDER_ID,
+} from "./language-model.js";
 import { resolveModelLimits } from "./model-limits.js";
 import { parsePromptDelivery, promptProbeKey, type PromptDelivery } from "./prompt-policy.js";
-import { makeCompactionDigest, makeLocalTitle, nativeCompactionResult } from "./meta.js";
+import { makeCompactionDigest, makeLocalTitle, nativeCompactionResult, nativeWindowDigest } from "./meta.js";
 import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
 import { setGlobalRegistry } from "./shared.js";
 import { appendLedgerRow } from "./usage-ledger.js";
+import { probeToolsetObservation, sessionsRoot } from "./toolset-record.js";
+import { packageVersion } from "./version.js";
 
-export const ADAPTER_VERSION = "0.1.12";
-export const CONTRACT_VERSION = "1";
+/**
+ * Repo-controlled files that workspace trust hands to Muse, relative to the
+ * cwd: project hooks (commands Muse runs) and project skills (instructions
+ * Muse loads into the prompt). Project rules are `AGENTS.md`/`CLAUDE.md`,
+ * which opencode already reads for its own prompt.
+ */
+function workspaceTrustHazards(root: string): string[] {
+  return [".muse/hooks.json", ".agents/skills", ".codex/skills", ".claude/skills"].filter(
+    (relative) => existsSync(join(root, relative)),
+  );
+}
 
-export const PLUGIN_ID = "opencode-muse";
-export const PROVIDER_ID = "muse";
-export const PROVIDER_NAME = "Muse Code";
-export const PROVIDER_PACKAGE = "aisdk:muse";
+const ADAPTER_VERSION = packageVersion();
+const CONTRACT_VERSION = "1";
+
+const PLUGIN_ID = "opencode-muse";
+const PROVIDER_NAME = "Muse Code";
+const PROVIDER_PACKAGE = "aisdk:muse";
 /** Models.dev's canonical provider for the Muse models; also the GUI icon. */
 const PROVIDER_CANONICAL = "meta";
 const MODEL_FAMILY = "muse";
@@ -33,9 +68,6 @@ const MODEL_FAMILY = "muse";
  * the plugin supplies the AI SDK and never sends it to Muse.
  */
 const PROVIDER_API_KEY = "muse-code";
-
-const AGENT_OPTION = "museAgent";
-const INSTRUCTIONS_OPTION = "museInstructions";
 
 /** Presentation names for the catalog rows, whose `displayLabel` is the id. */
 const MODEL_NAMES: Readonly<Record<string, string>> = {
@@ -110,7 +142,10 @@ export function toModelInfo(
       ? `${MODEL_NAMES[baseId] ?? baseId} Contributor`
       : MODEL_NAMES[baseId] ?? displayLabel,
     family: Model.Family.make(MODEL_FAMILY),
-    capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+    // Muse's protocol has no sampling field, so temperature is false ("does
+    // not accept"), never unset ("unknown") - A10/P5. opencode then does not
+    // offer a knob that cannot reach the model.
+    capabilities: { tools: true, input: ["text", "image"], output: ["text"], temperature: false },
     variants: variants.map((variant) => ({ id: Model.VariantID.make(String(variant)) })),
     time: { released: Number.isFinite(released) && released > 0 ? released : 0 },
     limit: { context: contextLimit, output: outputLimit },
@@ -127,6 +162,16 @@ export function toModelInfo(
 export const MusePlugin = Plugin.define({
   id: PLUGIN_ID,
   async setup(ctx) {
+    // Steps are ordered and each consumes what the one above discovered, so this
+    // stays one function: a split would thread five values or add a context
+    // object that exists to be passed. In order: 1 config dir (or `empty` when it
+    // cannot be written), 2 adapter (host options, trust, contributor mode),
+    // 3 session store + registry, 4 host handshake (drift, sessionMcp, strict
+    // refusal), 5 model catalog + limits + efforts, 6 developer-prompt probe,
+    // 7 containment treaty, 8 host ledger row, 9 provider transform + AI SDK hook,
+    // 10 session hooks (request, retry, agent context, compaction, title),
+    // 11 returned cleanup closure.
+
     // Muse reads its prompt and toolset from settings.json at startup, so the
     // only way to keep it to inference is a private config dir: the file pins
     // the toolset to the bridge and replaces Muse's own base prompt. Without
@@ -167,10 +212,21 @@ export const MusePlugin = Plugin.define({
         // every model to its `-contributor` variant; a model without one
         // (ember) then fails. Off keeps the model id authoritative, so both the
         // base entry and the contributor entry work.
-        contributorMode: process.env.MUSE_CONTRIBUTOR_MODE === "on" ? "on" : "off",
+        contributorMode: contributorModeFromEnv(process.env.MUSE_CONTRIBUTOR_MODE),
+        // Required: without it Muse withholds the per-session bridge server
+        // (the host recorded "MCP startup withheld 1 server: workspace is
+        // untrusted" when the flag was dropped, T1). Trust also loads the
+        // repo's own hooks and rules, so the startup line below names them
+        // instead of implying the workspace is contained.
         trustWorkspace: true,
       },
     });
+    const hazards = workspaceTrustHazards(process.cwd());
+    if (hazards.length > 0) {
+      console.warn(
+        `[opencode-muse] workspace trust is granted because the bridge requires it; this repo also supplies ${hazards.join(", ")}, which Muse loads outside opencode's control (hooks are commands, skills are instructions)`,
+      );
+    }
     const store: SessionStore = {
       get: async (key) => {
         const value = await ctx.storage.get(key);
@@ -185,21 +241,14 @@ export const MusePlugin = Plugin.define({
 
     // The SDK already knows the served schema and every grant; keeping them
     // is what lets the containment report name drift instead of guessing.
-    const containmentMode =
-      process.env.MUSE_CONTAINMENT === "strict"
-        ? "strict"
-        : process.env.MUSE_CONTAINMENT === "off"
-          ? "off"
-          : "warn";
+    const containmentMode = containmentModeFromEnv();
     let hostFacts: HostFacts | undefined;
     try {
       hostFacts = await adapter.getHostFacts();
       console.info(`[opencode-muse] host ${describeHostFacts(hostFacts)}`);
       if (containmentMode !== "off") {
         if (hasSchemaDrift(hostFacts)) {
-          console.warn(
-            "[opencode-muse] Muse schema fingerprint differs from the SDK pin; review the containment report before trusting new behavior.",
-          );
+          console.warn(`[opencode-muse] ${schemaDriftWarning(hostFacts)}`);
         }
         if (!sessionMcpGranted(hostFacts)) {
           console.warn(
@@ -210,13 +259,9 @@ export const MusePlugin = Plugin.define({
     } catch (error) {
       console.warn("[opencode-muse] host handshake facts unavailable:", error);
     }
-    if (
-      process.env.MUSE_STRICT_HOST === "1" &&
-      (hostFacts === undefined || hasSchemaDrift(hostFacts) || !sessionMcpGranted(hostFacts))
-    ) {
-      throw new Error(
-        "MUSE_STRICT_HOST: the Muse host is missing a required grant or matches no pinned schema",
-      );
+    if (strictHostRequested()) {
+      const refusal = strictHostRefusal(hostFacts);
+      if (refusal !== null) throw new Error(`MUSE_STRICT_HOST: ${refusal}`);
     }
     registry.setHostFingerprint(hostFacts?.schemaFingerprint ?? null);
 
@@ -283,7 +328,10 @@ export const MusePlugin = Plugin.define({
       toolset:
         Array.isArray(settings?.run?.toolset) &&
         settings.run.toolset.includes(BRIDGE_TOOLSET[0] as string),
-      remindersOff: MUSE_REMINDERS.every(
+      // Configuration, not host behavior: those keys target the reminder
+      // plugin, which a clean config does not install, so nothing attests that
+      // Muse acted on the switch. The containment check is named for that.
+      remindersConfiguredOff: MUSE_REMINDERS.every(
         (name) => settings?.runtime_capabilities?.[`plugin:tbh-reminders:reminder:${name}`]?.enabled === false,
       ),
       thresholds:
@@ -297,6 +345,11 @@ export const MusePlugin = Plugin.define({
         hostConfig: hostConfig === undefined ? null : configFacts,
         promptDelivery,
         capabilities: await adapter.getCapabilities(),
+        // Read the host's own record when one exists; the config facts above
+        // only say what we asked for.
+        observedToolset: probeToolsetObservation(
+          sessionsRoot({ museHome: hostFacts?.museHome }),
+        ),
       });
       if (process.env.MUSE_DEBUG_CONTAINMENT === "1") {
         console.info(formatContainmentReport(checks));
@@ -361,6 +414,10 @@ export const MusePlugin = Plugin.define({
               modelID,
               event.options,
               registry,
+              // The key OpenCode nests `event.options` under when it calls the
+              // model: the canonical provider when the host names one, since
+              // that is what it keys provider options by. `language-model.ts`
+              // reads the same key back; these two expressions must agree.
               event.model.canonical ?? event.model.providerID,
               efforts,
             ),
@@ -443,7 +500,7 @@ export const MusePlugin = Plugin.define({
               ),
             };
         const digestText = result.native
-          ? (result.native.messages[0]?.content[0]?.text ?? result.summary)
+          ? (nativeWindowDigest(result.native.messages) ?? result.summary)
           : result.summary;
         const fingerprint = fingerprintCompactionOutput(digestText);
         await registry.recordCompaction(String(event.sessionID), fingerprint);
@@ -479,5 +536,3 @@ export const MusePlugin = Plugin.define({
     };
   },
 });
-
-export default MusePlugin;
