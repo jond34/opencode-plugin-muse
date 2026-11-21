@@ -135,6 +135,14 @@ export class MuseLanguageModel implements LanguageModelV3 {
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
+    // Sections, in order: 1 headers (kind, session, directory, effort); 2 tools
+    // to bridge definitions, with non-primary kinds leaving for `runUtility`;
+    // 3 provider options to the agent and instruction preamble; 4 session lookup,
+    // transcript reconciliation, checkpoint trust; 5 rebuild and reseed decisions
+    // (the seed mode itself is `decideHistory` in `history.ts`); 6 parked tool
+    // results; 7 deliver, by steering the running turn or starting one; 8 step
+    // stats, abort wiring, and the stream that translates Muse events.
+
     const headers = options.headers ?? {};
     const kind = (headers[HEADERS.kind] as RequestKind | undefined) ?? "primary";
     const sessionID = headers[HEADERS.session];
