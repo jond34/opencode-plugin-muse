@@ -1,4 +1,5 @@
 import type { LanguageModelV3FilePart, LanguageModelV3Prompt } from "@ai-sdk/provider";
+import { textOfContent } from "./shared.js";
 import { renderTranscript } from "./transcript.js";
 
 /**
@@ -31,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Convert a `file` part to a Muse image part; non-images are ignored. */
-export function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment | undefined {
+function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment | undefined {
   if (!part.mediaType.startsWith("image/")) return undefined;
   if (part.data instanceof Uint8Array) {
     return { mediaType: part.mediaType, data: Buffer.from(part.data).toString("base64") };
@@ -43,21 +44,6 @@ export function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment 
     return { mediaType: part.mediaType, data: part.data };
   }
   return undefined;
-}
-
-function textOfContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      parts.push(part);
-      continue;
-    }
-    if (!isRecord(part)) continue;
-    if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
-  }
-  return parts.join("");
 }
 
 /** The last user message in the prompt, with its text and image attachments. */
@@ -103,7 +89,7 @@ export function fullConversationText(prompt: LanguageModelV3Prompt): string {
 }
 
 /** Tool results carried by `tool` messages (and assistant tool-result parts). */
-export function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt[number]>): ToolResult[] {
+function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt[number]>): ToolResult[] {
   const results: ToolResult[] = [];
   for (const message of messages) {
     if (message.role === "tool") {
@@ -123,15 +109,6 @@ export function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt
     }
   }
   return results;
-}
-
-/** The system prompt text, which carries OpenCode's instructions. */
-export function systemText(prompt: LanguageModelV3Prompt): string {
-  const parts: string[] = [];
-  for (const message of prompt) {
-    if (message.role === "system") parts.push(message.content);
-  }
-  return parts.join("\n");
 }
 
 /** Tool results keyed by call id, for resolving parked Muse tool calls. */

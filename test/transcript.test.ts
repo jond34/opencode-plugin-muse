@@ -35,6 +35,13 @@ describe("renderTranscript", () => {
     expect(text.indexOf("<tool_result")).toBeLessThan(text.indexOf("found it"));
   });
 
+  test("a tool result with no output is unknown, not a crash", () => {
+    const text = renderTranscript(
+      asPrompt([user("read it"), call("t1", "read"), result("t1", undefined, "read")]),
+    );
+    expect(text).toContain('id="t1" name="read" status="unknown"');
+  });
+
   test("marks every error output shape", () => {
     for (const output of [
       { type: "error-text", value: "boom" },

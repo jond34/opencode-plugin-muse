@@ -1,5 +1,6 @@
 import type { LanguageModelV3Prompt, LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
-import { toolCallInputText, toolResultIsError, toolResultText } from "./transcript.js";
+import { textOfContent } from "./shared.js";
+import { toolCallInputText, toolResultStatus, toolResultText } from "./transcript.js";
 
 /**
  * Local titles and compaction digests.
@@ -14,24 +15,6 @@ const TITLE_LIMIT = 72;
 const DEFAULT_DIGEST_BUDGET = 1024;
 const MIN_DIGEST_BUDGET = 64;
 const DIGEST_HEADER = "Conversation digest (opencode-owned history):";
-
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      parts.push(part);
-      continue;
-    }
-    if (typeof part !== "object" || part === null) continue;
-    if ((part as { type?: unknown }).type === "text") {
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === "string") parts.push(text);
-    }
-  }
-  return parts.join("");
-}
 
 function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -52,7 +35,7 @@ export function makeLocalTitle(
   prompt: ReadonlyArray<{ readonly role: string; readonly content: unknown }>,
 ): string {
   const first = prompt.find((message) => message.role === "user");
-  const text = collapse(first === undefined ? "" : textOf(first.content));
+  const text = collapse(first === undefined ? "" : textOfContent(first.content));
   if (text.length === 0) return "Muse session";
   const points = Array.from(text);
   if (points.length <= TITLE_LIMIT) return text;
@@ -87,7 +70,7 @@ function digestEntries(prompt: LanguageModelV3Prompt): DigestEntry[] {
   for (const message of prompt) {
     if (message.role === "system") continue;
     if (message.role === "user" || message.role === "assistant") {
-      const text = collapse(textOf(message.content));
+      const text = collapse(textOfContent(message.content));
       if (text.length > 0) entries.push({ label: message.role === "user" ? "User: " : "Assistant: ", text });
     }
     if (message.role !== "assistant" && message.role !== "tool") continue;
@@ -110,8 +93,8 @@ function digestEntries(prompt: LanguageModelV3Prompt): DigestEntry[] {
       if (id.length > 0 && seenResults.has(id)) continue;
       if (id.length > 0) seenResults.add(id);
       const name = typeof part.toolName === "string" ? part.toolName : "";
-      const output = part.output as LanguageModelV3ToolResultOutput;
-      const status = toolResultIsError(output) ? "error" : "ok";
+      const output = part.output as LanguageModelV3ToolResultOutput | undefined;
+      const status = toolResultStatus(output);
       const text = collapse(toolResultText(output));
       entries.push({
         label: "Tool result: ",
@@ -174,10 +157,26 @@ export function makeCompactionDigest(
   return clipCodepoints(digest, budget);
 }
 
-/** A compaction result the opencode hook can return directly. */
+/**
+ * One message of the replacement window the hook hands back.
+ *
+ * The window is the digest, optionally followed by the single tool exchange
+ * that was in flight when compaction fired: the assistant message carrying the
+ * calls, then the tool message(s) answering exactly those calls. Nothing else
+ * is legal, because opencode replays this when it reads history - an unmatched
+ * call or result fails there, not here, and looks like a successful compaction
+ * until the next prompt.
+ *
+ * Parts stay in the dialect the hook received them in. opencode 2.3.2 hands a
+ * compaction hook `{type:"tool-call",id,name,input}` and
+ * `{type:"tool-result",id,name,result}`; a provider-facing prompt uses
+ * `toolCallId`/`toolName`/`output`. Both are accepted and replayed unchanged,
+ * because guessing the other dialect is the kind of mismatch that only shows
+ * up as a silently dropped window.
+ */
 export interface NativeWindowMessage {
-  readonly role: "user";
-  readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;
+  readonly role: "user" | "assistant" | "tool";
+  readonly content: ReadonlyArray<Record<string, unknown>>;
 }
 
 export interface NativeCompactionResult {
@@ -195,22 +194,101 @@ export interface NativeCompactionResult {
  * Checking the shape here makes that failure visible before the turn instead
  * of looking like a successful compaction until the next prompt.
  */
-export function isNativeCompactionWindow(value: unknown): value is NativeWindowMessage[] {
-  if (!Array.isArray(value) || value.length === 0) return false;
-  for (const message of value) {
-    if (typeof message !== "object" || message === null) return false;
-    const record = message as Record<string, unknown>;
-    if (record.role !== "user") return false;
-    if (!Array.isArray(record.content) || record.content.length === 0) return false;
-    for (const part of record.content) {
-      if (typeof part !== "object" || part === null) return false;
-      const block = part as Record<string, unknown>;
-      if (block.type !== "text" || typeof block.text !== "string" || block.text.trim().length === 0) {
-        return false;
-      }
+function isTextPart(value: unknown): boolean {
+  return isRecord(value) && value.type === "text" && typeof value.text === "string" && value.text.trim().length > 0;
+}
+
+/** Call id, in either dialect. */
+function partId(part: Record<string, unknown>): string {
+  const id = part.toolCallId ?? part.id;
+  return typeof id === "string" ? id : "";
+}
+
+/** Tool name, in either dialect. */
+function partName(part: Record<string, unknown>): string {
+  const name = part.toolName ?? part.name;
+  return typeof name === "string" ? name : "";
+}
+
+/** Result payload, in either dialect. */
+function partOutput(part: Record<string, unknown>): Record<string, unknown> | undefined {
+  const output = part.output ?? part.result;
+  return isRecord(output) ? output : undefined;
+}
+
+function isToolCallPart(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    value.type === "tool-call" &&
+    partId(value).length > 0 &&
+    partName(value).length > 0 &&
+    value.input !== undefined
+  );
+}
+
+/**
+ * A tool result is replayable only when the payload is present and typed.
+ *
+ * opencode handed this plugin a result whose `output` was never filled in and
+ * reading `output.type` threw; a type with no value is the same failure one
+ * level down, so it counts as incomplete and the window falls back.
+ */
+function isToolResultPart(value: unknown): boolean {
+  if (!isRecord(value) || value.type !== "tool-result") return false;
+  if (partId(value).length === 0 || partName(value).length === 0) return false;
+  const output = partOutput(value);
+  if (output === undefined || typeof output.type !== "string" || output.type.length === 0) return false;
+  if (output.type === "text" || output.type === "error-text") return typeof output.value === "string";
+  if (output.type === "json" || output.type === "error-json") return output.value !== undefined;
+  if (output.type === "content") return Array.isArray(output.value);
+  // `execution-denied` and any future kind carry no payload of their own.
+  return true;
+}
+
+function isDigestMessage(value: unknown): boolean {
+  if (!isRecord(value) || value.role !== "user") return false;
+  if (!Array.isArray(value.content) || value.content.length === 0) return false;
+  return value.content.every(isTextPart);
+}
+
+/**
+ * The call ids and result ids of a trailing exchange, or undefined when the
+ * exchange is not a complete one-to-one match.
+ */
+function exchangeIds(messages: ReadonlyArray<unknown>): { calls: string[]; results: string[] } | undefined {
+  const first = messages[0];
+  if (!isRecord(first) || first.role !== "assistant" || !Array.isArray(first.content)) return undefined;
+  if (first.content.length === 0) return undefined;
+  const calls: string[] = [];
+  for (const part of first.content) {
+    if (isToolCallPart(part)) calls.push(partId(part as Record<string, unknown>));
+    // Reasoning and file parts are not replayed: keeping them would ask the
+    // provider to re-read evidence this window does not carry.
+    else if (!isTextPart(part)) return undefined;
+  }
+  if (calls.length === 0) return undefined;
+  const results: string[] = [];
+  for (const message of messages.slice(1)) {
+    if (!isRecord(message) || message.role !== "tool" || !Array.isArray(message.content)) return undefined;
+    for (const part of message.content) {
+      if (!isToolResultPart(part)) return undefined;
+      results.push(partId(part as Record<string, unknown>));
     }
   }
-  return true;
+  if (results.length === 0 || results.length !== calls.length) return undefined;
+  if (new Set(calls).size !== calls.length) return undefined;
+  const answered = new Set(calls);
+  for (const id of results) if (!answered.has(id)) return undefined;
+  return { calls, results };
+}
+
+export function isNativeCompactionWindow(value: unknown): value is NativeWindowMessage[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  if (!isDigestMessage(value[0])) return false;
+  // The digest alone is always legal; anything after it must be one complete
+  // exchange, because the provider prompt cannot start with a tool result.
+  if (value.length === 1) return true;
+  return exchangeIds(value.slice(1)) !== undefined;
 }
 
 /**
@@ -223,10 +301,69 @@ export function isNativeCompactionWindow(value: unknown): value is NativeWindowM
  * it does not need `settings.compaction = native`, which this AI SDK provider
  * rejects in opencode 2.3.2.
  *
- * A trailing tool message (or an assistant message still carrying a tool call)
- * means the compact happened mid-turn. A user-only window would leave an
- * orphan tool result, so that case falls back to the summary-only path.
+ * A compact can fire mid-turn, between a tool call and the turn that reads its
+ * result - in a tool-using session that is the normal case, not the edge. A
+ * user-only window would leave the result orphaned, so the window carries the
+ * one exchange that is in flight: the calls and the results answering them.
+ * Anything incomplete (a call with no result, a result with no call, a result
+ * whose payload is missing) is not replayed: the window is the digest alone,
+ * which carries the same facts the summary does. The summary-only path remains
+ * as the guard for a malformed build, not as the normal mid-turn answer.
  */
+/** Longest tool payload replayed; the digest already clips its own copy. */
+const MAX_RESULT_CHARS = 4096;
+
+function clipResult(value: string): string {
+  return value.length <= MAX_RESULT_CHARS ? value : `${clipCodepoints(value, MAX_RESULT_CHARS)}\u2026 [clipped]`;
+}
+
+/** Rebuild the in-flight tool exchange, or undefined when it is incomplete. */
+function trailingExchange(prompt: LanguageModelV3Prompt): NativeWindowMessage[] | undefined {
+  const last = prompt[prompt.length - 1];
+  if (last?.role !== "tool") return undefined;
+  let start = prompt.length - 1;
+  while (start > 0 && prompt[start - 1]?.role === "tool") start -= 1;
+  const calls = prompt[start - 1];
+  if (calls?.role !== "assistant") return undefined;
+
+  const callParts: Array<Record<string, unknown>> = [];
+  for (const part of calls.content) {
+    if (isToolCallPart(part)) callParts.push({ ...(part as unknown as Record<string, unknown>) });
+    else if (isTextPart(part)) callParts.push({ type: "text", text: (part as { text: string }).text });
+    else return undefined;
+  }
+
+  const toolMessages: NativeWindowMessage[] = [];
+  for (const message of prompt.slice(start)) {
+    if (message.role !== "tool") return undefined;
+    const resultParts: Array<Record<string, unknown>> = [];
+    for (const part of message.content) {
+      if (!isToolResultPart(part)) return undefined;
+      const copy = { ...(part as unknown as Record<string, unknown>) };
+      // Clip the payload where it lives in this dialect, without renaming it.
+      const key = copy.output !== undefined ? "output" : copy.result !== undefined ? "result" : undefined;
+      const payload = key === undefined ? undefined : copy[key];
+      if (key !== undefined && isRecord(payload) && typeof payload.value === "string") {
+        copy[key] = { ...payload, value: clipResult(payload.value) };
+      }
+      resultParts.push(copy);
+    }
+    if (resultParts.length === 0) return undefined;
+    toolMessages.push({ role: "tool", content: resultParts });
+  }
+
+  const exchange: NativeWindowMessage[] = [{ role: "assistant", content: callParts }, ...toolMessages];
+  return exchangeIds(exchange) === undefined ? undefined : exchange;
+}
+
+/** The digest text of a window; the first message is always the digest. */
+export function nativeWindowDigest(messages: ReadonlyArray<NativeWindowMessage>): string | undefined {
+  const first = messages[0];
+  if (first?.role !== "user") return undefined;
+  const text = first.content[0]?.text;
+  return typeof text === "string" ? text : undefined;
+}
+
 export function nativeCompactionResult(
   prompt: LanguageModelV3Prompt,
   maxOutputTokens?: number,
@@ -236,26 +373,17 @@ export function nativeCompactionResult(
       ? Math.floor(maxOutputTokens)
       : DEFAULT_DIGEST_BUDGET;
   const digest = makeCompactionDigest(prompt, Math.min(requested, 2048));
-  const last = prompt[prompt.length - 1];
-  let midTurn = last?.role === "tool";
-  if (!midTurn && last?.role === "assistant") {
-    for (const part of last.content) {
-      if (typeof part === "object" && part !== null && (part as { type?: unknown }).type === "tool-call") {
-        midTurn = true;
-        break;
-      }
-    }
-  }
   // The summary is the portable fallback, not a placeholder. opencode only
   // replays the native window on the same provider and model; a model switch,
   // a dropped window, or a refused resume must still see the facts.
   // Recall tests must put their needle outside the digest's per-entry clips
   // (512 characters for user/assistant text, 200 for a tool result), or the
   // digest itself answers the question.
-  if (midTurn) return { summary: digest };
   const messages: NativeWindowMessage[] = [
     { role: "user", content: [{ type: "text", text: digest }] },
   ];
+  const exchange = trailingExchange(prompt);
+  if (exchange !== undefined) messages.push(...exchange);
   if (!isNativeCompactionWindow(messages)) return { summary: digest };
   return {
     summary: digest,

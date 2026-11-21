@@ -1,4 +1,5 @@
 import type { LanguageModelV3Prompt, LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
+import { textOfContent } from "./shared.js";
 
 /**
  * Faithful transcript rendering for a fresh native Muse session.
@@ -29,21 +30,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function textOfContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      parts.push(part);
-      continue;
-    }
-    if (!isRecord(part)) continue;
-    if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
-  }
-  return parts.join("");
-}
-
 function escapeAttribute(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -71,34 +57,45 @@ export function toolCallInputText(input: unknown): string {
   }
 }
 
-/** True for the output kinds that mean the tool did not succeed. */
-export function toolResultIsError(output: LanguageModelV3ToolResultOutput): boolean {
-  return (
-    output.type === "error-text" ||
+/**
+ * A tool result's status. `unknown` covers a part whose output is absent:
+ * opencode can hand the compaction hook a `tool-result` it never filled in,
+ * and calling that `ok` would put a claim in the digest the model never saw.
+ * It used to throw instead, which failed the whole compaction.
+ */
+export function toolResultStatus(output: unknown): "ok" | "error" | "unknown" {
+  if (!isRecord(output)) return "unknown";
+  return output.type === "error-text" ||
     output.type === "error-json" ||
     output.type === "execution-denied"
-  );
+    ? "error"
+    : "ok";
 }
 
 /** The text a tool result carries, mirroring `toToolResult` in the model. */
-export function toolResultText(output: LanguageModelV3ToolResultOutput): string {
+export function toolResultText(output: unknown): string {
+  if (!isRecord(output)) return "";
   switch (output.type) {
     case "text":
     case "error-text":
-      return output.value;
+      return typeof output.value === "string" ? output.value : "";
     case "execution-denied":
-      return output.reason ?? "Tool execution was denied by the user.";
+      return typeof output.reason === "string" ? output.reason : "Tool execution was denied by the user.";
     case "json":
     case "error-json":
       try {
-        return JSON.stringify(output.value);
+        return JSON.stringify(output.value) ?? "";
       } catch {
         return String(output.value);
       }
     case "content":
-      return output.value
-        .map((part) => (isRecord(part) && part.type === "text" && typeof part.text === "string" ? part.text : ""))
-        .join("");
+      return Array.isArray(output.value)
+        ? output.value
+            .map((part) =>
+              isRecord(part) && part.type === "text" && typeof part.text === "string" ? part.text : "",
+            )
+            .join("")
+        : "";
     default:
       return "";
   }
@@ -154,8 +151,8 @@ export function renderTranscriptDetailed(
     if (id.length > 0 && seenResults.has(id)) return;
     if (id.length > 0) seenResults.add(id);
     const name = typeof record.toolName === "string" ? record.toolName : "";
-    const output = record.output as LanguageModelV3ToolResultOutput;
-    const status = toolResultIsError(output) ? "error" : "ok";
+    const output = record.output;
+    const status = toolResultStatus(output);
     const clipped = clip(toolResultText(output), maxToolResult);
     const body =
       clipped.omitted > 0 ? `${clipped.text}\n${marker(clipped.omitted)}` : clipped.text;

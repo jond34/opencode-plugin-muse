@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { LanguageModelV3Prompt, LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
-import { toolCallInputText, toolResultIsError, toolResultText } from "./transcript.js";
+import { toolCallInputText, toolResultStatus, toolResultText } from "./transcript.js";
 
 /**
  * Transcript identity for the native Muse session.
@@ -21,24 +21,6 @@ export type Reconciliation = "same" | "compacted" | "diverged";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      parts.push(part);
-      continue;
-    }
-    if (typeof part !== "object" || part === null) continue;
-    if ((part as { type?: unknown }).type === "text") {
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === "string") parts.push(text);
-    }
-  }
-  return parts.join("");
 }
 
 function fileSignature(part: Record<string, unknown>): string | undefined {
@@ -69,8 +51,8 @@ export function fingerprintTranscript(prompt: LanguageModelV3Prompt): string[] {
     if (id.length > 0 && seenResults.has(id)) return;
     if (id.length > 0) seenResults.add(id);
     const name = typeof part.toolName === "string" ? part.toolName : "";
-    const output = part.output as LanguageModelV3ToolResultOutput;
-    const status = toolResultIsError(output) ? "error" : "ok";
+    const output = part.output as LanguageModelV3ToolResultOutput | undefined;
+    const status = toolResultStatus(output);
     fingerprints.push(`tool-result:${id}:${name}:${status}:${sha256(toolResultText(output))}`);
   };
 
