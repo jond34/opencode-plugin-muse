@@ -55,7 +55,7 @@ export const MUSE_REMINDERS = [
 /** `{ [scope]: { [path]: "off" } }`, the shape Muse's skill activation reads. */
 export type SkillsOff = Record<string, Record<string, "off">>;
 
-export type SkillsProbeStatus = "enumerated" | "empty" | "failed";
+type SkillsProbeStatus = "enumerated" | "empty" | "failed";
 
 export interface SkillsProbeReport {
   readonly off: SkillsOff;

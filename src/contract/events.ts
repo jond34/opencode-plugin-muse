@@ -66,13 +66,3 @@ export type HarnessEvent = {
     readonly type: "session.error";
     readonly error: HarnessFailure;
 };
-export const HARNESS_TERMINAL_TURN_STATUSES: ReadonlySet<string> = new Set([
-    "completed",
-    "interrupted",
-    "cancelled",
-    "failed",
-]);
-
-export function isTerminalTurn(event: HarnessEvent): boolean {
-    return event.type === "turn.terminal";
-}

@@ -7,7 +7,7 @@
  * tool rewrite are distinguishable in the ledger.
  */
 
-export type SeedReason =
+type SeedReason =
   | "first"
   | "same"
   | "new_session"

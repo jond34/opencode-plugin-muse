@@ -7,7 +7,7 @@ import type { HarnessNativeRefStrength } from "./ids.js";
  * Hosts must check capabilities before using an optional operation and must
  * never branch on the adapter id.
  */
-export interface HarnessSessionCapabilities {
+interface HarnessSessionCapabilities {
     /** The harness can change models without reopening the session. */
     readonly supportsModelSwitch: boolean;
     /** A session can be resumed after the host process restarts. */
@@ -17,14 +17,14 @@ export interface HarnessSessionCapabilities {
     /** How many turns the harness can run concurrently in one session. */
     readonly maxConcurrentTurns: number;
 }
-export interface HarnessThreadCapabilities {
+interface HarnessThreadCapabilities {
     readonly exposesNativeThreadId: boolean;
     /** The harness can fork a conversation natively. */
     readonly canFork: boolean;
     /** The harness can read a full conversation snapshot. */
     readonly canReadSnapshot: boolean;
 }
-export interface HarnessTurnCapabilities {
+interface HarnessTurnCapabilities {
     readonly exposesNativeTurnId: boolean;
     readonly emitsTurnStarted: boolean;
     readonly emitsTurnCompleted: boolean;
@@ -41,13 +41,13 @@ export interface HarnessTurnCapabilities {
      */
     readonly terminalStatusQuality: "strong" | "weak" | "none";
 }
-export interface HarnessStreamingCapabilities {
+interface HarnessStreamingCapabilities {
     readonly streamsAssistantText: boolean;
     readonly streamsReasoning: boolean;
     readonly streamsToolOutput: boolean;
     readonly emitsMessageCompleted: boolean;
 }
-export interface HarnessToolCapabilities {
+interface HarnessToolCapabilities {
     readonly exposesToolItemIds: boolean;
     readonly emitsToolStarted: boolean;
     readonly emitsToolCompleted: boolean;
@@ -55,7 +55,7 @@ export interface HarnessToolCapabilities {
     /** The harness can consume MCP tools exposed by the host. */
     readonly supportsMcpTools: boolean;
 }
-export interface HarnessApprovalCapabilities {
+interface HarnessApprovalCapabilities {
     readonly supportsCommandApproval: boolean;
     readonly supportsFileReadApproval: boolean;
     readonly supportsFileChangeApproval: boolean;
@@ -66,14 +66,14 @@ export interface HarnessApprovalCapabilities {
      */
     readonly approvalCallbacksAreLiveOnly: boolean;
 }
-export interface HarnessInputCapabilities {
+interface HarnessInputCapabilities {
     readonly acceptsText: boolean;
     readonly acceptsImages: boolean;
     readonly acceptsFiles: boolean;
     /** Declared attachment ceiling, or `null` when the harness does not declare one. */
     readonly maxAttachments: number | null;
 }
-export interface HarnessIdentityCapabilities {
+interface HarnessIdentityCapabilities {
     readonly nativeThreadIds: HarnessNativeRefStrength;
     readonly nativeTurnIds: HarnessNativeRefStrength;
     readonly nativeItemIds: HarnessNativeRefStrength;

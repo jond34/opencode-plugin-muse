@@ -15,7 +15,7 @@ import { join } from "node:path";
  * an old summary keeps counting turns exactly as before.
  */
 
-export type UsageKind = "primary" | "compaction" | "title" | "generate" | "probe";
+type UsageKind = "primary" | "compaction" | "title" | "generate" | "probe";
 
 export interface UsageEntry {
   readonly ts: string;
@@ -74,7 +74,7 @@ export interface HistoryRow {
 }
 
 /** One startup snapshot of the host; no prompt text, no user paths. */
-export interface HostRow {
+interface HostRow {
   readonly type: "host";
   readonly ts: string;
   readonly serverName: string | null;
@@ -118,7 +118,7 @@ export interface UsageSummary {
 }
 
 /** `$XDG_STATE_HOME/opencode-muse`, or the home fallback. */
-export function ledgerDirectory(env: NodeJS.ProcessEnv = process.env): string {
+function ledgerDirectory(env: NodeJS.ProcessEnv = process.env): string {
   const state = env.XDG_STATE_HOME?.trim();
   const base = state !== undefined && state.length > 0 ? state : join(homedir(), ".local", "state");
   return join(base, "opencode-muse");

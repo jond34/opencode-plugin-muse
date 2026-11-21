@@ -17,14 +17,14 @@ export const FALLBACK_OUTPUT_LIMIT = 8_192;
  * Empty until a `scripts/compat.ts` run records real values; an empty table
  * simply falls through to the conservative default.
  */
-export const MODEL_CONTEXT_LIMITS: Readonly<Record<string, number>> = {};
+const MODEL_CONTEXT_LIMITS: Readonly<Record<string, number>> = {};
 
 /** Per-model output limits, same provenance as the context table. */
-export const MODEL_OUTPUT_LIMITS: Readonly<Record<string, number>> = {};
+const MODEL_OUTPUT_LIMITS: Readonly<Record<string, number>> = {};
 
-export type LimitSource = "override" | "catalog" | "table" | "fallback";
+type LimitSource = "override" | "catalog" | "table" | "fallback";
 
-export interface LimitResolution {
+interface LimitResolution {
   readonly value: number;
   readonly source: LimitSource;
 }

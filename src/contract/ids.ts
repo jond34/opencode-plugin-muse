@@ -17,17 +17,6 @@ export interface HarnessNativeRef {
     readonly id: string | null;
     readonly strength: HarnessNativeRefStrength;
 }
-export const NO_NATIVE_REF: HarnessNativeRef = { id: null, strength: "none" };
-
 export function nativeRef(id: string | null, strength: HarnessNativeRefStrength): HarnessNativeRef {
     return { id, strength };
-}
-
-export function isNativeRef(value: unknown): value is HarnessNativeRef {
-    return (typeof value === "object" &&
-        value !== null &&
-        "id" in value &&
-        "strength" in value &&
-        (value.id === null || typeof value.id === "string") &&
-        (value.strength === "strong" || value.strength === "weak" || value.strength === "none"));
 }

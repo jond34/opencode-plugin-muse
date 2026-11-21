@@ -12,7 +12,7 @@
  * made. Only an omitted variant or `"default"` leaves the choice to Muse.
  */
 
-export const EFFORT_ORDER = [
+const EFFORT_ORDER = [
   "none",
   "minimal",
   "low",

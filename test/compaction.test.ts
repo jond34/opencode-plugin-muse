@@ -1,15 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
 import type { HarnessEvent } from "../src/contract/index.js";
-import {
-  HEADERS,
-  MuseHarnessAdapter,
-  MuseHarnessSession,
-  MuseLanguageModel,
-  MuseSessionRegistry,
-  type MuseNotification,
-  type SessionHost,
-} from "../src/index.js";
+import { MuseHarnessAdapter } from "../src/adapter.js";
+import type { MuseNotification } from "../src/host.js";
+import { HEADERS, MuseLanguageModel } from "../src/language-model.js";
+import { MuseHarnessSession, type SessionHost } from "../src/session.js";
+import { MuseSessionRegistry } from "../src/session-registry.js";
 
 interface RecordedCommand {
   method: string;

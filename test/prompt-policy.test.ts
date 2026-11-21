@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
-  LiveSession,
-  MuseHarnessSession,
   decidePromptPolicy,
   parsePromptDelivery,
   probeInstruction,
   probeSucceeded,
   promptProbeKey,
-  type SessionHost,
-} from "../src/index.js";
+} from "../src/prompt-policy.js";
+import { MuseHarnessSession, type SessionHost } from "../src/session.js";
+import { LiveSession } from "../src/session-registry.js";
 
 function fakeHost(): SessionHost {
   return {

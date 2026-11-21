@@ -4,8 +4,8 @@
  * Adapters throw `HarnessError` for expected failure modes. The `code` is the
  * stable machine-readable contract; `message` is for humans and logs only.
  */
-export type HarnessErrorCode = "open_failed" | "close_failed" | "session_stopped" | "protocol_error" | "unsupported" | "interrupt_timeout" | "request_failed" | "event_stream_failed" | "usage_limit" | "auth_required" | "invalid_input" | "containment_breach";
-export interface HarnessErrorOptions {
+type HarnessErrorCode = "open_failed" | "close_failed" | "session_stopped" | "protocol_error" | "unsupported" | "interrupt_timeout" | "request_failed" | "event_stream_failed" | "usage_limit" | "auth_required" | "invalid_input" | "containment_breach";
+interface HarnessErrorOptions {
     readonly code: HarnessErrorCode;
     readonly adapterId: string;
     readonly message: string;
@@ -38,12 +38,4 @@ export class HarnessError extends Error {
 
 export function isHarnessError(value: unknown): value is HarnessError {
     return value instanceof HarnessError;
-}
-
-/** Narrow an unknown thrown value to a `HarnessError`, wrapping it if needed. */
-export function toHarnessError(value: unknown, adapterId: string, fallbackCode: HarnessErrorCode = "protocol_error"): HarnessError {
-    if (value instanceof HarnessError)
-        return value;
-    const message = value instanceof Error ? value.message : String(value);
-    return new HarnessError({ code: fallbackCode, adapterId, message, cause: value, retryable: true });
 }

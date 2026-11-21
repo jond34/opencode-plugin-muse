@@ -4,7 +4,7 @@ import {
   userMessage,
   type HarnessConformanceDriver,
 } from "./harness/index.js";
-import { MuseHarnessAdapter } from "../src/index.js";
+import { MuseHarnessAdapter } from "../src/adapter.js";
 
 /**
  * Harness-specific glue for the shared conformance suite.

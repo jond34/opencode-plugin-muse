@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { MuseHarnessAdapter, MuseHarnessSession } from "../src/index.js";
+import { MuseHarnessAdapter } from "../src/adapter.js";
+import { MuseHarnessSession } from "../src/session.js";
 import { runTurn } from "./harness/helpers.js";
 
 const tools = [

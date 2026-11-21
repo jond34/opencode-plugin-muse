@@ -1,14 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import {
-  allImages,
-  fullConversationText,
-  MuseHarnessSession,
-  toAIUsage,
-  toTokenUsage,
-  type MuseNotification,
-  type SessionHost,
-} from "../src/index.js";
+import { toTokenUsage } from "../src/events.js";
+import type { MuseNotification } from "../src/host.js";
+import { allImages, fullConversationText } from "../src/prompt.js";
+import { MuseHarnessSession, type SessionHost } from "../src/session.js";
+import { toAIUsage } from "../src/session-registry.js";
 
 function fakeHost(): SessionHost {
   return {
