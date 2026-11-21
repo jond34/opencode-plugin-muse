@@ -93,7 +93,9 @@ from the provider, so the line under the reply is the plugin reporting back:
 ## Native history
 
 `MUSE_NATIVE_HISTORY=1` turns on the compaction hook's native replacement
-window. The default is off.
+window; it is off by default and stays opt-in by policy. No value has been
+measured in the unit the subscription bills: `muse usage` reports account-wide
+percentages that a turn does not move, so the decision is policy, not a number.
 
 The authority is deliberately split: opencode owns the loop, tools, permissions,
 session ids, forks, rewinds, and the compaction decision; Muse owns the native
@@ -102,36 +104,26 @@ compaction digest is the portable fallback and is used as the summary too, so a
 model switch, a dropped window, or a refused resume still has the facts.
 
 The ten-session smoke test showed 5/5 old sessions reseeding after compaction and
-0/5 new sessions reseeding, with one native session id throughout. That is a
-mechanism result, not a recall result: the canary was inside the digest and the
-old summary. The gate design, the numbers and what they do not show are in
-[`docs/native-history-evidence.md`](docs/native-history-evidence.md). The manual
-pilot met Gate A's new-arm criterion: 5/5 sessions recalled the out-of-window
-vault code and the control, with one native row and no reseed each. One old-arm
-control missed the vault code and kept the control. Gate B added 29 more
-sessions with 0 failures, a 9.81% one-sided upper bound on the miss rate rather
-than a zero-rate claim. Do not treat the flag as default-on.
+0/5 new ones, the old arm starting a new native session each time and the new arm
+keeping one throughout. That is a mechanism result, not a recall result. Gate A
+placed the vault code past the digest's clip: the new arm recalled it 5/5 with
+one native row and no reseed each, while one old-arm control missed it and kept
+the control. Gate B added 29 sessions with 0 failures, a 9.81% one-sided upper
+bound on the miss rate rather than a zero-rate claim. Automatic and background
+compaction, restart, model switch, second compaction, fork, and tool-result
+recall behave as documented; a mid-turn compaction keeps the tool exchange in
+flight instead of dropping to the digest. A 44-turn sweep showed no attributable
+saving, but it excluded the summarizer call, so it cannot settle value.
 
-The flag is not default-on. No value has been measured in the unit the
-subscription bills, and it turns out that unit cannot be attributed to a run:
-`muse usage` reports account-wide percentages that a turn does not move. So the
-flag stays opt-in by policy rather than pending a number. Automatic and
-background compaction work, restart, model switch, second compaction, fork, and
-tool-result recall all behave as documented, and a compaction that fires
-mid-turn - the normal case in a tool-using session - now installs a window that
-keeps the tool exchange in flight instead of dropping to the digest. A 44-turn sweep showed no attributable
-saving, but it summed tokens while excluding the summarizer call, so it cannot
-settle value either way; that measurement is in allowance units and still open.
-Separately, opencode's rules reach the model as flattened text by default. The
-host does install a per-session developer prompt, so this is a policy choice
-rather than a limitation. Containment is enforced on the observable surface:
-the session record shows the control prompt installed from settings, Muse's own
-reminders, skills, and delegation off, and a bridge-only toolset. It covers the
-model, not the workspace; [Limits of the seam](#limits-of-the-seam) says what that
-leaves out. Details are in [`docs/native-history-evidence.md`](docs/native-history-evidence.md).
-
-See [`docs/native-history-evidence.md`](docs/native-history-evidence.md) and
-[`docs/compatibility.md`](docs/compatibility.md).
+opencode's rules reach the model as flattened text by default. The host does
+install a per-session developer prompt, so that is a policy choice, not a
+limitation. Containment is enforced on the observable surface: the session record
+shows the control prompt installed from settings, Muse's own reminders, skills,
+and delegation off, and a bridge-only toolset. It covers the model, not the
+workspace; [Limits of the seam](#limits-of-the-seam) says what that leaves out.
+Gate design, numbers, and what they do not show:
+[`docs/native-history-evidence.md`](docs/native-history-evidence.md); the wire
+contract is [`docs/compatibility.md`](docs/compatibility.md).
 
 ## Install
 
@@ -185,8 +177,9 @@ bash scripts/repro.sh
 
 It installs from the committed lockfile, compiles, and compares the resulting `dist/`
 against the hash recorded for this tree in `docs/provenance.md`. It prints `PASS` or
-exits non-zero. The hash of the published 0.1.9 tarball is recorded there too; this tree
-adds patches 3 through 5, so its hash differs.
+exits non-zero; on this tree it currently exits non-zero, because the recorded hash
+predates patches 3 through 5 (see `docs/provenance.md`). The hash of the published
+0.1.9 tarball is recorded there too.
 
 ```bash
 npm run check:offline   # typecheck plus the offline test suite
@@ -244,10 +237,10 @@ The attestation endpoint needs an npm-style `User-Agent`. A bare `curl` gets a
 src/        upstream source plus the patches in docs/provenance.md
 test/       test suite (upstream tests plus this fork's)
 docs/       compatibility.md, native-history-evidence.md, provenance.md
-            (native-history.md and steady-state.md are repository only, not packed)
-bench/      preregistered gates, experiments, execution record; repository only
-evidence/   inputs for the reproduction check (diffs, measurements); repository only
-scripts/    repro.sh, check.sh, and the native-history gate scripts
+            (native-history.md and steady-state.md are kept locally, not published)
+bench/      preregistered gates, experiments, execution record; kept locally
+evidence/   inputs for the reproduction check (diffs, measurements); kept locally
+scripts/    repro.sh and the native-history gate scripts
 media/      README screenshots
 ```
 

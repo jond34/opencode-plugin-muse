@@ -3,8 +3,9 @@
 `MUSE_NATIVE_HISTORY=1` installs a native compaction window instead of reseeding
 the whole transcript. The default is off. This page states what the measurements
 show, how they were taken, and what they do not settle. It is the published
-summary; the preregistration, the gate scripts and every per-session result stay
-in the repository and are named at the end.
+summary; the preregistration, the gate scripts and every per-session result are
+kept with the project rather than shipped in the package, and are named at the
+end.
 
 ## What is claimed
 
@@ -42,8 +43,8 @@ Two arms, `old` and `new`, run against the same task with the same prompt shape:
   completed, the session export was available, the native id did not change, the
   vault code was absent from the digest, and the control was present;
 - intent-to-treat counting: an invalid session is a failure, not a retry;
-- an analyzer that recomputes each verdict from the raw artifacts and never reads
-  the recorded `verdict` field.
+- an analyzer that recomputes each verdict from the raw artifacts and prints the
+  recorded `verdict` beside it; the recomputed value is the one that counts.
 
 The frozen run used opencode 2.3.2, Muse CLI 1.4.24 and `@muse-code/sdk` 1.4.15.
 The analyzer, gate and host launcher are pinned by sha256 in the preregistration,
@@ -71,7 +72,7 @@ and those pins refer to the run that produced them.
 
 ## Where the rest of it is
 
-In the repository, not in this package:
+Kept with the project, not in this package:
 
 - `bench/prereg/native-history.md` — the preregistration: arms, validity checks,
   decision rule, pinned versions, and the hashes.

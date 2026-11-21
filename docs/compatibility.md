@@ -31,7 +31,8 @@ reseed, new recalled both with one native row, one native window message, a
 stable native id, and no reseed. That matches the baseline shape. The analyzer
 reports `INCOMPLETE` (needs five per arm), which is its sample size, not a
 contradiction; the confirmatory 34-session new-arm record remains the frozen
-`bcfabcb` run on 2.2.7 / 1.4.15.
+`bcfabcb` run: host opencode 2.3.2, `@opencode/plugin` 2.2.7 as the types pin,
+`@muse-code/sdk` 1.4.15.
 
 Earlier attempts are excluded: old index 6 echoed the reference filler
 (`control_miss`), and old index 7 failed compaction on a `tool-result` part with
