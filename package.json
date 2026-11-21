@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
-    "test:offline": "bun test test/lifecycle.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts",
+    "test:offline": "bun test test/lifecycle.test.ts test/host-requests.test.ts test/usage.test.ts test/replay.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts test/bridge.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
     "repro": "bash scripts/repro.sh"
