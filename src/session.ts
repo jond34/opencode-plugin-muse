@@ -56,6 +56,10 @@ const KNOWN_ITEM_KINDS: ReadonlySet<string> = new Set([
   "webSearch",
 ]);
 
+/** Page size and page cap for a view-gap splice (MSP caps a page at 1–1000). */
+const VIEW_GAP_PAGE_SIZE = 1000;
+const VIEW_GAP_PAGE_LIMIT = 50;
+
 /** Item statuses that mean the item will not change again. */
 const TERMINAL_ITEM_STATUSES: ReadonlySet<string> = new Set([
   "completed",
@@ -185,6 +189,12 @@ interface SessionConnection {
     params: Record<string, unknown>,
     options?: { commandId?: string },
   ): Promise<Record<string, unknown>>;
+  /**
+   * Send a request-mode query (no injected `commandId`). Optional because the
+   * connection is the host's: a replay host or test double may not offer it,
+   * and a gap then degrades to warn-and-continue instead of throwing.
+   */
+  request?(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 export interface SessionHost {
@@ -285,6 +295,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private readonly assumedTurnIds = new Map<string, string>();
   /** Command ids whose `turn/start` is in flight, and the host turn they own. */
   private readonly pendingStarts = new Map<string, string>();
+  /**
+   * Set while a `view/gap` splice is replaying, so live frames that arrive
+   * mid-fill are delivered after the paged ones instead of interleaving.
+   */
+  private viewFill: {
+    pending: MuseNotification[];
+    backlog: Array<{ after: string; next: string }>;
+  } | null = null;
   private readonly messages = new Map<string, HarnessMessage>();
   private readonly tools = new Map<string, HarnessToolItem>();
   private readonly requests = new Map<string, HarnessRuntimeRequest>();
@@ -915,6 +933,18 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
 
   handleNotification(notification: MuseNotification): void {
     if (this.closed) return;
+    // Splice-fill: a page may only be replayed in view order, so live frames
+    // wait for the fill to finish rather than overtaking it. A second gap is
+    // queued by `onViewGap` instead, since it starts its own fill.
+    if (this.viewFill !== null && notification.method !== "view/gap") {
+      this.viewFill.pending.push(notification);
+      return;
+    }
+    this.dispatch(notification);
+  }
+
+  private dispatch(notification: MuseNotification): void {
+    if (this.closed) return;
     const params = notification.params ?? {};
     // The closing `default` is deliberate: MSP gains notification kinds, and
     // an adapter that threw on the first unknown one would take a chat down.
@@ -964,8 +994,96 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       case "session/closed":
         this.onSessionClosed(params);
         break;
+      case "view/gap":
+        this.onViewGap(params);
+        break;
       default:
         break;
+    }
+  }
+
+  /**
+   * A `view/gap` says the frames between `after` and `next` were dropped. Splice
+   * them back with `view/page`, a request-mode read: it takes no lease and does
+   * not re-issue a command, unlike `session/resume`.
+   */
+  private onViewGap(params: Record<string, unknown>): void {
+    const after = typeof params.after === "string" ? params.after : "";
+    const next = typeof params.next === "string" ? params.next : "";
+    // Without both bounds there is no range to ask for; the warning below is
+    // the only thing this adapter can honestly say.
+    if (after.length === 0 || next.length === 0) return;
+    if (this.viewFill !== null) {
+      // One fill at a time; this gap's turn comes after the current one drains.
+      this.viewFill.backlog.push({ after, next });
+      return;
+    }
+    const fill = {
+      pending: [] as MuseNotification[],
+      backlog: [] as Array<{ after: string; next: string }>,
+    };
+    this.viewFill = fill;
+    void this.fillGap(after, next, fill);
+  }
+
+  private async fillGap(
+    after: string,
+    next: string,
+    fill: { pending: MuseNotification[]; backlog: Array<{ after: string; next: string }> },
+  ): Promise<void> {
+    const connection = this.host.connection;
+    let replayed = 0;
+    let pages = 0;
+    let failure: unknown;
+    if (connection.request === undefined) {
+      failure = new Error("this host connection cannot send view/page");
+    } else {
+      let cursor = after;
+      try {
+        while (pages < VIEW_GAP_PAGE_LIMIT) {
+          const result = await connection.request("view/page", {
+            sessionId: this.nativeId,
+            cursor,
+            direction: "forward",
+            limit: VIEW_GAP_PAGE_SIZE,
+          });
+          pages += 1;
+          const events = Array.isArray(result?.events) ? result.events : [];
+          for (const raw of events) {
+            const frame = raw as { method?: unknown; params?: unknown };
+            if (typeof frame.method !== "string") continue;
+            this.dispatch({
+              method: frame.method,
+              params: (frame.params ?? {}) as Record<string, unknown>,
+            });
+            replayed += 1;
+          }
+          // Cursors are opaque: only equality means anything, never order.
+          const nextCursor = typeof result?.nextCursor === "string" ? result.nextCursor : null;
+          if (nextCursor === null || nextCursor === next || nextCursor === cursor) break;
+          cursor = nextCursor;
+        }
+      } catch (error) {
+        failure = error;
+      }
+    }
+    // Drain what waited in arrival order even when the fill failed: the live
+    // stream must not stall behind a range that cannot be repaired.
+    this.viewFill = null;
+    for (const pending of fill.pending) this.dispatch(pending);
+    if (failure !== undefined) {
+      console.warn(
+        `[opencode-muse] view gap after ${after} could not be replayed; continuing live`,
+        failure,
+      );
+    } else {
+      console.warn(
+        `[opencode-muse] view gap after ${after}: replayed ${replayed} events in ${pages} page(s)`,
+      );
+    }
+    // A gap that arrived mid-fill starts a fill of its own.
+    for (const queued of fill.backlog) {
+      this.onViewGap({ after: queued.after, next: queued.next });
     }
   }
 
