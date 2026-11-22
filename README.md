@@ -82,6 +82,10 @@ percentages rather than a per-turn cost.
   permissions, and its `.agents/memory/MEMORY.md` enters the prompt even in an
   untrusted workspace. The startup warning names the hooks and skills when a
   repo supplies them.
+- **Model catalog.** The catalog is a snapshot taken at startup. Muse's session
+  protocol has no catalog subscription, so a model added or newly entitled in
+  Muse appears only after opencode restarts; contributor variants are read from
+  Muse's on-disk catalog and merged in, with their labels presentation-only.
 
 ## What a turn looks like
 

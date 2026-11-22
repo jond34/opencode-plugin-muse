@@ -41,7 +41,7 @@ pass, 0 fail across 28 files. G6 (this record) was the last of the G register.
 | 4 | unknown tool names rejected | `seam-review.md` §6 | settled; stronger than the review assumed | doc line |
 | 5 | missed notification replay | nowhere | gap: `view/gap` is dropped by the `default` branch | code (G1) + fixture + decision |
 | 6 | per-key serialization | nowhere | gap: both keyed get-or-create paths race | code (G5) |
-| 7 | live model catalog | `seam-review.md` §12 | settled for v1, but the restart contract is unstated | doc + decision |
+| 7 | live model catalog | `seam-review.md` §12, README seam limits | settled for v1 and documented: restart-only, no subscription exists | doc (done) |
 
 ## 1. turnId taken only from the ack — half
 
@@ -182,7 +182,7 @@ not a gap: each POST is independent and cancellation is keyed by request id
 (`src/bridge.ts:263-275`), so concurrent tool calls are the transport's normal
 case, not a hazard.
 
-## 7. Live model catalog — settled for v1, undocumented
+## 7. Live model catalog — settled for v1, documented
 
 Settled: `model/list` is a query whose result is "a snapshot at call time: v1 has
 no catalog subscription" (`msp.d.ts:1663`). `MuseHarnessProvider` lists once at
@@ -190,12 +190,15 @@ setup (`src/plugin.ts:268-280`), which is the only time opencode rebuilds its
 provider registry. There is no event to subscribe to, so a refresh loop would be
 polling with no contract behind it.
 
-Not settled, and cheap: the user-visible consequence is unstated. A model added
-or newly entitled in Muse appears only after an opencode restart. Two smaller
-facts also go unrecorded: `listModels()` sends no `sessionId`, so no row is ever
-flagged `isActive` (`msp.d.ts:1657-1661`) — harmless, since opencode tracks the
-active model itself — and the four `MODEL_NAMES` labels are presentation only,
-falling back to the catalog id.
+Documented where a reader looks: `seam-review.md` §12 states the decision and
+why no refresh exists; the README's seam limits say a model added or newly
+entitled in Muse appears only after an opencode restart; and its requirements
+say a missing or signed-out CLI leaves the provider with no models plus one
+`model discovery failed` log line. Two smaller facts are recorded here only:
+`listModels()` sends no `sessionId`, so no row is ever flagged `isActive`
+(`msp.d.ts:1657-1661`) — harmless, since opencode tracks the active model
+itself — and the four `MODEL_NAMES` labels are presentation only, falling back
+to the catalog id.
 
 ## Closures, in risk order
 

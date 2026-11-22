@@ -274,10 +274,12 @@ fails before session/start" and "with the sessionMcp grant starts".
 
 Code: `MuseHarnessProvider` calls `registry.listModels()` once during plugin
 setup and builds the provider's model list from it
-(`src/plugin.ts:270-280`); the adapter's `listModels` sends `model/list`
-(`src/host.ts:198-205`). Contributor rows are read from the on-disk catalog and
-merged (`:214-262`). `MODEL_NAMES` supplies presentation labels for four known
-ids and falls back to the id (`src/plugin.ts:73-79`).
+(`src/plugin.ts:268-280`); the adapter's `listModels` asks the host for the
+selectable set, whose visible rows come from `model/list`
+(`src/host.ts:248-257`). Contributor rows are read from the on-disk catalog and
+merged (`src/host.ts:259-289`, merged in `listSelectableModels` at `:295-299`).
+`MODEL_NAMES` supplies presentation labels for four known ids and falls back to
+the id (`src/plugin.ts:73-79`).
 
 Wire: `ModelListResult` is "A snapshot at call time: v1 has no catalog
 subscription" (`msp.d.ts:1663`). So there is no change event to subscribe to.
@@ -285,7 +287,10 @@ subscription" (`msp.d.ts:1663`). So there is no change event to subscribe to.
 Decision: documented. The catalog is live at startup, not hardcoded; the four
 labels are display-only. A model added to Muse while opencode is running appears
 after a restart, which is also when opencode rebuilds its provider registry.
-No refresh loop is possible in v1 and none is attempted.
+No refresh loop is possible in v1 and none is attempted. The README states the
+same consequence for a user, and the failure arm (missing or signed-out CLI
+leaves the provider with no models and one `model discovery failed` line) is in
+the README's requirements.
 
 ## What changed
 
