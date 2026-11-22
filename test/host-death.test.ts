@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { connect } from "node:net";
 import { MuseHarnessAdapter } from "../src/adapter.js";
 import type { HarnessEvent } from "../src/contract/index.js";
-import { MuseHost, type MuseNotification } from "../src/host.js";
+import { MuseHost, type MuseNotification, type NotificationSink } from "../src/host.js";
 import { MuseHarnessSession, type SessionHost } from "../src/session.js";
 import { MuseSessionRegistry, storeKey, type SessionStore } from "../src/session-registry.js";
 
@@ -55,7 +55,66 @@ function listening(url: string): Promise<boolean> {
   });
 }
 
+/**
+ * A `MuseHost` with no child process, for the exit-reporting guard.
+ *
+ * The constructor is private and a real spawn needs credentials, but the guard
+ * under test is `startRouting`'s subscription to `exited` plus `close`'s
+ * ordering, so the fields those two touch are all this needs.
+ */
+function bareHost(exited: Promise<unknown>, onExit: () => void): MuseHost {
+  const sink: NotificationSink = {
+    sessionId: "native-1",
+    handleNotification: () => {},
+    handleHostExit: onExit,
+  };
+  const bare = Object.create(MuseHost.prototype) as MuseHost;
+  Object.assign(bare as unknown as Record<string, unknown>, {
+    connection: {
+      onNotification: () => {},
+      onServerRequest: () => {},
+      close: async () => {},
+    },
+    initializeResult: {},
+    fingerprintWarning: undefined,
+    exited,
+    child: {},
+    sinks: new Map([[sink.sessionId, sink]]),
+    closed: false,
+  });
+  (bare as unknown as { startRouting(): void }).startRouting();
+  return bare;
+}
+
 describe("a host that dies mid-session", () => {
+  test("a clean close is not reported as a crash", async () => {
+    let resolveExit = () => {};
+    const exited = new Promise((resolve) => {
+      resolveExit = () => resolve({});
+    });
+    const reported: string[] = [];
+    const host = bareHost(exited, () => reported.push("exit"));
+
+    // `close` sets `closed` before the connection closes, and only then does
+    // the child exit, so an intentional shutdown must find the guard set.
+    await host.close();
+    resolveExit();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reported).toEqual([]);
+  });
+
+  test("a crash is reported to the registered sessions", async () => {
+    let resolveExit = () => {};
+    const exited = new Promise((resolve) => {
+      resolveExit = () => resolve({});
+    });
+    const reported: string[] = [];
+    bareHost(exited, () => reported.push("exit"));
+
+    resolveExit();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reported).toEqual(["exit"]);
+  });
   test("its running turn is retired instead of left waiting", async () => {
     const { host, commands } = fakeHost(STARTED);
     const session = await MuseHarnessSession.create(host, { sessionId: "oc", cwd: "/tmp" });

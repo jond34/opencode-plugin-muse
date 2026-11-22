@@ -185,7 +185,7 @@ predates patches 3 through 5 (see `docs/provenance.md`). The hash of the publish
 npm run check:offline   # typecheck plus the offline test suite
 ```
 
-`npm run check:offline` runs 288 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 290 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
