@@ -90,23 +90,23 @@ and `runOnce` uses its own one-off session, so this is latent rather than
 observed. It is still a contract-level defect: the adapter is exported, the
 conformance harness drives it directly, and the docs state the guard as a fact.
 
-## 3. Delta reconciliation — documented, with one real defect
+## 3. Delta reconciliation — settled
 
-Settled: the completed frame wins and deltas are never accumulated
-(`compatibility.md` item 5). That is right — the wire states the invariant
-directly: concatenating a field's deltas in cursor order equals that field on
-`item/completed` "unless the surface saturated" (`ItemDeltaParams.delta`, spec
-14653 INV-005). The completed frame is therefore the reconciliation, and the
-host already stores the deltas.
+Settled twice over. The completed frame wins, and deltas are never accumulated:
 
-Not settled: "the completed frame wins" presumes the started frame arrived.
-`onItemCompleted` returns early when the item is unknown — `src/session.ts:1193-1194`
-for messages, the same shape for tools — so an `item/completed` whose
-`item/started` was missed loses the item entirely, final text included. Nothing
-else recovers it: deltas are not buffered. Item 5 below is the way that happens.
+- A completion whose `item/started` was missed is not dropped: `onItemCompleted`
+  synthesizes the started shape first (`src/session.ts:1406-1420` for messages,
+  `:1440-1447` for tools), so `message.started` still precedes its completion.
+- A completion whose deltas were missed is not empty: the converter counts the
+  characters it streamed per message and appends the rest of `item.text` at
+  completion (`src/convert.ts`, `test/convert.test.ts`). Nothing is buffered;
+  one integer per message is the whole state.
 
-The documented residual (a completion with empty text after deltas leaves an
-empty message) is unchanged and still not worth buffering every delta to avoid.
+The wire states the invariant the offset relies on: a field's deltas,
+concatenated in cursor order, equal that field on `item/completed` "unless the
+surface saturated" (`ItemDeltaParams.delta`, spec 14653 INV-005). Saturation cuts
+the completed field, not the stream (`Item.truncated`), so the append is empty
+exactly when the preview is already longer than the record.
 
 ## 4. Unknown tool names rejected — settled
 

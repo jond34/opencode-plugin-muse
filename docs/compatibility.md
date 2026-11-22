@@ -185,16 +185,21 @@ that change observable behaviour at the seam.
    turn-level path is separate and does stop Muse: `AbortSignal` aborts the step
    and calls `turn/interrupt` (`src/language-model.ts:413-421`).
 
-5. **The completed frame wins.** Deltas are emitted to opencode and never
+5. **The completed frame wins, and the streamed deltas are its prefix.**
+   Deltas are emitted to opencode and never
    accumulated; `item/completed`, or a terminal `item/updated`, is the only text
    stored, using `item.text` for messages and `item.visibleOutput` for tools
-   (`src/session.ts:1055-1115`). A delta stream can be replayed or end early,
-   while the completed frame is what the host recorded, and the protocol defines
-   no reconciliation rule between them. `test/fixtures/tool.jsonl:12-13` shows an
-   in-progress `visibleOutput` that differs from the completed envelope, and the
-   replay tests assert the completed text. If a host completed an item with no
-   text after sending deltas, the transcript would hold an empty message; not
-   observed.
+   (`src/session.ts:1429`). The characters the stream did not deliver are
+   appended at completion: the converter keeps one integer per message, the
+   count already streamed (`src/convert.ts`), so a reply whose deltas were missed
+   still renders whole and one whose deltas all arrived renders once. Nothing is
+   appended when the completed text is shorter than the stream, because the
+   per-surface budget cuts `item.text` (`Item.truncated`) and the preview then
+   already shows more than the record holds. `ItemDeltaParams.delta` (INV-005)
+   is what makes the offset exact: a field's deltas, concatenated in cursor
+   order, equal that field on the completed frame unless the surface saturated.   `test/fixtures/tool.jsonl:12-13` shows an
+   in-progress `visibleOutput` that differs from the completed envelope, and
+   `test/convert.test.ts` pins the message cases.
 
 ## Upgrade checklist
 
