@@ -726,6 +726,8 @@ export class MuseSessionRegistry {
   private readonly compactionBySession = new Map<string, string[]>();
   /** Sessions whose next primary request is the checkpoint the hook supplied. */
   private readonly nativeCompactions = new Map<string, NativeCompactionMarker>();
+  /** Tail of the in-flight `get` per opencode id, so one key opens once. */
+  private readonly getChains = new Map<string, Promise<unknown>>();
   private readonly adapter: LanguageAdapter;
   private readonly store: SessionStore | undefined;
   private hostFingerprintValue: string | null = null;
@@ -828,6 +830,33 @@ export class MuseSessionRegistry {
    * also what tells the caller to seed the whole prompt rather than a delta.
    */
   async get(
+    openCodeSessionId: string,
+    cwd: string,
+    model?: string,
+    tools?: ReadonlyArray<ToolDefinition>,
+    developerPrompt?: string,
+  ): Promise<LiveSession> {
+    // Serialize per opencode id. The body's `sessions.get` check and its later
+    // `sessions.set` straddle awaits, so two concurrent callers both opened a
+    // native session for one key and the second silently replaced the first.
+    const prev = this.getChains.get(openCodeSessionId);
+    const run = (prev ?? Promise.resolve()).then(() =>
+      this.getInner(openCodeSessionId, cwd, model, tools, developerPrompt),
+    );
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.getChains.set(openCodeSessionId, tail);
+    try {
+      return await run;
+    } finally {
+      // Only the last waiter clears the slot; a later `get` chains on `tail`.
+      if (this.getChains.get(openCodeSessionId) === tail) this.getChains.delete(openCodeSessionId);
+    }
+  }
+
+  private async getInner(
     openCodeSessionId: string,
     cwd: string,
     model?: string,
@@ -936,6 +965,9 @@ export class MuseSessionRegistry {
   }
 
   async close(openCodeSessionId: string): Promise<void> {
+    // An open in flight must land before the close looks: a close that ran
+    // between the `get`'s check and its set left a live session nobody closes.
+    await this.getChains.get(openCodeSessionId);
     const live = this.sessions.get(openCodeSessionId);
     this.nativeCompactions.delete(openCodeSessionId);
     if (!live) return;
@@ -944,6 +976,7 @@ export class MuseSessionRegistry {
   }
 
   async closeAll(): Promise<void> {
+    await Promise.all([...this.getChains.values()]);
     for (const session of this.sessions.values()) await session.close();
     this.sessions.clear();
     this.nativeCompactions.clear();

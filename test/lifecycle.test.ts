@@ -212,6 +212,55 @@ describe("MuseHarnessSession construction", () => {
     expect(commands[0]?.params).not.toHaveProperty("approvalMode");
     await session.close();
   });
+
+  test("two concurrent gets for one opencode id open one native session", async () => {
+    // Both callers used to pass the `sessions.get` check before either set, so
+    // one native session was opened and immediately replaced by the other.
+    let opens = 0;
+    const adapter = {
+      listModels: async () => [],
+      openSession: async (input: Record<string, unknown>) => {
+        opens += 1;
+        const mine = opens;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return MuseHarnessSession.fromNativeSession(
+          fakeHost().host,
+          { sessionId: input.sessionId as string, cwd: input.cwd as string },
+          `native-${mine}`,
+        );
+      },
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    try {
+      const [a, b] = await Promise.all([registry.get("oc", "/tmp"), registry.get("oc", "/tmp")]);
+      expect(opens).toBe(1);
+      expect(a).toBe(b);
+    } finally {
+      await registry.closeAll();
+    }
+  });
+
+  test("a close during an in-flight get leaves no live session behind", async () => {
+    let release!: (session: MuseHarnessSession) => void;
+    const gate = new Promise<MuseHarnessSession>((resolve) => {
+      release = resolve;
+    });
+    const adapter = {
+      listModels: async () => [],
+      openSession: async () => gate,
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    const opened = registry.get("oc", "/tmp");
+    // Let the open reach the adapter before the close is issued.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closed = registry.close("oc");
+    release(
+      MuseHarnessSession.fromNativeSession(fakeHost().host, { sessionId: "oc", cwd: "/tmp" }, "native"),
+    );
+    expect(await opened).toBeDefined();
+    await closed;
+    expect(registry.peek("oc")).toBeUndefined();
+  });
 });
 
 describe("MuseHarnessSession turns", () => {
