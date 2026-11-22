@@ -386,6 +386,60 @@ describe("MuseHarnessSession turns", () => {
     });
   });
 
+  test("an absorbed ack is refused instead of remapped", async () => {
+    // `disposition: "steered"` means Muse folded the submit into the turn that
+    // was already running. Remapping its id onto this host turn would make two
+    // host turns own one native turn, so the start is refused and the
+    // reservation is dropped.
+    const commands: RecordedCommand[] = [];
+    const acks: Record<string, unknown>[] = [
+      { disposition: "steered", startedNewTurn: false, turnId: "native-1" },
+      { disposition: "started", startedNewTurn: true, turnId: "native-2" },
+    ];
+    let sent = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => `cmd-${sent}`,
+        command: async (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start" ? (acks[sent++] ?? {}) : {};
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      const refused = await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "one" }] },
+      }).then(
+        () => null,
+        (error: { code?: string }) => error,
+      );
+      expect(refused?.code).toBe("unsupported");
+      expect(refused?.message).toMatch(/steer it instead/);
+
+      // The dropped reservation does not block the next turn.
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "two" }] },
+      });
+      expect(next.id).toBe("t2");
+      expect(next.nativeRef.id).toBe("native-2");
+
+      // A completion for the absorbed native turn must not settle t2.
+      session.handleNotification({
+        method: "turn/completed",
+        params: { turnId: "native-1", sessionId: "native", terminal: "completed" },
+      } satisfies MuseNotification);
+    });
+    const starts = commands.filter((entry) => entry.method === "turn/start");
+    expect(starts).toHaveLength(2);
+    expect(starts[1]?.params.input).toEqual([{ type: "text", text: "two" }]);
+    expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(0);
+  });
+
   test("a completed message whose start was missed emits the turn and both frames", async () => {
     // The start fell in a view gap (or before the subscription). The completion
     // must not be dropped, and the contract still wants turn.started first and

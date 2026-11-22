@@ -692,6 +692,26 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
     this.pendingStarts.delete(commandId);
     const acked = typeof result?.turnId === "string" ? result.turnId : undefined;
+    // Muse answers `started` when it opened a turn for this submit. Any other
+    // disposition (or `startedNewTurn: false`) means the input was folded into a
+    // turn that already exists — `queue` by default, `steer` when asked. Mapping
+    // the ack's id onto this host turn would hand one native turn to two of
+    // them, so the start is refused instead: opencode steers rather than
+    // submitting while a turn runs, and a queued turn has no honest id.
+    const disposition = typeof result?.disposition === "string" ? result.disposition : "started";
+    if (disposition !== "started" || result?.startedNewTurn === false) {
+      if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
+      if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
+      this.assumedTurnIds.delete(commandId);
+      const reserved = this.turns.get(input.turnId);
+      if (reserved !== undefined && !reserved.terminal) this.turns.delete(input.turnId);
+      throw new HarnessError({
+        code: "unsupported",
+        adapterId: ADAPTER_ID,
+        retryable: true,
+        message: `Muse absorbed this input into turn ${acked ?? "already running"}; steer it instead`,
+      });
+    }
     const nativeTurnId = acked ?? commandId;
     this.hostToNative.set(input.turnId, nativeTurnId);
     this.nativeToHost.set(nativeTurnId, input.turnId);
