@@ -710,12 +710,13 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
     this.pendingStarts.delete(commandId);
     const acked = typeof result?.turnId === "string" ? result.turnId : undefined;
-    // Muse answers `started` when it opened a turn for this submit. Any other
-    // disposition (or `startedNewTurn: false`) means the input was folded into a
-    // turn that already exists — `queue` by default, `steer` when asked. Mapping
-    // the ack's id onto this host turn would hand one native turn to two of
-    // them, so the start is refused instead: opencode steers rather than
-    // submitting while a turn runs, and a queued turn has no honest id.
+    // Muse answers `started` when it opened a turn for this submit, and only
+    // then: `startedNewTurn` is its boolean shorthand. The wire default is
+    // `queue`, which admits this input to a turn that launches later, and
+    // `steer` folds it into the running turn — `turnId` names whichever turn
+    // carries it. Mapping that id onto this host turn would hand one native turn
+    // to two of them, so the start is refused: this adapter runs one turn at a
+    // time and opencode steers explicitly rather than submitting while busy.
     const disposition = typeof result?.disposition === "string" ? result.disposition : "started";
     if (disposition !== "started" || result?.startedNewTurn === false) {
       if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
@@ -723,11 +724,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       this.assumedTurnIds.delete(commandId);
       const reserved = this.turns.get(input.turnId);
       if (reserved !== undefined && !reserved.terminal) this.turns.delete(input.turnId);
+      const absorbed =
+        disposition === "queued"
+          ? `queued this input for a later turn (${acked ?? "not yet named"})`
+          : disposition === "steered"
+            ? `absorbed this input into turn ${acked ?? "already running"}`
+            : `did not start this input (disposition ${disposition})`;
       throw new HarnessError({
         code: "unsupported",
         adapterId: ADAPTER_ID,
         retryable: true,
-        message: `Muse absorbed this input into turn ${acked ?? "already running"}; steer it instead`,
+        message: `Muse ${absorbed}; this adapter runs one turn at a time, so steer instead`,
       });
     }
     const nativeTurnId = acked ?? commandId;
@@ -1223,24 +1230,13 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
    * the item's events hang off an id no turn owns. Returns `""` when the frame
    * names no turn, or when that turn has already terminated — nothing may
    * follow a terminal.
+   *
+   * No guessing is needed in the pre-ack window: a fresh turn's id equals its
+   * submitting `commandId` (`TurnStartedParams.turnId`), and `startTurn`
+   * registers that id before sending, so the item already resolves to its host
+   * turn and the reservation is promoted rather than replaced.
    */
   private materializeTurn(nativeTurnId: unknown, commandId?: unknown): string {
-    // Before the ack an item names only the native turn, which is not mapped
-    // yet. A single submit in flight owns it; binding first keeps the later ack
-    // from minting a second turn under the same native id, and lets the
-    // reservation made by `startTurn` be promoted instead of replaced.
-    if (
-      commandId === undefined &&
-      typeof nativeTurnId === "string" &&
-      !this.nativeToHost.has(nativeTurnId) &&
-      this.pendingStarts.size === 1
-    ) {
-      const [pendingCommandId, pendingHostTurnId] = [...this.pendingStarts][0] as [string, string];
-      this.pendingStarts.delete(pendingCommandId);
-      this.hostToNative.set(pendingHostTurnId, nativeTurnId);
-      this.nativeToHost.set(nativeTurnId, pendingHostTurnId);
-      return this.startMaterializedTurn(pendingHostTurnId, nativeTurnId);
-    }
     const hostTurnId = this.resolveTurnId(nativeTurnId, commandId);
     if (hostTurnId.length === 0 || typeof nativeTurnId !== "string") return "";
     return this.startMaterializedTurn(hostTurnId, nativeTurnId);

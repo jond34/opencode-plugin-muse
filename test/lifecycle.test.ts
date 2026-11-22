@@ -467,7 +467,8 @@ describe("MuseHarnessSession turns", () => {
         (error: { code?: string }) => error,
       );
       expect(refused?.code).toBe("unsupported");
-      expect(refused?.message).toMatch(/steer it instead/);
+      expect(refused?.message).toMatch(/absorbed this input into turn native-1/);
+      expect(refused?.message).toMatch(/steer instead/);
 
       // The dropped reservation does not block the next turn.
       const next = await session.startTurn({
@@ -487,6 +488,44 @@ describe("MuseHarnessSession turns", () => {
     expect(starts).toHaveLength(2);
     expect(starts[1]?.params.input).toEqual([{ type: "text", text: "two" }]);
     expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(0);
+  });
+
+  test("a queued ack is refused as queued, not as absorbed", async () => {
+    // `queue` is the wire default, so this is the ack an adapter sees if it ever
+    // submits while a turn runs. The input launches later under its own turn;
+    // it is not folded into this one, and this adapter does not queue.
+    const commands: RecordedCommand[] = [];
+    const acks: Record<string, unknown>[] = [
+      { disposition: "queued", startedNewTurn: false, turnId: "native-1" },
+      { disposition: "started", startedNewTurn: true, turnId: "native-2" },
+    ];
+    let sent = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => `cmd-${sent}`,
+        command: async (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start" ? (acks[sent++] ?? {}) : {};
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    await drive(session, async () => {
+      const refused = await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "one" }] },
+      }).then(
+        () => null,
+        (error: { code?: string; message?: string }) => error,
+      );
+      expect(refused?.code).toBe("unsupported");
+      expect(refused?.message).toMatch(/queued this input for a later turn \(native-1\)/);
+      // The dropped reservation leaves no turn behind.
+      await session.startTurn({ turnId: "t2", message: { content: [{ type: "text", text: "two" }] } });
+    });
+    expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(2);
   });
 
   test("a completed message whose start was missed emits the turn and both frames", async () => {
@@ -599,10 +638,10 @@ describe("MuseHarnessSession turns", () => {
     expect(events.filter((event) => event.type === "turn.started")).toHaveLength(1);
   });
 
-  test("an item before the ack binds the turn and starts it once", async () => {
-    // `turn/started` can follow the item; the ack has not named the native turn
-    // yet either. The single submit in flight owns the item, so the turn starts
-    // under its host id and the late ack does not mint a second one.
+  test("an item before the ack starts the turn exactly once", async () => {
+    // A fresh turn's id equals its submitting commandId, and `startTurn`
+    // registers that id before sending, so the item resolves to the host turn
+    // and promotes the reservation; the late ack must not mint a second one.
     const commands: RecordedCommand[] = [];
     let release: ((result: Record<string, unknown>) => void) | undefined;
     const host: SessionHost = {
@@ -630,13 +669,13 @@ describe("MuseHarnessSession turns", () => {
         method: "item/started",
         params: {
           sessionId: "native",
-          item: { itemId: "m1", kind: "agentMessage", turnId: "native-real", status: "inProgress" },
+          item: { itemId: "m1", kind: "agentMessage", turnId: "cmd-0", status: "inProgress" },
         },
       } satisfies MuseNotification);
-      release?.({ turnId: "native-real" });
+      release?.({ turnId: "cmd-0" });
       const turn = await pending;
       expect(turn.id).toBe("t1");
-      expect(turn.nativeRef.id).toBe("native-real");
+      expect(turn.nativeRef.id).toBe("cmd-0");
     });
     const started = events.filter((event) => event.type === "turn.started");
     expect(started).toHaveLength(1);
