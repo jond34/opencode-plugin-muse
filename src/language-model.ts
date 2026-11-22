@@ -320,6 +320,9 @@ export class MuseLanguageModel implements LanguageModelV3 {
     let seedFull = false;
     let seedReason = "first";
     let rendered: TranscriptRender = { text: "", toolBlocks: 0, truncated: false };
+    // Send-to-ack for a fresh turn, left unset by a steer. This is the wait the
+    // ack deadline competes with, so it includes a replayed admission.
+    let admitMs: number | undefined;
     const turn = latestUserTurn(fresh);
     if (turn) {
       const running = live.hasActiveTurn ? live.activeTurnId : null;
@@ -384,6 +387,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
           ? `${preamble}\n\n${body}`
           : body;
         const turnId = `muse_turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const startAt = Date.now();
         try {
           await live.muse.startTurn({
             turnId,
@@ -400,6 +404,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
               ],
             },
           });
+          admitMs = Date.now() - startAt;
           live.setActiveTurn(true, turnId);
           // A cancel that landed between the ack and this line found no active
           // turn to interrupt; the turn is active now, so stop it here.
@@ -420,6 +425,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
       toolBlocks: rendered.toolBlocks,
       truncated: rendered.truncated,
       hostFingerprint: this.registry.hostFingerprint,
+      ...(admitMs === undefined ? {} : { admitMs }),
     };
 
     // Cancelling the step must stop Muse: a native turn left running would keep

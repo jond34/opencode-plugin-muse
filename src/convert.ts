@@ -23,6 +23,15 @@ export class StreamConverter {
   private readonly emitted = new Map<string, number>();
   /** Completions already closed. A delta replayed after one must not reopen. */
   private readonly settled = new Set<string>();
+  /**
+   * Text accounting thrown away by conversion and kept for the ledger: what
+   * arrived as deltas, what the completed frames held, and how much of a reply
+   * only the frame supplied. Reset by the reader (`takeTextStats`).
+   */
+  private streamedChars = 0;
+  private completedChars = 0;
+  private fillChars = 0;
+  private fillMessages = 0;
 
   /** Bound the settled set; a late delta arrives within the same step. */
   private settle(messageId: string): void {
@@ -56,6 +65,7 @@ export class StreamConverter {
             event.messageId,
             (this.emitted.get(event.messageId) ?? 0) + event.text.length,
           );
+          this.streamedChars += event.text.length;
         } else if (event.reasoning) {
           if (!this.reasoningOpen) {
             this.reasoningId = `reasoning-${event.messageId}`;
@@ -85,8 +95,11 @@ export class StreamConverter {
           .map((block) => (block.type === "text" ? block.text : ""))
           .join("");
         const tail = final.slice(emitted);
+        this.completedChars += final.length;
         const holdsMessage = this.textOpen && this.textMessage === completed.id;
         if (tail.length > 0 && (holdsMessage || !this.textOpen)) {
+          this.fillChars += tail.length;
+          this.fillMessages += 1;
           if (!holdsMessage) {
             // `text-<id>` is unused when nothing streamed; after a block was
             // closed for this message the id is spent, so the tail is its own
@@ -112,6 +125,32 @@ export class StreamConverter {
         break;
     }
     return parts;
+  }
+
+  /**
+   * Text accounting since the last call; the reader resets it.
+   *
+   * Read-and-reset by the ledger row writer, never by a step boundary: a step
+   * that parked on a tool call has no usage and writes no row, so its fills are
+   * carried into the next row that is written instead of being lost.
+   */
+  takeTextStats(): {
+    streamedChars: number;
+    completedChars: number;
+    fillChars: number;
+    fillMessages: number;
+  } {
+    const stats = {
+      streamedChars: this.streamedChars,
+      completedChars: this.completedChars,
+      fillChars: this.fillChars,
+      fillMessages: this.fillMessages,
+    };
+    this.streamedChars = 0;
+    this.completedChars = 0;
+    this.fillChars = 0;
+    this.fillMessages = 0;
+    return stats;
   }
 
   /** Close any open block; used when a step ends mid-block. */

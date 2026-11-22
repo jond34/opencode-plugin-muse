@@ -112,3 +112,50 @@ describe("StreamConverter: reply text", () => {
     expect(converter.convert(completed("u1", "my prompt", "user"))).toEqual([]);
   });
 });
+
+describe("StreamConverter: text accounting", () => {
+  test("a streamed reply counts once and fills nothing", () => {
+    const converter = new StreamConverter();
+    converter.convert(delta("m1", "abc"));
+    converter.convert(completed("m1", "abc"));
+    expect(converter.takeTextStats()).toEqual({
+      streamedChars: 3,
+      completedChars: 3,
+      fillChars: 0,
+      fillMessages: 0,
+    });
+  });
+
+  test("a completion with no deltas counts the whole reply as a fill", () => {
+    const converter = new StreamConverter();
+    converter.convert(completed("m1", "abc"));
+    expect(converter.takeTextStats()).toEqual({
+      streamedChars: 0,
+      completedChars: 3,
+      fillChars: 3,
+      fillMessages: 1,
+    });
+  });
+
+  test("a saturated surface fills nothing and shows more than the frame records", () => {
+    const converter = new StreamConverter();
+    converter.convert(delta("m1", "abcdef"));
+    converter.convert(completed("m1", "abc"));
+    const stats = converter.takeTextStats();
+    expect(stats).toEqual({ streamedChars: 6, completedChars: 3, fillChars: 0, fillMessages: 0 });
+    expect(stats.completedChars).toBeLessThan(stats.streamedChars);
+  });
+
+  test("the reader resets the counters, so a second read is empty", () => {
+    const converter = new StreamConverter();
+    converter.convert(delta("m1", "abc"));
+    converter.convert(completed("m1", "abcdef"));
+    expect(converter.takeTextStats().fillMessages).toBe(1);
+    expect(converter.takeTextStats()).toEqual({
+      streamedChars: 0,
+      completedChars: 0,
+      fillChars: 0,
+      fillMessages: 0,
+    });
+  });
+});

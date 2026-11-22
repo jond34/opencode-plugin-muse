@@ -91,6 +91,12 @@ export interface StepStats {
   readonly toolBlocks: number;
   readonly truncated: boolean;
   readonly hostFingerprint: string | null;
+  /**
+   * Wall ms from the `turn/start` send to its ack, as this step waited; a
+   * replayed admission (lost ack, same command id) is included twice over.
+   * Absent on a steered step, which starts no turn.
+   */
+  readonly admitMs?: number;
 }
 
 /**
@@ -666,6 +672,7 @@ export class LiveSession {
       output: usage.billedOutput ?? usage.outputTokens ?? 0,
       toolCalls: this.turnToolCalls,
       wallMs: this.stepStartedAt === 0 ? 0 : Math.max(0, at.getTime() - this.stepStartedAt),
+      ...(this.stepStats.admitMs === undefined ? {} : { admitMs: this.stepStats.admitMs }),
       seed: this.stepSeed,
       seedReason: this.stepReason,
       renderedChars: this.stepStats.renderedChars,
@@ -673,6 +680,10 @@ export class LiveSession {
       toolBlocks: this.stepStats.toolBlocks,
       truncated: this.stepStats.truncated,
       hostFingerprint: this.stepStats.hostFingerprint,
+      // Read-and-reset here, not at `beginStep`: a parked step writes no row, so
+      // its fills belong to the next row that is. A row can therefore cover
+      // more than one step, and each fill is still counted exactly once.
+      ...this.converter.takeTextStats(),
       nativeSessionId: this.muse.nativeSessionId,
       ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
       ...(usage.costPartial === undefined ? {} : { costPartial: usage.costPartial > 0 }),

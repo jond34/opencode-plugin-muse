@@ -42,6 +42,16 @@ export interface UsageEntry {
   /** Whether the renderer dropped a tail block. */
   readonly truncated?: boolean;
   readonly hostFingerprint?: string | null;
+  /** Wall ms from the `turn/start` send to its ack; includes a replay. Absent when the step steered. */
+  readonly admitMs?: number;
+  /** Characters that arrived as deltas; 0 when the surface streamed nothing. */
+  readonly streamedChars?: number;
+  /** Characters in the completed frames. The reply's true length. */
+  readonly completedChars?: number;
+  /** Characters only the completed frame supplied, i.e. the tail fill. */
+  readonly fillChars?: number;
+  /** Messages that needed a fill; a row may carry a parked step's fills. */
+  readonly fillMessages?: number;
   /** The native Muse session this row was billed to, for cost attribution. */
   readonly nativeSessionId?: string;
   /** Cumulative-cost delta for the turn, in USD. */

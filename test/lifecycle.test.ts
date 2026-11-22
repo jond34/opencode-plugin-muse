@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { HarnessEvent } from "../src/contract/index.js";
 import { MuseHarnessAdapter } from "../src/adapter.js";
 import { fingerprintCompactionOutput } from "../src/fingerprint.js";
@@ -2025,5 +2028,197 @@ describe("turn start admission", () => {
     // The turn was never announced, so no event describes it.
     expect(events.filter((event) => event.type === "turn.started")).toHaveLength(0);
     expect(commands.some((entry) => entry.method === "turn/interrupt")).toBe(true);
+  });
+});
+
+describe("ledger rows", () => {
+  /** One assistant message through the native session, delta first. */
+  function say(
+    native: MuseHarnessSession,
+    id: string,
+    delta: string | null,
+    text: string,
+  ): void {
+    const item = { itemId: id, kind: "agentMessage", turnId: "native-turn", status: "inProgress" };
+    native.handleNotification({ method: "item/started", params: { item } } as never);
+    if (delta !== null) {
+      native.handleNotification({
+        method: "item/delta",
+        params: { itemId: id, field: "text", delta },
+      } as never);
+    }
+    native.handleNotification({
+      method: "item/completed",
+      params: { item: { ...item, status: "completed", text } },
+    } as never);
+  }
+
+  function finishTurn(native: MuseHarnessSession, usage?: Record<string, number>): void {
+    native.handleNotification({
+      method: "turn/completed",
+      params: {
+        turnId: "native-turn",
+        sessionId: native.nativeSessionId,
+        terminal: "completed",
+        ...(usage === undefined ? {} : { usage }),
+      },
+    } as never);
+  }
+
+  /** The last row the run wrote; the append is fire-and-forget, so poll. */
+  async function lastRow(directory: string): Promise<Record<string, unknown>> {
+    const file = join(
+      directory,
+      "opencode-muse",
+      `usage-${new Date().toISOString().slice(0, 10)}.jsonl`,
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        const lines = (await readFile(file, "utf8")).split("\n").filter((line) => line.trim());
+        if (lines.length > 0) return JSON.parse(lines.at(-1)!) as Record<string, unknown>;
+      } catch {
+        // Not written yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`no ledger row appeared in ${directory}`);
+  }
+
+  /** A temp ledger directory, since the row under test is a real write. */
+  async function withLedgerDirectory(
+    body: (directory: string) => Promise<void>,
+  ): Promise<void> {
+    const directory = await mkdtemp(join(tmpdir(), "muse-ledger-"));
+    const previousNode = process.env.NODE_ENV;
+    const previousState = process.env.XDG_STATE_HOME;
+    // The ledger drops rows under NODE_ENV=test by design (they would pollute
+    // the real percentiles). This is a test of the write path itself, so it
+    // stands in as a normal run and points the ledger at a temp directory.
+    process.env.NODE_ENV = "development";
+    process.env.XDG_STATE_HOME = directory;
+    try {
+      await body(directory);
+    } finally {
+      if (previousNode === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNode;
+      if (previousState === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousState;
+    }
+  }
+
+  test("a written row carries the admission wait and the tail fill", async () => {
+    await withLedgerDirectory(async (directory) => {
+      const { host } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+      const session = MuseHarnessSession.fromNativeSession(
+        host,
+        { sessionId: "oc", cwd: "/tmp" },
+        "native",
+      );
+      const adapter = {
+        listModels: async () => [],
+        openSession: async () => session,
+      } as unknown as MuseHarnessAdapter;
+      const registry = new MuseSessionRegistry(adapter);
+      const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+      const stream = await model.doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [BRIDGE_TOOL],
+        headers: {
+          [HEADERS.kind]: "primary",
+          [HEADERS.session]: "oc",
+          [HEADERS.directory]: "/tmp",
+        },
+      } as unknown as LanguageModelV3CallOptions);
+      try {
+        const native = registry.peek("oc")?.muse as MuseHarnessSession | undefined;
+        native?.handleNotification({
+          method: "turn/started",
+          params: { turnId: "native-turn", sessionId: "native" },
+        } as never);
+        // Half the reply streamed; the frame is what carries the rest.
+        say(native!, "m1", "abc", "abcdef");
+        finishTurn(native!, { inputTokens: 10, outputTokens: 5 });
+
+        const row = await lastRow(directory);
+        expect(row.kind).toBe("primary");
+        expect(typeof row.admitMs).toBe("number");
+        expect(row.admitMs as number).toBeGreaterThanOrEqual(0);
+        expect(row).toMatchObject({
+          streamedChars: 3,
+          completedChars: 6,
+          fillChars: 3,
+          fillMessages: 1,
+        });
+        expect(row.completedChars).toBe((row.streamedChars as number) + (row.fillChars as number));
+      } finally {
+        await registry.closeAll();
+        await stream.stream.cancel().catch(() => {});
+      }
+    });
+  });
+
+  test("a fill from a step that wrote no row is carried into the next row", async () => {
+    await withLedgerDirectory(async (directory) => {
+      // A fresh native session per open: a rebuild would close the one before.
+      let counter = 0;
+      const adapter = {
+        listModels: async () => [],
+        openSession: async () => {
+          const fake = fakeHost({ "turn/start": { turnId: "native-turn" } });
+          return MuseHarnessSession.fromNativeSession(
+            fake.host,
+            { sessionId: "oc", cwd: "/tmp" },
+            `native-${counter++}`,
+          );
+        },
+      } as unknown as MuseHarnessAdapter;
+      const registry = new MuseSessionRegistry(adapter);
+      const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+      const request = (messages: unknown[]) =>
+        ({
+          prompt: messages,
+          tools: [BRIDGE_TOOL],
+          headers: {
+            [HEADERS.kind]: "primary",
+            [HEADERS.session]: "oc",
+            [HEADERS.directory]: "/tmp",
+          },
+        }) as unknown as LanguageModelV3CallOptions;
+      const said = (roles: Array<[string, string]>) =>
+        roles.map(([role, text]) => ({ role, content: [{ type: "text", text }] }));
+
+      const first = await model.doStream(request(said([["user", "first"]])));
+      let second: Awaited<ReturnType<typeof model.doStream>> | undefined;
+      try {
+        const native = registry.peek("oc")?.muse as MuseHarnessSession | undefined;
+        native?.handleNotification({
+          method: "turn/started",
+          params: { turnId: "native-turn", sessionId: native.nativeSessionId },
+        } as never);
+        // Step one: the whole reply is a fill, and the turn reports no usage, so
+        // the step writes no row at all.
+        say(native!, "m1", null, "abc");
+        finishTurn(native!);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        // Step two, a new turn that extends the transcript opencode would hold.
+        // A diverging prompt would rebuild the session (and its converter) and
+        // the carried fill would be gone for a different reason.
+        second = await model.doStream(
+          request(said([["user", "first"], ["assistant", "abc"], ["user", "second"]])),
+        );
+        const live = registry.peek("oc")?.muse as MuseHarnessSession | undefined;
+        say(live!, "m2", "de", "def");
+        finishTurn(live!, { inputTokens: 10, outputTokens: 5 });
+
+        const row = await lastRow(directory);
+        // 2 and 4, not 1 and 1: the first step's fill survived the missing row.
+        expect(row).toMatchObject({ fillMessages: 2, fillChars: 4, streamedChars: 2, completedChars: 6 });
+      } finally {
+        await first.stream.cancel().catch(() => {});
+        await second?.stream.cancel().catch(() => {});
+        await registry.closeAll();
+      }
+    });
   });
 });
