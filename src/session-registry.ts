@@ -884,9 +884,16 @@ export class MuseSessionRegistry {
   ): Promise<LiveSession> {
     const existing = this.sessions.get(openCodeSessionId);
     if (existing) {
-      if (tools !== undefined) existing.setTools(tools);
-      if (model !== undefined) await existing.setModel(model);
-      return existing;
+      if (existing.muse.hostExited === true) {
+        // Its native session is durable and idle on the host; the stored id is
+        // what the reopen resumes. Closing here only releases local state.
+        this.sessions.delete(openCodeSessionId);
+        void existing.close();
+      } else {
+        if (tools !== undefined) existing.setTools(tools);
+        if (model !== undefined) await existing.setModel(model);
+        return existing;
+      }
     }
 
     const own = await this.store?.get(storeKey(openCodeSessionId));

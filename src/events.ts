@@ -118,7 +118,15 @@ export function toFailure(error: unknown): HarnessFailure {
     return { class: "unknown", message: error == null ? "Turn failed" : String(error), retryable: false };
   }
   const value = error as Record<string, unknown>;
-  const kind = typeof value.kind === "string" ? value.kind : "unknown";
+  // MSP errors name their kind; a locally raised `HarnessError` names the same
+  // idea as `code`. Without the fallback a failure we typed ourselves reaches
+  // opencode as "unknown", and its cause is unrecoverable from the event.
+  const kind =
+    typeof value.kind === "string"
+      ? value.kind
+      : typeof value.code === "string"
+        ? value.code
+        : "unknown";
   const message = typeof value.message === "string" ? value.message : "Turn failed";
   const quota = value.quota;
   const class_: HarnessFailureClass = quota && typeof quota === "object" ? "usage_limit" : toFailureClass(kind);

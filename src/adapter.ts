@@ -74,16 +74,38 @@ export class MuseHarnessAdapter implements LanguageAdapter {
     return MuseHarnessSession.create(host, createInput);
   }
 
-  private async ensureHost(): Promise<MuseHost> {
-    if (this.injectedHost) return this.injectedHost;
-    if (this.host) return this.host;
-    if (!this.hostPromise) {
-      this.hostPromise = MuseHost.spawn(this.hostOptions).then((host) => {
+  private ensureHost(): Promise<MuseHost> {
+    if (this.injectedHost) return Promise.resolve(this.injectedHost);
+    if (this.host) return Promise.resolve(this.host);
+    if (this.hostPromise) return this.hostPromise;
+    let attempt: Promise<MuseHost>;
+    attempt = MuseHost.spawn(this.hostOptions).then(
+      (host) => {
         this.host = host;
+        // A crash must not poison every later open: forget this host, so the
+        // next caller spawns a new one and takes the existing resume path.
+        void host.exited.then(
+          () => this.forgetHost(host),
+          () => this.forgetHost(host),
+        );
         return host;
-      });
-    }
-    return this.hostPromise;
+      },
+      (error) => {
+        // A rejected spawn is not a host: caching it would turn one bad minute
+        // into a permanent failure for the life of the opencode process.
+        if (this.hostPromise === attempt) this.hostPromise = undefined;
+        throw error;
+      },
+    );
+    this.hostPromise = attempt;
+    return attempt;
+  }
+
+  /** Drop a dead host, unless `close()` or a newer spawn already replaced it. */
+  private forgetHost(host: MuseHost): void {
+    if (this.host !== host) return;
+    this.host = undefined;
+    this.hostPromise = undefined;
   }
 
   /** Close the adapter's own host. Injected hosts stay owned by the caller. */

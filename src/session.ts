@@ -360,6 +360,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   >();
   private closing: Promise<void> | null = null;
   private closed = false;
+  /** Set once the host died; a later close must not ask it to leave. */
+  private hostGone = false;
   private sessionInfo: HarnessSessionInfo;
   /**
    * How this session's native id was obtained. A resume that fell back to a
@@ -1017,6 +1019,31 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     };
   }
 
+  /** True once the host died under this session; it cannot serve a turn again. */
+  get hostExited(): boolean {
+    return this.hostGone;
+  }
+
+  /**
+   * The host process died. Retire whatever turn was running, so its step ends
+   * with an error instead of hanging on notifications that will never arrive,
+   * then close without asking a dead host to leave the session.
+   */
+  handleHostExit(): void {
+    if (this.closed || this.hostGone) return;
+    this.hostGone = true;
+    const failure = new HarnessError({
+      code: "event_stream_failed",
+      adapterId: ADAPTER_ID,
+      message: "Muse host exited while this turn was running",
+      retryable: false,
+    });
+    for (const [turnId, active] of this.turns) {
+      if (!active.terminal) this.retireTurn(turnId, failure);
+    }
+    void this.close();
+  }
+
   async close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closing = (async () => {
@@ -1035,13 +1062,15 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         );
       }
       this.requestWaiters.clear();
-      try {
-        await this.host.connection.command(
-          "session/leave",
-          { sessionId: this.nativeId, stop: true },
-        );
-      } catch {
-        // Leaving is best-effort; the host may already be gone.
+      if (!this.hostGone) {
+        try {
+          await this.host.connection.command(
+            "session/leave",
+            { sessionId: this.nativeId, stop: true },
+          );
+        } catch {
+          // Leaving is best-effort; the host may already be gone.
+        }
       }
       this.host.unregisterSink(this.nativeId);
       this.updateSession("stopped");

@@ -93,6 +93,8 @@ export interface NotificationSink {
   /** The native Muse session id notifications are addressed to. */
   readonly sessionId: string;
   handleNotification(notification: MuseNotification): void;
+  /** The host process is gone; this session can never serve another turn. */
+  handleHostExit?(): void;
 }
 
 /**
@@ -312,6 +314,27 @@ export class MuseHost {
     this.connection.onServerRequest(async (request) =>
       answerServerRequest(request, (sessionId) => this.sinks.get(sessionId)),
     );
+
+    // Without this, a crash is invisible: sessions wait on notifications that
+    // will never arrive. `exited` never rejects in practice, but a second arm
+    // keeps an unhandled rejection from taking the process with it.
+    void this.exited.then(
+      () => this.announceExit(),
+      () => this.announceExit(),
+    );
+  }
+
+  /**
+   * Tell every registered session the host is gone.
+   *
+   * `closed` is set before the connection is closed on purpose: an intentional
+   * shutdown must not look like a crash, and the registry closes its sessions
+   * before the adapter closes the host, so nothing is left waiting here.
+   */
+  private announceExit(): void {
+    if (this.closed) return;
+    // Copy: a sink may unregister itself while this loop runs.
+    for (const sink of [...this.sinks.values()]) sink.handleHostExit?.();
   }
 
   registerSink(sink: NotificationSink): void {
