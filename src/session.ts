@@ -16,6 +16,7 @@ import type {
   SteerTurnInput,
 } from "./contract/index.js";
 import { HarnessError, nativeRef } from "./contract/index.js";
+import { MspError } from "@muse-code/sdk";
 import type { MuseNotification, NotificationSink } from "./host.js";
 import { startToolBridgeServer, normalizeToolName, BRIDGE_MCP_SERVER_NAME, type ToolBridgeServer } from "./bridge.js";
 import { MUSE_CAPABILITIES } from "./capabilities.js";
@@ -203,6 +204,51 @@ export interface SessionHost {
   unregisterSink(sessionId: string): void;
   /** Grants from the handshake, when the host can report them. */
   grantedCapabilities?(): readonly string[];
+  /** Override the ack deadline; tests set it low so a hang is cheap. */
+  readonly ackDeadlineMs?: number;
+}
+
+/**
+ * How long `turn/start` may go unanswered before the admission is unknown.
+ *
+ * The wire sets no deadline of its own ("no local timeout", `connection.js`),
+ * so without one a lost response parks the step forever. Thirty seconds is well
+ * above any observed admission; nothing in the fixtures carries timing, so this
+ * is a chosen bound rather than a measured one.
+ */
+const DEFAULT_ACK_DEADLINE_MS = 30_000;
+
+/**
+ * Bound a promise by a deadline and an abort signal.
+ *
+ * The work itself is not cancelled: the connection offers no cancellation, so
+ * the promise is left to settle on its own while the caller decides what the
+ * silence means. Its rejection is consumed by the `then` handler, so an
+ * abandoned promise cannot raise an unhandled rejection later.
+ */
+function bounded<T>(work: Promise<T>, ms: number, signal: AbortSignal | undefined): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const onAbort = (): void => finish(() => reject(new Error("turn/start was cancelled")));
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(`turn/start went unanswered for ${ms} ms`))),
+      ms,
+    );
+    timer.unref?.();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    work.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
 }
 
 function now(): string {
@@ -686,27 +732,48 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       terminal: false,
     };
     this.turns.set(input.turnId, reservation);
+    const params: Record<string, unknown> = {
+      sessionId: this.nativeId,
+      ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
+      input: toTurnInputParts(input.message),
+    };
     let result: Record<string, unknown>;
     try {
-      result = await this.host.connection.command(
-        "turn/start",
-        {
-          sessionId: this.nativeId,
-          ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
-          input: toTurnInputParts(input.message),
-        },
-        { commandId },
-      );
+      result = await this.admitTurn(params, commandId, input.signal);
     } catch (error) {
-      // A refused start must not leave the reservation, a phantom turn, or a
-      // mapping behind, whether the host refused it or `turn/started` beat it.
+      if (error instanceof MspError) {
+        // A refused start must not leave the reservation, a phantom turn, or a
+        // mapping behind, whether the host refused it or `turn/started` beat
+        // it: the server judged the command and admitted nothing.
+        this.pendingStarts.delete(commandId);
+        if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
+        if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
+        this.assumedTurnIds.delete(commandId);
+        const started = this.turns.get(input.turnId);
+        if (started !== undefined && !started.terminal) this.turns.delete(input.turnId);
+        throw error;
+      }
+      // Anything else proves nothing: the transport died or the ack never came,
+      // so the turn may be running on the host with no step to read it. Retire
+      // the reservation instead of deleting it, so a late `turn/started` or
+      // item resolves to a settled turn rather than minting a phantom one that
+      // would refuse the next step.
       this.pendingStarts.delete(commandId);
-      if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
-      if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
       this.assumedTurnIds.delete(commandId);
-      const started = this.turns.get(input.turnId);
-      if (started !== undefined && !started.terminal) this.turns.delete(input.turnId);
-      throw error;
+      this.retireTurn(input.turnId, error);
+      // Best effort: a fresh turn's id is its submitting command id, so an
+      // admitted turn can still be stopped. An unadmitted one answers nothing
+      // and the rejection is dropped.
+      void this.host.connection
+        .command("turn/interrupt", { sessionId: this.nativeId, turnId: commandId })
+        .catch(() => {});
+      throw new HarnessError({
+        code: "protocol_error",
+        adapterId: ADAPTER_ID,
+        retryable: true,
+        message: `Muse did not answer turn/start (${commandId}); the turn may have been admitted, so retry as a new step`,
+        cause: error,
+      });
     }
     this.pendingStarts.delete(commandId);
     const acked = typeof result?.turnId === "string" ? result.turnId : undefined;
@@ -757,6 +824,60 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     };
     this.turns.set(input.turnId, active);
     return active.turn;
+  }
+
+  /**
+   * Send `turn/start`, replaying it once under the same command id when the
+   * failure proves nothing.
+   *
+   * `Connection.command` already replays the two nothing-admitted refusals
+   * (`-32001`, `-32031`) under this id and rejects a replay whose ack would
+   * differ, so a second send cannot double-execute; what it cannot do is replay
+   * a dead transport or a response that never arrived. Those are the cases
+   * here. A server-authored `MspError` is a judgment and is not replayed.
+   */
+  private async admitTurn(
+    params: Record<string, unknown>,
+    commandId: string,
+    signal: AbortSignal | undefined,
+  ): Promise<Record<string, unknown>> {
+    const deadline = this.host.ackDeadlineMs ?? DEFAULT_ACK_DEADLINE_MS;
+    try {
+      return await bounded(
+        this.host.connection.command("turn/start", params, { commandId }),
+        deadline,
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof MspError || signal?.aborted === true) throw error;
+      // Byte-identical params under the original id: the host records the ack
+      // once and serves it again, so this cannot run the input twice.
+      return await bounded(
+        this.host.connection.command("turn/start", params, { commandId }),
+        deadline,
+        signal,
+      );
+    }
+  }
+
+  /**
+   * Settle a start that will not be read, keeping it as a tombstone.
+   *
+   * A turn the host announced already reached opencode, so it gets its terminal
+   * (plus any pending tool items settled). A turn that only reached the
+   * reservation is marked failed silently: opencode never saw it start, so a
+   * terminal would be an event without a beginning.
+   */
+  private retireTurn(turnId: string, failure: unknown): void {
+    const active = this.turns.get(turnId);
+    if (active === undefined || active.terminal) return;
+    const announced = active.turn.status !== "pending";
+    active.turn = { ...active.turn, status: "failed", completedAt: now() };
+    active.terminal = true;
+    if (!announced) return;
+    this.settleTurnItems(active);
+    this.emit({ type: "turn.updated", turn: active.turn });
+    this.emit({ type: "turn.terminal", turn: active.turn, failure: toFailure(failure) });
   }
 
   /**

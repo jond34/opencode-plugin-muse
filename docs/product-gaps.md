@@ -90,6 +90,17 @@ and `runOnce` uses its own one-off session, so this is latent rather than
 observed. It is still a contract-level defect: the adapter is exported, the
 conformance harness drives it directly, and the docs state the guard as a fact.
 
+Transient failure since closed. The reservation also exposed the *lost ack*:
+`startTurn` deleted the reservation and every mapping on any throw, so a
+transport that died after the host admitted the turn told opencode the step
+failed while the host ran it. Its late `turn/started` and items then materialised
+a phantom turn whose non-terminal reservation refused every later submit. A
+non-`MspError` failure is now replayed once under the same `commandId` — the
+wire's idempotency handle, with `Connection.command` refusing an ack that would
+differ — and if that also fails the turn is retired as a tombstone rather than
+deleted: late events resolve to the settled turn and are dropped, and the next
+submit is accepted (`test/lifecycle.test.ts` §turn start admission).
+
 ## 3. Delta reconciliation — settled
 
 Settled twice over. The completed frame wins, and deltas are never accumulated:

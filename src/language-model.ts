@@ -310,6 +310,12 @@ export class MuseLanguageModel implements LanguageModelV3 {
       live.resolvePending(id, toToolResult(result));
     }
 
+    // A cancelled step must stop the turn it is starting, not only one it has
+    // already handed to a stream, so the start is told about the cancel. This
+    // sits above the start because that call needs the signal.
+    const abort = new AbortController();
+    const signal = options.abortSignal ? AbortSignal.any([abort.signal, options.abortSignal]) : abort.signal;
+
     // Deliver a new user message: start a turn, or steer the running one.
     let seedFull = false;
     let seedReason = "first";
@@ -378,21 +384,31 @@ export class MuseLanguageModel implements LanguageModelV3 {
           ? `${preamble}\n\n${body}`
           : body;
         const turnId = `muse_turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        await live.muse.startTurn({
-          turnId,
-          ...(effort === undefined ? {} : { reasoningEffort: effort }),
-          message: {
-            content: [
-              ...(text.length > 0 ? [{ type: "text" as const, text }] : []),
-              ...attachments.map((image) => ({
-                type: "image" as const,
-                mediaType: image.mediaType,
-                data: image.data,
-              })),
-            ],
-          },
-        });
-        live.setActiveTurn(true, turnId);
+        try {
+          await live.muse.startTurn({
+            turnId,
+            signal,
+            ...(effort === undefined ? {} : { reasoningEffort: effort }),
+            message: {
+              content: [
+                ...(text.length > 0 ? [{ type: "text" as const, text }] : []),
+                ...attachments.map((image) => ({
+                  type: "image" as const,
+                  mediaType: image.mediaType,
+                  data: image.data,
+                })),
+              ],
+            },
+          });
+          live.setActiveTurn(true, turnId);
+          // A cancel that landed between the ack and this line found no active
+          // turn to interrupt; the turn is active now, so stop it here.
+          if (signal.aborted) void live.interrupt();
+        } catch (error) {
+          // Cancelled before the ack: the adapter retired the turn it had
+          // admitted, so this step has nothing left to fail.
+          if (!signal.aborted) throw error;
+        }
       }
     }
 
@@ -408,8 +424,6 @@ export class MuseLanguageModel implements LanguageModelV3 {
 
     // Cancelling the step must stop Muse: a native turn left running would keep
     // producing events, and its finish would leak into the next step.
-    const abort = new AbortController();
-    const signal = options.abortSignal ? AbortSignal.any([abort.signal, options.abortSignal]) : abort.signal;
     let interrupted = false;
     const interrupt = () => {
       if (interrupted) return;

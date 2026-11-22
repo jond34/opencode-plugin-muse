@@ -5,6 +5,7 @@ import { MuseHarnessAdapter } from "../src/adapter.js";
 import { fingerprintCompactionOutput } from "../src/fingerprint.js";
 import type { MuseNotification } from "../src/host.js";
 import { HEADERS, MuseLanguageModel, toToolResult } from "../src/language-model.js";
+import { HarnessError } from "../src/contract/index.js";
 import { MuseHarnessSession, type SessionHost } from "../src/session.js";
 import { LiveSession, MuseSessionRegistry, storeKey } from "../src/session-registry.js";
 
@@ -1788,5 +1789,241 @@ describe("toToolResult", () => {
     expect(
       toToolResult({ toolCallId: "tc1", toolName: "t", output: { type: "json", value: { a: 1 } } }).content,
     ).toEqual([{ type: "text", text: '{"a":1}' }]);
+  });
+});
+
+describe("turn start admission", () => {
+  test("a transport failure replays the start under the same command id", async () => {
+    // `Connection.command` replays nothing-admitted refusals itself, but a dead
+    // transport or a lost response reaches this layer as a bare failure. The
+    // same command id makes the second send a replay rather than a second turn.
+    const commands: RecordedCommand[] = [];
+    const attempted: string[] = [];
+    let calls = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string, params: Record<string, unknown>, options?: { commandId?: string }) => {
+          commands.push({ method, params });
+          if (method !== "turn/start") return Promise.resolve({});
+          calls += 1;
+          attempted.push(String(options?.commandId));
+          return calls === 1
+            ? Promise.reject(new Error("socket closed before the ack"))
+            : Promise.resolve({ turnId: "native-real", disposition: "started" });
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const events = await drive(session, async () => {
+      const turn = await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      expect(turn.nativeRef.id).toBe("native-real");
+    });
+    expect(attempted).toEqual(["cmd-0", "cmd-0"]);
+    const starts = commands.filter((entry) => entry.method === "turn/start");
+    expect(starts).toHaveLength(2);
+    // Byte-identical: the connection refuses a reused id with a different payload.
+    expect(JSON.stringify(starts[0]?.params)).toBe(JSON.stringify(starts[1]?.params));
+    expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(0);
+  });
+
+  test("an unanswered start is replayed once at the deadline", async () => {
+    // The wire sets no timeout, so without a local one this step would park for
+    // as long as the connection lives.
+    let calls = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string) => {
+          if (method !== "turn/start") return Promise.resolve({});
+          calls += 1;
+          return calls === 1
+            ? new Promise<Record<string, unknown>>(() => {})
+            : Promise.resolve({ turnId: "native-real" });
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+      ackDeadlineMs: 5,
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    await drive(session, async () => {
+      const turn = await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      expect(turn.id).toBe("t1");
+    });
+    expect(calls).toBe(2);
+  });
+
+  test("two failed admissions leave no phantom turn and no wedged session", async () => {
+    // The host admitted the turn and lost the ack, so its events arrive for an
+    // input opencode was told failed. Before this, they materialised a turn
+    // whose non-terminal reservation refused every later submit.
+    const commands: RecordedCommand[] = [];
+    let ids = 0;
+    let starts = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => `cmd-${ids++}`,
+        command: (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          if (method !== "turn/start") return Promise.resolve({});
+          starts += 1;
+          return starts <= 2
+            ? Promise.reject(new Error("socket closed"))
+            : Promise.resolve({ disposition: "started" });
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const events = await drive(session, async () => {
+      const failure = await session
+        .startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } })
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(HarnessError);
+      expect(failure instanceof HarnessError ? failure.retryable : false).toBe(true);
+
+      // The late truth: `turn/started` and the reply the host really produced.
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "cmd-0", commandId: "cmd-0", sessionId: "native" },
+      } satisfies MuseNotification);
+      session.handleNotification({
+        method: "item/started",
+        params: {
+          sessionId: "native",
+          item: { itemId: "m1", kind: "agentMessage", turnId: "cmd-0", status: "inProgress" },
+        },
+      } as never);
+      session.handleNotification({
+        method: "item/completed",
+        params: {
+          sessionId: "native",
+          item: {
+            itemId: "m1",
+            kind: "agentMessage",
+            turnId: "cmd-0",
+            status: "completed",
+            text: "the answer",
+          },
+        },
+      } as never);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "again" }] },
+      });
+      expect(next.id).toBe("t2");
+    });
+    expect(events.filter((event) => event.type === "turn.started")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "message.completed")).toHaveLength(0);
+    expect(commands.some((entry) => entry.method === "turn/interrupt")).toBe(true);
+  });
+
+  test("a turn the host announced before the ack still gets its terminal", async () => {
+    // `turn/started` beat a lost ack, so opencode saw the turn begin; retiring it
+    // must not leave it `running` forever.
+    let calls = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string) => {
+          if (method !== "turn/start") return Promise.resolve({});
+          calls += 1;
+          return new Promise<Record<string, unknown>>(() => {});
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+      ackDeadlineMs: 5,
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const events = await drive(session, async () => {
+      const pending = session
+        .startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } })
+        .catch((error: unknown) => error);
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "cmd-0", commandId: "cmd-0", sessionId: "native" },
+      } satisfies MuseNotification);
+      const failure = await pending;
+      expect(failure).toBeInstanceOf(HarnessError);
+    });
+    expect(events.filter((event) => event.type === "turn.started")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+
+  test("a step cancelled while the start is in flight retires the turn", async () => {
+    const commands: RecordedCommand[] = [];
+    let starts = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          if (method !== "turn/start") return Promise.resolve({});
+          starts += 1;
+          return starts === 1
+            ? new Promise<Record<string, unknown>>(() => {})
+            : Promise.resolve({});
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+      ackDeadlineMs: 1_000,
+    };
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const controller = new AbortController();
+    const events = await drive(session, async () => {
+      const pending = session
+        .startTurn({
+          turnId: "t1",
+          signal: controller.signal,
+          message: { content: [{ type: "text", text: "hi" }] },
+        })
+        .catch((error: unknown) => error);
+      controller.abort();
+      const failure = await pending;
+      expect(failure).toBeInstanceOf(HarnessError);
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "again" }] },
+      });
+      expect(next.id).toBe("t2");
+    });
+    // The turn was never announced, so no event describes it.
+    expect(events.filter((event) => event.type === "turn.started")).toHaveLength(0);
+    expect(commands.some((entry) => entry.method === "turn/interrupt")).toBe(true);
   });
 });
