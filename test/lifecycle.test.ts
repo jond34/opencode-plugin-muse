@@ -336,6 +336,161 @@ describe("MuseHarnessSession turns", () => {
     });
   });
 
+  test("a completed message whose start was missed emits the turn and both frames", async () => {
+    // The start fell in a view gap (or before the subscription). The completion
+    // must not be dropped, and the contract still wants turn.started first and
+    // message.started before message.completed.
+    const { host } = fakeHost();
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "item/completed",
+        params: {
+          sessionId: "native",
+          item: {
+            itemId: "m1",
+            kind: "agentMessage",
+            turnId: "native-real",
+            status: "completed",
+            text: "the answer",
+          },
+        },
+      } satisfies MuseNotification);
+    });
+    expect(events.filter((event) => event.type !== "session.updated").map((event) => event.type)).toEqual([
+      "turn.started",
+      "message.started",
+      "message.completed",
+    ]);
+    const completed = events[2];
+    expect(completed?.type === "message.completed" ? completed.message.turnId : undefined).toBe(
+      "t1",
+    );
+    expect(
+      completed?.type === "message.completed" ? completed.message.content : undefined,
+    ).toEqual([{ type: "text", text: "the answer" }]);
+  });
+
+  test("a completed tool call whose start was missed is normalized and kept", async () => {
+    const { host } = fakeHost();
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "item/completed",
+        params: {
+          sessionId: "native",
+          item: {
+            itemId: "tool-1",
+            kind: "toolCall",
+            turnId: "native-real",
+            status: "completed",
+            tool: "mcp__opencode__lookup",
+            args: '{"query":"x"}',
+            visibleOutput: "found",
+          },
+        },
+      } satisfies MuseNotification);
+    });
+    expect(events.filter((event) => event.type !== "session.updated").map((event) => event.type)).toEqual([
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+    ]);
+    const completed = events[2];
+    expect(completed?.type === "tool.completed" ? completed.item.name : undefined).toBe("lookup");
+    expect(completed?.type === "tool.completed" ? completed.item.input : undefined).toEqual({
+      query: "x",
+    });
+    expect(completed?.type === "tool.completed" ? completed.item.output : undefined).toBe("found");
+  });
+
+  test("a seen start is not re-emitted when its completion arrives", async () => {
+    const { host } = fakeHost();
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "item/started",
+        params: {
+          sessionId: "native",
+          item: { itemId: "m1", kind: "agentMessage", turnId: "native-real", status: "inProgress" },
+        },
+      } satisfies MuseNotification);
+      session.handleNotification({
+        method: "item/completed",
+        params: {
+          sessionId: "native",
+          item: {
+            itemId: "m1",
+            kind: "agentMessage",
+            turnId: "native-real",
+            status: "completed",
+            text: "the answer",
+          },
+        },
+      } satisfies MuseNotification);
+    });
+    expect(events.filter((event) => event.type === "message.started")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "message.completed")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.started")).toHaveLength(1);
+  });
+
+  test("an item before the ack binds the turn and starts it once", async () => {
+    // `turn/started` can follow the item; the ack has not named the native turn
+    // yet either. The single submit in flight owns the item, so the turn starts
+    // under its host id and the late ack does not mint a second one.
+    const commands: RecordedCommand[] = [];
+    let release: ((result: Record<string, unknown>) => void) | undefined;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start"
+            ? new Promise<Record<string, unknown>>((resolve) => {
+                release = resolve;
+              })
+            : Promise.resolve({});
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      const pending = session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "hi" }] },
+      });
+      session.handleNotification({
+        method: "item/started",
+        params: {
+          sessionId: "native",
+          item: { itemId: "m1", kind: "agentMessage", turnId: "native-real", status: "inProgress" },
+        },
+      } satisfies MuseNotification);
+      release?.({ turnId: "native-real" });
+      const turn = await pending;
+      expect(turn.id).toBe("t1");
+      expect(turn.nativeRef.id).toBe("native-real");
+    });
+    const started = events.filter((event) => event.type === "turn.started");
+    expect(started).toHaveLength(1);
+    expect(started[0]?.type === "turn.started" ? started[0].turn.id : undefined).toBe("t1");
+    expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(1);
+  });
+
   test("approval/updated refreshes the choices and requirement", async () => {
     const { host, commands } = fakeHost({ "approval/decide": { status: "accepted" } });
     const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");

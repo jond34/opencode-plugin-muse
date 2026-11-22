@@ -533,7 +533,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     if (itemId === undefined || this.emittedCompactions.has(itemId)) return;
     this.emittedCompactions.add(itemId);
     this.pendingCompactions.delete(itemId);
-    const turnId = this.resolveTurnId(item.turnId);
+    // A compaction may legitimately carry no turn; it still must not name one
+    // that has terminated, so `materializeTurn` decides and `""` means turnless.
+    const turnId = this.materializeTurn(item.turnId);
     const event: HistoryCompactedEvent = {
       type: "history.compacted",
       itemId,
@@ -1068,13 +1070,107 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     };
   }
 
+  /**
+   * The host turn an item belongs to, created if this side never saw it start.
+   *
+   * An item frame can arrive without its `turn/started`: the start may have
+   * preceded the subscription, or fallen in a view gap. The contract requires
+   * `turn.started` first, so the turn is materialized here rather than letting
+   * the item's events hang off an id no turn owns. Returns `""` when the frame
+   * names no turn, or when that turn has already terminated — nothing may
+   * follow a terminal.
+   */
+  private materializeTurn(nativeTurnId: unknown, commandId?: unknown): string {
+    let hostTurnId = this.resolveTurnId(nativeTurnId, commandId);
+    if (hostTurnId.length === 0) return "";
+    const existing = this.turns.get(hostTurnId);
+    if (existing?.terminal) return "";
+    if (existing !== undefined) {
+      // `startTurn` registers the turn as pending; the host is running it now.
+      if (existing.turn.status !== "pending") return hostTurnId;
+      const turn: HarnessTurn = { ...existing.turn, status: "running" };
+      this.turns.set(hostTurnId, { turn, terminal: false });
+      this.emit({ type: "turn.started", turn });
+      return hostTurnId;
+    }
+    // Before the ack the item names only the native turn, which is not mapped
+    // yet. A single submit in flight owns it; binding now keeps the later ack
+    // from minting a second turn under the same native id.
+    if (
+      typeof nativeTurnId === "string" &&
+      !this.nativeToHost.has(nativeTurnId) &&
+      this.pendingStarts.size === 1
+    ) {
+      const [pendingCommandId, pendingHostTurnId] = [...this.pendingStarts][0] as [string, string];
+      this.pendingStarts.delete(pendingCommandId);
+      this.hostToNative.set(pendingHostTurnId, nativeTurnId);
+      this.nativeToHost.set(nativeTurnId, pendingHostTurnId);
+      hostTurnId = pendingHostTurnId;
+    }
+
+    const turn: HarnessTurn = {
+      id: hostTurnId,
+      nativeRef: nativeRef(nativeTurnId as string, this.capabilities.identity.nativeTurnIds),
+      ordinal: this.turns.size + 1,
+      status: "running",
+      model: this.sessionInfo.model,
+      startedAt: now(),
+      completedAt: null,
+    };
+    this.turns.set(hostTurnId, { turn, terminal: false });
+    this.emit({ type: "turn.started", turn });
+    return hostTurnId;
+  }
+
+  /** Build the started tool item, including the containment check. */
+  private toolItemFromFrame(
+    item: Record<string, unknown>,
+    itemId: string,
+    turnId: string,
+    timestamp: string,
+  ): HarnessToolItem {
+    const rawTool = typeof item.tool === "string" ? item.tool : "";
+    // The bridge namespace is the only tool authority opencode granted. A
+    // tool outside it means a containment lever did not hold; report once,
+    // never let the call look bridge-normalized.
+    if (
+      this.toolBridge !== undefined &&
+      this.containment !== "off" &&
+      rawTool.length > 0 &&
+      !rawTool.startsWith(`mcp__${BRIDGE_MCP_SERVER_NAME}__`)
+    ) {
+      this.containmentBreaches += 1;
+      if (!this.containmentReported) {
+        this.containmentReported = true;
+        console.warn(`[opencode-muse] containment breach: non-bridge tool ${rawTool}`);
+        this.emit({
+          type: "session.error",
+          error: {
+            class: "protocol",
+            code: "containment_breach",
+            message: `Muse called a tool outside the opencode bridge: ${rawTool}`,
+            retryable: false,
+          },
+        });
+      }
+    }
+    return {
+      id: itemId,
+      turnId,
+      name: normalizeToolName(rawTool.length > 0 ? rawTool : "unknown"),
+      input: parseToolArgs(item.args),
+      status: "running",
+      startedAt: timestamp,
+      completedAt: null,
+    };
+  }
+
   private onItemStarted(params: Record<string, unknown>): void {
     const item = params.item as Record<string, unknown> | undefined;
     if (!item) return;
     const itemId = typeof item.itemId === "string" ? item.itemId : undefined;
     if (itemId === undefined) return;
     const kind = typeof item.kind === "string" ? item.kind : "";
-    const turnId = this.resolveTurnId(item.turnId);
     const timestamp = now();
     this.noteItemKind(kind);
 
@@ -1086,6 +1182,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
 
     if (kind === "agentMessage" || kind === "reasoning") {
+      const turnId = this.materializeTurn(item.turnId);
+      if (turnId.length === 0) return;
       const message: HarnessMessage = {
         id: itemId,
         turnId,
@@ -1101,40 +1199,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
 
     if (kind === "toolCall") {
-      const rawTool = typeof item.tool === "string" ? item.tool : "";
-      // The bridge namespace is the only tool authority opencode granted. A
-      // tool outside it means a containment lever did not hold; report once,
-      // never let the call look bridge-normalized.
-      if (
-        this.toolBridge !== undefined &&
-        this.containment !== "off" &&
-        rawTool.length > 0 &&
-        !rawTool.startsWith(`mcp__${BRIDGE_MCP_SERVER_NAME}__`)
-      ) {
-        this.containmentBreaches += 1;
-        if (!this.containmentReported) {
-          this.containmentReported = true;
-          console.warn(`[opencode-muse] containment breach: non-bridge tool ${rawTool}`);
-          this.emit({
-            type: "session.error",
-            error: {
-              class: "protocol",
-              code: "containment_breach",
-              message: `Muse called a tool outside the opencode bridge: ${rawTool}`,
-              retryable: false,
-            },
-          });
-        }
-      }
-      const tool: HarnessToolItem = {
-        id: itemId,
-        turnId,
-        name: normalizeToolName(rawTool.length > 0 ? rawTool : "unknown"),
-        input: parseToolArgs(item.args),
-        status: "running",
-        startedAt: timestamp,
-        completedAt: null,
-      };
+      const turnId = this.materializeTurn(item.turnId);
+      if (turnId.length === 0) return;
+      const tool = this.toolItemFromFrame(item, itemId, turnId, timestamp);
       this.tools.set(itemId, tool);
       this.emit({ type: "tool.started", item: tool });
     }
@@ -1190,8 +1257,24 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
 
     if (kind === "agentMessage" || kind === "reasoning") {
-      const message = this.messages.get(itemId);
-      if (!message) return;
+      const turnId = this.materializeTurn(item.turnId);
+      if (turnId.length === 0) return;
+      let message = this.messages.get(itemId);
+      if (!message) {
+        // The started frame was missed. Synthesize it so the completion is not
+        // dropped, keeping `message.started` ahead of `message.completed`.
+        message = {
+          id: itemId,
+          turnId,
+          role: "assistant",
+          content: [],
+          status: "pending",
+          createdAt: timestamp,
+          completedAt: null,
+        };
+        this.messages.set(itemId, message);
+        this.emit({ type: "message.started", message });
+      }
       const updated: HarnessMessage = {
         ...message,
         content:
@@ -1207,8 +1290,16 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     }
 
     if (kind === "toolCall") {
-      const tool = this.tools.get(itemId);
-      if (!tool) return;
+      const turnId = this.materializeTurn(item.turnId);
+      if (turnId.length === 0) return;
+      let tool = this.tools.get(itemId);
+      if (!tool) {
+        // Same recovery as a message: the call started before this side was
+        // listening, so emit the started shape the completion extends.
+        tool = this.toolItemFromFrame(item, itemId, turnId, timestamp);
+        this.tools.set(itemId, tool);
+        this.emit({ type: "tool.started", item: tool });
+      }
       const updated: HarnessToolItem = {
         ...tool,
         status: toToolStatus(status),
