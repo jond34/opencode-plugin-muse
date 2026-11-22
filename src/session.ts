@@ -649,6 +649,25 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     this.pendingStarts.set(commandId, input.turnId);
     this.hostToNative.set(input.turnId, commandId);
     this.nativeToHost.set(commandId, input.turnId);
+    // Reserve the turn in this same tick, before the first await. The guard
+    // above is check-before-await otherwise: a second submit arriving while
+    // this command is in flight sees no turn yet, sends its own, and Muse
+    // absorbs one into the other.
+    const reservation: ActiveTurn = {
+      turn: {
+        id: input.turnId,
+        nativeRef: nativeRef(commandId, this.capabilities.identity.nativeTurnIds),
+        ordinal: this.turns.size + 1,
+        // Accepted, but not running until the host confirms it with
+        // `turn/started`; `onTurnStarted` settles the status and emits the event.
+        status: "pending",
+        model: input.model ?? this.sessionInfo.model,
+        startedAt: now(),
+        completedAt: null,
+      },
+      terminal: false,
+    };
+    this.turns.set(input.turnId, reservation);
     let result: Record<string, unknown>;
     try {
       result = await this.host.connection.command(
@@ -661,8 +680,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         { commandId },
       );
     } catch (error) {
-      // A refused start must not leave a phantom turn or mapping behind. The
-      // turn can only exist here if `turn/started` beat the refusal.
+      // A refused start must not leave the reservation, a phantom turn, or a
+      // mapping behind, whether the host refused it or `turn/started` beat it.
       this.pendingStarts.delete(commandId);
       if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
       if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
@@ -682,30 +701,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     if (acked === undefined) this.assumedTurnIds.set(nativeTurnId, input.turnId);
     else this.assumedTurnIds.delete(commandId);
 
-    const existing = this.turns.get(input.turnId);
-    if (existing !== undefined) {
-      // `turn/started` already created the turn. Keep the status it reported
-      // (running) and only correct the native ref the ack names.
-      existing.turn = {
-        ...existing.turn,
-        nativeRef: nativeRef(nativeTurnId, this.capabilities.identity.nativeTurnIds),
-      };
-      return existing.turn;
-    }
-
-    const turn: HarnessTurn = {
-      id: input.turnId,
+    // `turn/started` may have replaced the reservation with the running turn,
+    // so read it back rather than holding the one made above.
+    const active = this.turns.get(input.turnId) ?? reservation;
+    // Keep the status and model the event reported, and only correct the native
+    // ref the ack names.
+    active.turn = {
+      ...active.turn,
       nativeRef: nativeRef(nativeTurnId, this.capabilities.identity.nativeTurnIds),
-      ordinal: this.turns.size + 1,
-      // The turn is accepted but not running until the host confirms it with
-      // `turn/started`; `onTurnStarted` settles the status and emits the event.
-      status: "pending",
-      model: input.model ?? this.sessionInfo.model,
-      startedAt: now(),
-      completedAt: null,
     };
-    this.turns.set(input.turnId, { turn, terminal: false });
-    return turn;
+    this.turns.set(input.turnId, active);
+    return active.turn;
   }
 
   /**
@@ -1081,22 +1087,12 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
    * follow a terminal.
    */
   private materializeTurn(nativeTurnId: unknown, commandId?: unknown): string {
-    let hostTurnId = this.resolveTurnId(nativeTurnId, commandId);
-    if (hostTurnId.length === 0) return "";
-    const existing = this.turns.get(hostTurnId);
-    if (existing?.terminal) return "";
-    if (existing !== undefined) {
-      // `startTurn` registers the turn as pending; the host is running it now.
-      if (existing.turn.status !== "pending") return hostTurnId;
-      const turn: HarnessTurn = { ...existing.turn, status: "running" };
-      this.turns.set(hostTurnId, { turn, terminal: false });
-      this.emit({ type: "turn.started", turn });
-      return hostTurnId;
-    }
-    // Before the ack the item names only the native turn, which is not mapped
-    // yet. A single submit in flight owns it; binding now keeps the later ack
-    // from minting a second turn under the same native id.
+    // Before the ack an item names only the native turn, which is not mapped
+    // yet. A single submit in flight owns it; binding first keeps the later ack
+    // from minting a second turn under the same native id, and lets the
+    // reservation made by `startTurn` be promoted instead of replaced.
     if (
+      commandId === undefined &&
       typeof nativeTurnId === "string" &&
       !this.nativeToHost.has(nativeTurnId) &&
       this.pendingStarts.size === 1
@@ -1105,12 +1101,29 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       this.pendingStarts.delete(pendingCommandId);
       this.hostToNative.set(pendingHostTurnId, nativeTurnId);
       this.nativeToHost.set(nativeTurnId, pendingHostTurnId);
-      hostTurnId = pendingHostTurnId;
+      return this.startMaterializedTurn(pendingHostTurnId, nativeTurnId);
+    }
+    const hostTurnId = this.resolveTurnId(nativeTurnId, commandId);
+    if (hostTurnId.length === 0 || typeof nativeTurnId !== "string") return "";
+    return this.startMaterializedTurn(hostTurnId, nativeTurnId);
+  }
+
+  /** Emit `turn.started` once for a turn, promoting a reservation if present. */
+  private startMaterializedTurn(hostTurnId: string, nativeTurnId: string): string {
+    const existing = this.turns.get(hostTurnId);
+    if (existing?.terminal) return "";
+    if (existing !== undefined) {
+      // `startTurn` reserves the turn as pending; the host is running it now.
+      if (existing.turn.status !== "pending") return hostTurnId;
+      const turn: HarnessTurn = { ...existing.turn, status: "running" };
+      this.turns.set(hostTurnId, { turn, terminal: false });
+      this.emit({ type: "turn.started", turn });
+      return hostTurnId;
     }
 
     const turn: HarnessTurn = {
       id: hostTurnId,
-      nativeRef: nativeRef(nativeTurnId as string, this.capabilities.identity.nativeTurnIds),
+      nativeRef: nativeRef(nativeTurnId, this.capabilities.identity.nativeTurnIds),
       ordinal: this.turns.size + 1,
       status: "running",
       model: this.sessionInfo.model,

@@ -336,6 +336,56 @@ describe("MuseHarnessSession turns", () => {
     });
   });
 
+  test("a second submit is refused while the first is still in flight", async () => {
+    // The guard used to run before an await with no turn reserved, so both
+    // callers passed it and sent a command; Muse then absorbed the second
+    // submit into the first turn and the host carried two turns for one native
+    // id.
+    const commands: RecordedCommand[] = [];
+    let release: ((result: Record<string, unknown>) => void) | undefined;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => "cmd-0",
+        command: (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start"
+            ? new Promise<Record<string, unknown>>((resolve) => {
+                release = resolve;
+              })
+            : Promise.resolve({});
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    await drive(session, async () => {
+      const first = session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "one" }] },
+      });
+      // Observe the refusal immediately: it resolves in this same tick, before
+      // the ack, and an unobserved rejection fails the run.
+      const second = session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "two" }] },
+      }).then(
+        () => null,
+        (error: { code?: string }) => error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      release?.({ turnId: "native-1" });
+      const one = await first;
+      const refused = await second;
+      expect(one.id).toBe("t1");
+      expect(refused?.code).toBe("unsupported");
+      // Only the admitted turn reached the wire.
+      const starts = commands.filter((entry) => entry.method === "turn/start");
+      expect(starts).toHaveLength(1);
+      expect(starts[0]?.params.input).toEqual([{ type: "text", text: "one" }]);
+    });
+  });
+
   test("a completed message whose start was missed emits the turn and both frames", async () => {
     // The start fell in a view gap (or before the subscription). The completion
     // must not be dropped, and the contract still wants turn.started first and
