@@ -93,8 +93,11 @@ conformance harness drives it directly, and the docs state the guard as a fact.
 ## 3. Delta reconciliation — documented, with one real defect
 
 Settled: the completed frame wins and deltas are never accumulated
-(`compatibility.md` item 5). That is right — the protocol defines no
-reconciliation rule, and the host already stores the deltas.
+(`compatibility.md` item 5). That is right — the wire states the invariant
+directly: concatenating a field's deltas in cursor order equals that field on
+`item/completed` "unless the surface saturated" (`ItemDeltaParams.delta`, spec
+14653 INV-005). The completed frame is therefore the reconciliation, and the
+host already stores the deltas.
 
 Not settled: "the completed frame wins" presumes the started frame arrived.
 `onItemCompleted` returns early when the item is unknown — `src/session.ts:1193-1194`
@@ -190,7 +193,7 @@ falling back to the catalog id.
 | G1 | Handle `view/gap`: splice-fill with `view/page` from `after` to `next`, dispatching each page event through the switch body; warn once per fill | ~40 lines + four tests | The only failure that silently leaves the plugin's view wrong, with no timeout to end a hung step |
 | G2 | `onItemCompleted`: synthesise the item when the start was missed, emitting started-then-completed (messages, reasoning, tool calls) | ~20 lines + four tests | Turns a lost item into a delayed one; also makes G1's replay idempotent for items |
 | G3 | Reserve the turn before sending, in the caller's tick, so the refuse-while-running guard admits exactly one start | ~10 lines + the scratch test promoted | Makes the documented guard true; the cheapest way to close item 2 |
-| G4 | Read `disposition` / `startedNewTurn`: treat `queued` or `steered` as "input absorbed into turn X" instead of minting a new host turn | ~25 lines + a test | Defence in depth for G3, and the correct reading of the ack for item 1 |
+| G4 | Read `disposition`: `started` means the ack names this submit's turn; `steered` folds the input into the running turn and `queued` admits it to one that launches later, so neither may be mapped onto this host turn | ~25 lines + two tests | Defence in depth for G3, and the correct reading of the ack for item 1 |
 | G5 | Serialize `SessionRegistry.get` per opencode id; have `close` participate in the same chain | ~15 lines + the scratch test promoted | Prevents a duplicate native session and a leaked bridge |
 | G6 | Documentation: this file; correct the two "cannot arise" claims; note the catalog restart contract and that argument errors are `isError` by spec | 3 files | Removes a false statement from the tracked record |
 
