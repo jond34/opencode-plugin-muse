@@ -7,6 +7,11 @@ the model catalog. Each item records what the code does now, the wire or spec
 fact behind it, and the decision — and, for the seven gaps, the change that
 closed it and the test that holds it.
 
+Second pass: seven decisions were re-checked with reproductions in
+`product-gaps.md`; items 1 and 2 here are weaker than claimed, and two questions
+this file never listed (missed-notification replay, per-key serialization) have
+real gaps.
+
 Sources read for this pass: `src/session.ts`, `src/bridge.ts`, `src/host.ts`,
 `src/session-registry.ts`, `src/capabilities.ts`, `src/language-model.ts`,
 `src/contract/*`; the pinned SDK at `node_modules/@muse-code/sdk` (version
@@ -100,8 +105,10 @@ Decision (implemented): `startTurn` refuses while any turn is non-terminal
 `supportsQueuedMessages` is `false`. opencode steers rather than submitting
 while a turn runs, so a host follows the refuse-and-steer path; the alternative
 would let Muse absorb the submit into the running turn while the plugin minted a
-second host turn, stranding one. The guard also makes two unconfirmed acks
-impossible, which retired the ambiguity test. Test: `test/lifecycle.test.ts`
+second host turn, stranding one. The guard makes two unconfirmed acks
+impossible only while callers are serialized: it is check-before-await, so two
+concurrent `startTurn` calls both pass it and send two `turn/start` commands
+(`product-gaps.md` G3, reproduced in `scratch/gap-race.test.ts`). Test: `test/lifecycle.test.ts`
 "a second turn is refused while one is running".
 
 ## 4. cancel reaches the host

@@ -130,9 +130,11 @@ that change observable behaviour at the seam.
    assumption, adopted when the host later names the turn
    (`resolveTurnId`/`adoptTurnId`); the turn's `nativeRef` and every later event
    move with it, because the plugin needs an id for `turn/steer` and
-   `turn/interrupt`. The two-unconfirmed-assumptions ambiguity cannot arise:
-   `startTurn` refuses while a turn is non-terminal (see item 3), so the
-   `size === 1` check is defence only. Covered by `test/lifecycle.test.ts` ("a
+   `turn/interrupt`. The two-unconfirmed-assumptions ambiguity cannot arise from a
+   serialized caller: `startTurn` refuses while a turn is non-terminal (see item
+   3). That refusal is check-before-await, so two concurrent starts both pass it
+   and send two `turn/start` commands (`product-gaps.md` G3); the `size === 1`
+   check is defence only. Covered by `test/lifecycle.test.ts` ("a
    turn/started before the ack binds by command id", "a turn ack without an id
    is reconciled when the host names the turn"). `turnId == commandId` for a
    fresh turn (`msp.d.ts:3889-3890`), so the fallback is an identity, not a
