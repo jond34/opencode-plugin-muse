@@ -30,8 +30,8 @@ Five of the six closures have since landed, one commit each: `d72ce21` (G2),
 `7cb562c` (G3), `a5f6c9d` (G4), `fa6f915` (G5), `3d0bc30` (G1). Both
 reproductions above are now red by design, which is why the scratch file is kept
 and annotated rather than deleted: the live assertions moved to
-`test/lifecycle.test.ts` and `test/view-gap.test.ts`. `check:offline` is 264
-pass, 0 fail across 26 files. G6 (this record) is the last commit.
+`test/lifecycle.test.ts` and `test/view-gap.test.ts`. `check:offline` is 288
+pass, 0 fail across 28 files. G6 (this record) was the last of the G register.
 
 | # | Decision | Where it is recorded | Verdict | Closure |
 |---|---|---|---|---|
