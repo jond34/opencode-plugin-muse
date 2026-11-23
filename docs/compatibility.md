@@ -101,6 +101,20 @@ the hook-window path; a bad window is validated late; there is no model-neutral
 window; plugins do not control when compaction runs; and a shrink path can
 restore text a compaction hook removed.
 
+The doctor reads two CLI surfaces and both are version-dependent, measured on
+2.3.2:
+
+- `opencode debug config` prints one document per config source, each with its
+  own `plugins` array and, for files, a `path`. It follows the cwd and respects
+  `XDG_CONFIG_HOME`. A future release that changes this shape leaves the
+  doctor's `plugins` row `skipped`, never wrong.
+- `opencode plugin list` is not a resolver: even with `--builtin` it printed only
+  configured local directories here, while the package loaded from
+  `~/.cache/opencode/npm/…`. Do not build on it.
+
+Global flags (`--log-level`, `--print-logs`, `--standalone`) must precede the
+subcommand; after it, 2.3.2 rejects them.
+
 ## Muse contract
 
 The plugin uses the narrow session/turn surface:

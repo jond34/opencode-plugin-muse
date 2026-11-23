@@ -161,8 +161,8 @@ percentages rather than a per-turn cost.
   unavailable` rather than as a policy. For a turn ceiling the plugin adds none: a
   client-side cap would fire after the spend it exists to prevent. opencode's
   `agent.<name>.steps` is the knob that exists, off by default, enforced in
-  opencode's own prompt loop; whether it sees a turn this plugin drives is
-  unmeasured here; the fragment is under **A ceiling for an unattended run**.
+  opencode's own prompt loop, and it does count a turn this plugin drives; the
+  fragment is under **A ceiling for an unattended run**.
   The durable ceiling is the provider's own limit, which the allowance warning
   approaches before it is reached.
 - **Model catalog.** The catalog is a snapshot taken at startup. Muse's session
@@ -279,21 +279,29 @@ the knob, per agent:
 ```
 
 `steps` is a positive maximum, unset by default, enforced in opencode's own
-prompt loop — on the last step it removes tools and asks for a text summary. It
-does count a turn this plugin drives (measured 2026-11-23), and the smallest
-value is a trap: with `steps: 1` opencode ends the turn before the first model
-call, so the run prints nothing, reports zero tokens, and exits 0. Give it the
-number of steps you would accept, not 1. Whether 2 buys exactly one model call is
-unmeasured.
+prompt loop, and it counts a turn this plugin drives (measured 2026-11-23).
+**One step is one model request**, so a turn that uses N tool calls needs N+1
+steps: two reads and a reply took exactly three (measured 2026-11-23). On the
+last step opencode keeps the tool list, sets `toolChoice` to `none`, and appends
+an instruction to answer in text, so that request can summarise but cannot act.
+
+The smallest value is a trap. `steps: 1` gives the model one request with no
+tools allowed: the turn answers with the "maximum steps reached" summary and does
+nothing else (measured 2026-11-23: 118 output tokens, no tool calls). The
+published 0.1.12 returns nothing at all from that step — the trailing
+instruction never reaches Muse, so the run prints nothing, reports zero tokens,
+and exits 0. This tree fixes it; the fix is not released. Give it the number of
+steps you would accept, not 1.
 
 ### Headless runs
 
 `opencode run` works under two conditions — one entry for this package, and
-`steps` above 1. A scripted turn with the checkout as the only plugin produced
-text and three bridged tool calls (measured 2026-11-23). Break either condition
-and the turn is silent.
+`steps` above 1 if the turn has anything to do. A scripted turn with the
+checkout as the only plugin produced text and three bridged tool calls (measured
+2026-11-23). Break either condition and the turn does no work.
 
-- **`steps: 1`** ends the turn before the model is called, as above.
+- **`steps: 1`** answers with the step-cap summary and makes no tool call, as
+  above — in this tree. The published 0.1.12 returns nothing.
 - **Two entries for one package.** opencode loads one instance per package name
   and the first entry wins. A global `@jonathand34/opencode-plugin-muse` in
   `~/.config/opencode` is merged ahead of a project's
@@ -302,9 +310,11 @@ and the turn is silent.
   If you are testing local changes, drop the package entry, or point
   `XDG_CONFIG_HOME` at a config that lists only the checkout.
 
-A turn that produces nothing prints nothing: zero bytes on stdout, exit code 0.
-The plugin cannot help with that one — no request reaches it, so no hook runs
-and there is no part to attach a warning to.
+When a second entry shadows the checkout, a turn produces nothing and prints
+nothing: zero bytes on stdout, exit code 0. The plugin cannot help with that one
+— no request reaches it, so no hook runs and there is no part to attach a warning
+to. `bun run doctor` can: its `plugins` row names every entry for this package
+and whether this checkout is one of them.
 
 ## What a turn looks like
 
@@ -476,9 +486,15 @@ bun run doctor          # what this install is: versions, host, hooks, ledger
 
 `bun run doctor` spawns the host once (a handshake and an empty session, no
 turn), then prints one row per check: versions and schema drift, the containment
-switches, installed hooks, the trust record, today's ledger, and the allowance
-window. `--json` is the same report for a bug report; home paths print as `~`
-and no credential or identity is read. `--offline` skips the host entirely.
+switches, plugin entries, installed hooks, the trust record, today's ledger, and
+the allowance window. `--json` is the same report for a bug report; home paths
+print as `~` and no credential or identity is read.
+
+The `plugins` row runs `opencode debug config` (about a second, no model call)
+and reports every config source that lists this package, and whether any of them
+is this checkout. A package entry without the checkout is a warning: the run
+loads the published build. Two entries are a warning too, because both load.
+`--offline` skips the host and this row entirely.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 

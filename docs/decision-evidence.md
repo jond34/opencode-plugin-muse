@@ -1081,6 +1081,11 @@ rejected by 2.3.2 at every position (usage text, exit 1), and `--print-logs` is
 only accepted before `run`. A run without `--print-logs` captures none of the
 server's output, so markers look absent when they are not.
 
+*Corrected in round 10:* the `--log-level` half is wrong. It is a global flag,
+`opencode --log-level debug plugin list` works, and `--print-logs` is global too.
+What 2.3.2 rejects is the flag placed after the subcommand. The round-9 runs
+lost the flag because of its position, not because it does not exist.
+
 **Result, user's merged configuration** (global `@jonathand34/opencode-plugin-muse`
 plus the project's local path): `[MUSE-TOP]` **once**, `[MUSE-MARK]` **zero**
 times, `loading plugin` **117** times (39 rounds × 3 ids), and the turn itself
@@ -1230,3 +1235,135 @@ fresh process, and the first two attempts were the instrument errors above.
 - **D47 — `steps` binds this path, settled.** `steps: 1` produces zero model
   calls, not one. The README's ceiling section now says so and its example uses
   `12`; D39's second sentence is measured rather than open.
+
+## Round 10 — which copy runs, and what a step is
+
+**Why this round.** Round 9 left one choice open (the doctor cannot see plugin
+entries) and two sentences weaker than they looked (`steps` has no unit, and
+`steps: 1` was said to make zero model calls). Both turned out to be wrong in
+ways only a run could show.
+
+### S0 — the CLI is not the resolver the plan assumed
+
+`opencode plugin list` on 2.3.2 prints the configured local directory and
+nothing else. `--builtin` — "Include built-in server plugins" — adds **no**
+builtins and no package rows on this machine, so the plan's premise ("the vendor
+already ships the resolver") was false. The package does load; the debug log
+names it:
+
+```
+msg="loading plugin" id=@jonathand34/opencode-plugin-muse
+  entrypoint=file:///home/jonat/.cache/opencode/npm/@jonathand34/opencode-plugin-muse@latest/1795036133471/node_modules/@jonathand34/opencode-plugin-muse/src/index.ts
+```
+
+The surface that does answer is `opencode debug config`: one document per source,
+each with its own `plugins` array and, for files, a `path`.
+
+### E-D53 — what `opencode debug config` sees
+
+Four states, all free:
+
+| State | cwd | `XDG_CONFIG_HOME` | Documents carrying `plugins` |
+|---|---|---|---|
+| A | temp project with a local entry | real | global package, project checkout |
+| A2 | same, `--standalone` | real | identical to A |
+| B | same | temp (package) | temp package, project checkout |
+| C | temp root, no project config | temp (package) | temp package only |
+
+It follows the cwd, respects `XDG_CONFIG_HOME`, and lists each file's own array —
+so a relative entry can be resolved from the file that carries it, which is the
+rule the vendor documents. It does not say which id wins; for this question it
+does not need to, because every entry loads.
+
+### E-D54 — what it costs
+
+0.16 s, three times, against the running service (`opencode service status` →
+`http://127.0.0.1:49374`); 0.79 s with `--standalone`, which spawns a private
+server and touches the user's service not at all. No processes were left behind.
+
+### E-D51 — `steps: 1` was our defect
+
+The first run (checkout only, `steps: 1`, `--format json`): one
+`step_start`/`step_finish`, `reason: "stop"`, every token zero, **no text part**,
+and the ledger gained host rows but no turn row — the plugin never ran a turn.
+That is not the cap "preventing the call"; the request was made.
+
+Instrumenting `doStream` for one run showed what arrived:
+
+```
+[muse-debug] tools=13 toolChoice=[object Object] prompt=3 roles=system,user,assistant
+```
+
+Tools are kept at the cap (the runner's comment says so), and the prompt ends
+with the cap's assistant message. The cause is the fresh-session seed:
+`live.promptLength = length - (lastIsUser ? 1 : 0)`. With an assistant last, the
+slice keeps the whole prompt, `fresh` is empty, `latestUserTurn(fresh)` is
+undefined, no `turn/start` is sent, and the returned stream closes empty.
+
+The fix is `trailingInstruction()` in `src/prompt.ts` plus its use in
+`src/language-model.ts`: a trailing assistant message is delivered as the turn
+body, and the seed stops before it. Pinned by `test/lifecycle.test.ts` → `the
+step cap > a trailing assistant instruction starts a turn instead of returning
+nothing`.
+
+Re-run, same shape: one step, text `"Maximum steps for this agent have been
+reached. …"`, tokens input 5728, output 118, reasoning 393. The cap now
+summarises instead of eating the turn.
+
+### E-D52 — the unit of a step
+
+- `steps: 2`, "Reply with the single word ready.": **one** step, `"ready"`,
+  7484/10/48 tokens.
+- `steps: 3`, "read line 1 of package.json and line 1 of README.md": **three**
+  steps — text + one tool call, one tool call, text (639/225/285). The third step
+  was itself the capped one (`3 >= 3`) and answered with text, which is the fix
+  working with tools in play.
+
+So one step is one model request, and a turn that uses N tool calls needs N+1
+steps. Tool-call steps reported zero tokens, so per-step token totals are not
+usable as evidence; the step counts are.
+
+### E-D55 — the reload rounds
+
+E-D51's log has ten `loading plugin` lines for one id in about 2.6 s, after a
+single `config.updated` event whose location is the repo directory. The same
+short command (`plugin list`) with its logs written into the repo produced one
+load and no `config.updated`; writing them outside the repo also produced one.
+The watcher tracks the cwd (`.git/HEAD` appears among the watched paths), so the
+class of trigger is opencode's own cwd activity during a turn. **The count is
+still unexplained**, and this plugin's writes (a private temp `XDG_CONFIG_HOME`
+and the state dir) are outside the watched trees.
+
+### E-D56 — the row, in three states
+
+`bun run doctor --json`, online, real paths folded to `~`:
+
+- package only (the real machine): `warn` — "@jonathand34/opencode-plugin-muse
+  from ~/.config/opencode/opencode.jsonc; this checkout is not listed, so a run
+  from here loads the published build".
+- checkout only (temp XDG): `ok` — "this checkout, from /tmp/…/opencode.json".
+- both in one file: `warn` — "two copies load from /tmp/…/opencode.json:
+  @jonathand34/opencode-plugin-muse and this checkout".
+
+**Limitations.** Five paid turns against three planned: E-D51 ran twice (the
+first result was unexplained and instrumentation was the only way to name the
+cause), E-D52 ran twice, and one run re-checked the fix. A Console workspace is
+still untestable here, Muse's policy plane is unchanged, the reload count is
+unexplained, and the plan's `plugin list --builtin` premise came from a summary
+rather than a measurement — the CLI is the authority and it contradicted the
+summary.
+
+**Decisions.**
+
+- **D48 — the row reads `opencode debug config` (B), not the config files.** One
+  process, no plugin import, no re-derived precedence. `--offline` skips it, and
+  a CLI that does not answer leaves the row `skipped` rather than guessing.
+- **D49 — a shadowed checkout is `warn`.** The install works; it is the copy
+  that is wrong.
+- **D50 — one step is one request**, stated with the N+1 arithmetic.
+- **D51 — fixed, not documented.** `steps: 1` was a defect in this plugin's
+  handling of a trailing assistant message; this tree answers the cap. The
+  published 0.1.12 still returns nothing, so the README says which one is which.
+- **D52/D53 — recorded, not measured.** Muse's plane ships without a local
+  vocabulary, and Console policy arrives through a builtin that ignores
+  removals; neither can be exercised here.
