@@ -5,6 +5,15 @@ name: test
 # honest claim stays "tested on Linux, unmeasured elsewhere".
 on:
   workflow_dispatch:
+    inputs:
+      real_windows:
+        description: "E16a/E16c: install real Muse on Windows and measure the serve close path"
+        type: boolean
+        default: false
+      macos_only:
+        description: "E17: run the offline job on macos-15 only, to retry the cancelled macOS cell"
+        type: boolean
+        default: false
   # Branch-only: `workflow_dispatch` needs the file on the default branch, and
   # this file is not there yet. Drop this trigger when the round lands.
   push:
@@ -23,7 +32,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # E17 needs one macOS label, and `macos-latest` is now macOS 26 (arm64):
+        # the cancelled round-22 cell was an arm64 acquisition failure, so the
+        # retry names `macos-15` explicitly.
+        os: ${{ (github.event_name == 'workflow_dispatch' && inputs.macos_only) && fromJSON('["macos-15"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       # Pinned by commit SHA for the same reason as the publish job: a
@@ -67,3 +79,41 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: node test/seam/windows-kill.mjs
+
+  # E16a/E16c: the vendor installer, the binary it writes, and a real `muse
+  # serve` closed through the plugin's own path. No credential: the handshake is
+  # local to the host, and a model turn would need the user's browser login —
+  # `src/host-config.ts` deletes `META_API_KEY`, so a key is not the supported
+  # route and its absence is not a gap in this measurement.
+  real-windows:
+    name: real-windows (installer + serve lifecycle)
+    if: github.event_name == 'workflow_dispatch' && inputs.real_windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run build
+      # The installer retries with a token only after an anonymous download is
+      # refused, so an unauthenticated runner is expected to work. Whether it
+      # does is itself a result: capture the log rather than let `iex` swallow it.
+      - name: E16a install (vendor script)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          try { irm https://dev.meta.ai/install.ps1 | iex } catch { "install threw: $_" }
+          "install exit: $LASTEXITCODE"
+      - name: Install layout
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\muse'
+          if (Test-Path $dir) {
+            Get-ChildItem $dir -Force | Select-Object Name, Length | Format-Table -AutoSize | Out-String
+            Get-Content (Join-Path $dir '.muse-version') -ErrorAction SilentlyContinue
+          } else { "no install dir at $dir" }
+      - name: E16a/E16c
+        shell: pwsh
+        run: node test/seam/windows-real.mjs
