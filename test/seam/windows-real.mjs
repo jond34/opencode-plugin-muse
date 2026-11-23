@@ -130,40 +130,88 @@ check("binary runs config validate", validate.status === 0, `status ${validate.s
 const bare = spawnSync("muse", ["--version"], { encoding: "utf8", timeout: 60_000, shell: false });
 console.log(`bare muse: ${bare.error?.code ?? `status ${bare.status}`} (informational)`);
 
-// E16c: the real serve lifecycle, closed exactly as the plugin closes it.
-const before = museProcesses();
-console.log(`E16c before: [${before.join(" ")}]`);
-let during = [];
-try {
-  const host = await MuseHost.spawn({
-    museBin: bin.command,
-    cwd: scratch,
-    shutdownTimeoutMs: 5_000,
-    clientName: "opencode_muse_seam",
-    clientVersion: "0.0.0-seam",
-    onStderr: (chunk) => process.stderr.write(`[host stderr] ${chunk}`),
-  });
-  console.log(
-    `handshake: museHome=${host.museHome} granted=[${host.grantedCapabilities().join(", ")}]`,
-  );
-  check("real serve completed the handshake", host.grantedCapabilities().includes("sessionMcp"));
-  during = museProcesses();
-  console.log(`E16c during: [${during.join(" ")}]`);
-  await host.close();
-  console.log("close: returned");
-} catch (error) {
-  check("real serve completed the handshake", false, error instanceof Error ? error.message : String(error));
+/**
+ * Poll the process table for a settled window, returning the last sample.
+ *
+ * E27: a single sample three seconds after close cannot see a grandchild that a
+ * launcher outlives, and cannot tell "reaped" from "not dead yet". The loop
+ * samples every 250 ms for the whole window and returns every row it saw, so the
+ * verdict is "nothing from this run was alive at any sample".
+ */
+async function sampleFor(ms) {
+  const started = Date.now();
+  const seen = new Map();
+  let last = [];
+  while (Date.now() - started < ms) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    last = museProcesses();
+    for (const row of last) seen.set(pidOf(row), row);
+  }
+  return { last, seen: [...seen.values()], elapsedMs: Date.now() - started };
 }
 
+// E16c: the real serve lifecycle, closed exactly as the plugin closes it.
+// Three cycles: one clean close can be a race that happened to lose, and a
+// survivor that appears once in three is a flake in the product, not a pass.
+const before = museProcesses();
+console.log(`E16c before: [${before.join(" ")}]`);
+const known = new Set(before.map(pidOf));
+const cycleWindows = [60_000, 20_000, 20_000];
+let handshakes = 0;
+let probesSawHost = 0;
+const survivorPids = new Set();
+
+for (const [index, windowMs] of cycleWindows.entries()) {
+  const cycle = index + 1;
+  let during = [];
+  try {
+    const host = await MuseHost.spawn({
+      museBin: bin.command,
+      cwd: scratch,
+      shutdownTimeoutMs: 5_000,
+      clientName: "opencode_muse_seam",
+      clientVersion: "0.0.0-seam",
+      onStderr: (chunk) => process.stderr.write(`[host stderr] ${chunk}`),
+    });
+    handshakes += 1;
+    console.log(
+      `cycle ${cycle} handshake: museHome=${host.museHome} granted=[${host.grantedCapabilities().join(", ")}]`,
+    );
+    during = museProcesses();
+    if (during.length > 0) probesSawHost += 1;
+    console.log(`cycle ${cycle} during: [${during.join(" ")}]`);
+    await host.close();
+    console.log(`cycle ${cycle} close: returned`);
+  } catch (error) {
+    check(
+      `cycle ${cycle} real serve completed the handshake`,
+      false,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  // Every pid this cycle ever showed that was not running before it, and still
+  // runs in the window's last sample, is a survivor. A pid that vanished from
+  // the table was reaped by the close path.
+  const sampled = await sampleFor(windowMs);
+  const lastPids = new Set(sampled.last.map(pidOf));
+  const seenNow = new Set([...during, ...sampled.seen].filter((row) => !known.has(pidOf(row))).map(pidOf));
+  const alive = sampled.last.filter((row) => seenNow.has(pidOf(row)) && lastPids.has(pidOf(row)));
+  for (const pid of alive.map(pidOf)) survivorPids.add(pid);
+  console.log(
+    `cycle ${cycle} sampled ${sampled.elapsedMs} ms: last=[${sampled.last.join(" ")}] survivors=[${alive.join(" ")}]`,
+  );
+}
+
+check("E16c three cycles completed the handshake", handshakes === cycleWindows.length, `${handshakes}/3`);
 // A live host must be visible to the probe. If it is not, the survivor count
 // below means nothing, so say that instead of reporting a clean close.
-check("E16c probe saw the live host", during.length > 0, `during=[${during.join(" ")}]`);
+check("E16c probe saw the live host", probesSawHost > 0, `cycles=${probesSawHost}/${cycleWindows.length}`);
 
-// The ladder drains stdin then hard-kills; give Windows a moment to settle.
-await new Promise((resolve) => setTimeout(resolve, 3_000));
-const after = museProcesses();
-const survivors = after.filter((row) => !before.some((old) => pidOf(old) === pidOf(row)));
-console.log(`E16c after: [${after.join(" ")}] survivors=[${survivors.join(" ")}]`);
+const survivors = [...survivorPids]
+  .map((pid) => museProcesses().find((row) => pidOf(row) === pid))
+  .filter((row) => row !== undefined);
+console.log(`E16c survivors=[${survivors.join(" ")}]`);
 
 if (survivors.length > 0) {
   for (const row of survivors) {
@@ -179,8 +227,8 @@ if (survivors.length > 0) {
       ? "E16c: close() left an orphan and taskkill /T /F cleared it"
       : "E16c: close() left an orphan that taskkill /T /F did not clear",
   );
-} else if (during.length > 0) {
-  console.log("E16c: no survivor after close()");
+} else if (probesSawHost > 0) {
+  console.log("E16c: no survivor at any sample — 60 s for cycle 1, 20 s for 2 and 3");
 } else {
   console.log("E16c: measurement invalid — the probe never saw the host");
 }

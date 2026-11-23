@@ -395,7 +395,9 @@ describe("the policies row", () => {
     );
     expect(row.status).toBe("warn");
     expect(row.detail).not.toContain(homedir());
-    expect(row.detail).toContain("~/cfg/opencode.jsonc");
+    // The fold keeps the native separator, so the expectation is built, not
+    // spelled: a Windows host prints `~\cfg\opencode.jsonc`.
+    expect(row.detail).toContain(join("~", "cfg", "opencode.jsonc"));
   });
 
   test("offline reports the row as skipped without spawning anything", () => {

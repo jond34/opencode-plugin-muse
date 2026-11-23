@@ -31,12 +31,17 @@ describe("the shutdown ladder is platform-shaped", () => {
 });
 
 describe("file permissions are described, not assumed", () => {
-  test("POSIX reports the mode the plugin writes", () => {
+  // Windows cannot hold this: writeFileSync's `mode` is ignored there and a
+  // stat reads back 0666, so the test would be measuring the OS, not the plugin.
+  test.skipIf(process.platform === "win32")(
+    "POSIX reports the mode the plugin writes",
+    () => {
     const dir = mkdtempSync(join(tmpdir(), "muse-mode-"));
     const file = join(dir, "usage.jsonl");
     writeFileSync(file, "{}\n", { mode: 0o600 });
     expect(describeFilePermissions(file, "linux")).toBe("0600");
-  });
+    },
+  );
 
   test("Windows reports the inherited ACL, not a mode it cannot set", () => {
     // fs.chmod on Windows: "only the write permission can be changed".

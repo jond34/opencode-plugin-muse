@@ -111,7 +111,10 @@ describe("host config", () => {
     }
   });
 
-  test("keeps the directory and file private", async () => {
+  // A Windows runner reports 0666 for both: `mkdir`'s mode is ignored and
+  // `chmod` only changes the write bit, so the claim is unmeasurable there.
+  // The ACL sentence is what the platform row asserts instead (platform.test).
+  test.skipIf(process.platform === "win32")("keeps the directory and file private", async () => {
     const base = home();
     const config = await write({ baseDir: base, homeDirectory: base });
     try {
@@ -122,7 +125,10 @@ describe("host config", () => {
     }
   });
 
-  test("links the user's login instead of copying it", async () => {
+  // Windows refuses a file symlink without SeCreateSymbolicLinkPrivilege, and
+  // the product swallows that by design (the host then reports no login). A
+  // runner without Developer Mode cannot hold the claim either way.
+  test.skipIf(process.platform === "win32")("links the user's login instead of copying it", async () => {
     const base = home();
     const realDir = join(base, ".config", "muse");
     mkdirSync(realDir, { recursive: true });

@@ -25,10 +25,10 @@ permissions:
   contents: read
 
 jobs:
-  # Informational (D137): the fixtures lean POSIX — three test files touch
-  # chmod/0600, eight reference /tmp or /home — so a Windows failure here is a
-  # finding about the suite, not a claim about the plugin. The seam job below is
-  # the gate.
+  # The suite is a support claim on every OS it runs on (D147). It was called
+  # informational while the POSIX fixtures were unclassified; E22 read the
+  # assertions and separated them from the one product bug (`C:\` entries read as
+  # package names). A red cell here is now a finding, not a known condition.
   offline:
     name: offline (${{ matrix.os }})
     # `ci/real` is the installer job and nothing else: the matrix would only
@@ -56,7 +56,17 @@ jobs:
       # No `scripts/repro.sh`: it is a bash reproduction script, not a test, and
       # it is not meaningful on PowerShell.
       - run: npm ci
-      - run: npm run check:offline
+      # `npm run` appends these to the script string, so `tsc` runs first and
+      # bun gets the reporter. The artifact is what makes a count question
+      # answerable later without another dispatch (E24): per-file tests= counts
+      # plus the hostname and commit properties.
+      - run: npm run check:offline -- --reporter=junit --reporter-outfile=junit.xml --reporter-junit-suites=flat
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: junit-${{ matrix.os }}
+          path: junit.xml
+          if-no-files-found: ignore
 
   # E11/E12: the Windows spawn contract, without Muse. A stub `muse.cmd`, a
   # native binary renamed `muse-bin-9.9.9-R1.1.exe`, and a `.muse-version`

@@ -66,26 +66,31 @@ describe("toolset observation", () => {
     expect(probeToolsetObservation(join(root, "broken")).status).toBe("unreadable");
   });
 
+  // The root is built with `join`, so the expected string has to be too: a
+  // POSIX literal compared against a win32 join tests the OS separator, not the
+  // precedence rule.
   test("the default root is the Muse sessions dir under the data home", () => {
-    expect(defaultSessionsRoot({ XDG_DATA_HOME: "/d" } as NodeJS.ProcessEnv)).toBe("/d/muse/sessions");
+    expect(defaultSessionsRoot({ XDG_DATA_HOME: "/d" } as NodeJS.ProcessEnv)).toBe(
+      join("/d", "muse", "sessions"),
+    );
     expect(defaultSessionsRoot({ XDG_DATA_HOME: "", HOME: "/h" } as NodeJS.ProcessEnv)).toBe(
-      "/h/.local/share/muse/sessions",
+      join("/h", ".local", "share", "muse", "sessions"),
     );
   });
 
   test("the root prefers the override, then the host's museHome, then XDG", () => {
     const env = { XDG_DATA_HOME: "/d", MUSE_SESSIONS_ROOT: "/o" } as NodeJS.ProcessEnv;
-    expect(sessionsRoot({ env, museHome: "/home/tester/.muse" })).toBe("/o");
+    expect(sessionsRoot({ env, museHome: "/home/tester/.muse" })).toBe(join("/o"));
 
     const noOverride = { XDG_DATA_HOME: "/d" } as NodeJS.ProcessEnv;
     expect(sessionsRoot({ env: noOverride, museHome: "/home/tester/.muse" })).toBe(
-      "/home/tester/.muse/sessions",
+      join("/home/tester/.muse", "sessions"),
     );
-    expect(sessionsRoot({ env: noOverride, museHome: "" })).toBe("/d/muse/sessions");
-    expect(sessionsRoot({ env: noOverride })).toBe("/d/muse/sessions");
+    expect(sessionsRoot({ env: noOverride, museHome: "" })).toBe(join("/d", "muse", "sessions"));
+    expect(sessionsRoot({ env: noOverride })).toBe(join("/d", "muse", "sessions"));
 
     // An empty override is not a path; fall through instead of reading `//sessions`.
     const emptyOverride = { MUSE_SESSIONS_ROOT: "", XDG_DATA_HOME: "/d" } as NodeJS.ProcessEnv;
-    expect(sessionsRoot({ env: emptyOverride, museHome: "/m" })).toBe("/m/sessions");
+    expect(sessionsRoot({ env: emptyOverride, museHome: "/m" })).toBe(join("/m", "sessions"));
   });
 });

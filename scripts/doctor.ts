@@ -163,7 +163,10 @@ export function pluginRow(
       if (typeof entry === "string") entries.push({ source, entry });
     }
   }
-  const isPackage = (entry: string): boolean => !/^[./~]/.test(entry);
+  // A package name has no path shape. `C:\...` and `\\server\share` are
+  // absolute on Windows and were read as package names there, so a config that
+  // listed this checkout by full path reported "this checkout is not listed".
+  const isPackage = (entry: string): boolean => !/^[./~]/.test(entry) && !isAbsolute(entry);
   const resolveEntry = (source: string, entry: string): string => {
     const expanded = entry.startsWith("~") ? join(homedir(), entry.slice(1)) : entry;
     return isAbsolute(expanded) ? expanded : resolve(dirname(source), expanded);
