@@ -167,6 +167,14 @@ export interface MuseHostOptions {
   readonly contributorMode?: "on" | "off";
   /** Start the host with `--trust-workspace`; required for per-session MCP. */
   readonly trustWorkspace?: boolean;
+  /**
+   * Declare the beta capability on this connection only.
+   *
+   * It buys the posture reads (`permissionProfile/list`, `permissionState` on a
+   * start) and is fixed for the connection's lifetime, so only the doctor asks
+   * for it: the user's session needs `sessionMcp` and nothing else (D38).
+   */
+  readonly experimentalApi?: boolean;
   readonly clientName?: string;
   readonly clientVersion?: string;
   readonly onStderr?: (chunk: string) => void;
@@ -263,6 +271,7 @@ export class MuseHost {
         capabilities: {
           // Per-session MCP servers (the tool bridge) need this grant.
           requestedCapabilities: ["sessionMcp"],
+          ...(options.experimentalApi === true ? { experimentalApi: true } : {}),
         },
       });
     } catch (error) {

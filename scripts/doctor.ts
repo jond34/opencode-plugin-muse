@@ -172,6 +172,62 @@ function trustState(env: NodeJS.ProcessEnv, root: string): HookReport {
   };
 }
 
+/**
+ * The posture this host actually serves, read on the doctor's own connection.
+ *
+ * `permissionState` is only served to a connection that declared
+ * `experimentalApi` (E-D37), which is why the doctor asks for it and the user's
+ * session does not (D38). What this cannot see is the part the note is about:
+ * saved approvals and any managed policy outrank the profile, and neither is on
+ * the wire here.
+ */
+export async function postureCheck(
+  host: MuseHost,
+  session: Record<string, unknown>,
+): Promise<Check> {
+  const state = session.permissionState as Record<string, unknown> | null | undefined;
+  if (state === null || state === undefined) {
+    return {
+      id: "posture",
+      status: "skipped",
+      detail: "the host served no permissionState on this connection",
+      remediation: "an older host, or the beta capability was refused; the plugin's own sessions never read it",
+    };
+  }
+  const axes = (state.axes ?? {}) as Record<string, unknown>;
+  const profile = typeof state.profileId === "string" ? state.profileId : "unknown";
+  let catalog = "";
+  try {
+    const listed = (await host.connection.request("permissionProfile/list", {})) as {
+      profiles?: unknown;
+    };
+    const rows = Array.isArray(listed.profiles) ? (listed.profiles as Array<Record<string, unknown>>) : [];
+    const ids = rows
+      .map((row) => row.profileId)
+      .filter((id): id is string => typeof id === "string");
+    if (ids.length > 0) catalog = `; catalog ${ids.join(", ")}`;
+  } catch {
+    // A refused catalog does not make the state above unread.
+  }
+  const open = axes.filesystem === "unrestricted" || axes.network === "enabled";
+  return {
+    id: "posture",
+    status: open ? "warn" : "ok",
+    detail:
+      `${profile} (filesystem ${String(axes.filesystem ?? "unknown")}, network ${String(axes.network ?? "unknown")}, reviewer ${String(axes.reviewer ?? "unknown")})${catalog}; ` +
+      "these axes govern Muse's own shell, not the calls this plugin bridges; " +
+      "read from the host, not saved approvals or a managed policy; a policy that " +
+      "denies this plugin cannot be seen from inside it — the plugin is not loaded " +
+      "and the turn fails as Model unavailable",
+    ...(open
+      ? {
+          remediation:
+            "the plugin pins no profile, so Muse starts under your saved default; `:auto-review` or `:read-only` keeps the sandbox on",
+        }
+      : {}),
+  };
+}
+
 async function probeHost(
   root: string,
   env: NodeJS.ProcessEnv,
@@ -179,7 +235,7 @@ async function probeHost(
   const checks: Check[] = [];
   let host: MuseHost | undefined;
   try {
-    host = await MuseHost.spawn({ cwd: root, trustWorkspace: true });
+    host = await MuseHost.spawn({ cwd: root, trustWorkspace: true, experimentalApi: true });
   } catch (error) {
     checks.push({
       id: "host",
@@ -212,9 +268,9 @@ async function probeHost(
       { workspaceRoot: root },
       { commandId: host.connection.mintCommandId() },
     );
-    const sessionId = String(
-      (started?.session as { sessionId?: unknown } | undefined)?.sessionId ?? "",
-    );
+    const startedSession = (started?.session ?? {}) as Record<string, unknown>;
+    checks.push(await postureCheck(host, startedSession));
+    const sessionId = String(startedSession.sessionId ?? "");
     let hooks: HookRow[] | null = null;
     if (sessionId.length > 0) {
       try {
@@ -303,7 +359,7 @@ async function main(): Promise<number> {
     report.checks.push({
       id: "host",
       status: "skipped",
-      detail: "--offline: no host spawned, so auth, schema, hooks and allowance are unknown",
+      detail: "--offline: no host spawned, so auth, schema, posture, hooks and allowance are unknown",
     });
   } else {
     const probe = await probeHost(root, env);
@@ -383,4 +439,5 @@ async function main(): Promise<number> {
   return failed ? 1 : 0;
 }
 
-process.exitCode = await main();
+// Guarded so a test can import the rows without running the doctor.
+if (import.meta.main) process.exitCode = await main();

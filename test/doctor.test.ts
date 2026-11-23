@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { MuseHost } from "../src/host.js";
 import {
   hookGateRefusal,
   hooksDigest,
@@ -9,6 +10,7 @@ import {
   hooksFilePath,
   hooksFileTrusted,
 } from "../src/hooks.js";
+import { postureCheck } from "../scripts/doctor.js";
 
 /**
  * E-D12: is the doctor's output stable and secret-free?
@@ -75,6 +77,72 @@ describe("doctor --json", () => {
     expect(out).not.toContain(homedir());
     expect(out).not.toMatch(/Bearer\s+[A-Za-z0-9]/);
     expect(out).not.toMatch(/sk-[A-Za-z0-9]{8,}/);
+  });
+});
+
+/**
+ * D37: the posture row reads the host on the doctor's own connection, and says
+ * what it cannot see. These stub the connection; the live read is E-D37.
+ */
+describe("doctor posture row", () => {
+  const host = (request: () => Promise<unknown>) =>
+    ({ connection: { request } }) as unknown as MuseHost;
+  const catalog = (ids: string[]) => async () => ({ profiles: ids.map((profileId) => ({ profileId })) });
+
+  test("a sandboxed profile is ok, and the row names the catalog and the limit", async () => {
+    const row = await postureCheck(host(catalog([":read-only", ":auto-review"])), {
+      permissionState: {
+        profileId: ":auto-review",
+        axes: { filesystem: "sandboxed", network: "off", reviewer: "autoReview" },
+      },
+    });
+    expect(row.id).toBe("posture");
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain(":auto-review");
+    expect(row.detail).toContain("filesystem sandboxed, network off");
+    expect(row.detail).toContain("catalog :read-only, :auto-review");
+    expect(row.detail).toContain("not saved approvals or a managed policy");
+    // The axes fence Muse's own shell; a bridged call runs in opencode's process.
+    expect(row.detail).toContain("not the calls this plugin bridges");
+    // A `plugin.use` deny is unobservable by construction: nothing of the plugin
+    // runs, so the row can only name the shape of the failure.
+    expect(row.detail).toContain("a policy that denies this plugin cannot be seen from inside it");
+    expect(row.detail).toContain("fails as Model unavailable");
+    expect(row.remediation).toBeUndefined();
+  });
+
+  test("an unrestricted default warns, because the plugin pins no profile", async () => {
+    const row = await postureCheck(host(catalog([":unrestricted"])), {
+      permissionState: {
+        profileId: ":unrestricted",
+        axes: { filesystem: "unrestricted", network: "enabled", reviewer: "none" },
+      },
+    });
+    expect(row.status).toBe("warn");
+    expect(row.remediation).toContain(":auto-review");
+  });
+
+  test("a host that serves no state is skipped, not failed", async () => {
+    const row = await postureCheck(host(catalog([])), {});
+    expect(row.status).toBe("skipped");
+    expect(row.detail).toContain("no permissionState");
+  });
+
+  test("a refused catalog still reports the state it did read", async () => {
+    const row = await postureCheck(
+      host(async () => {
+        throw new Error("permissionProfile/list requires experimentalApi capability");
+      }),
+      {
+        permissionState: {
+          profileId: ":read-only",
+          axes: { filesystem: "sandboxed", network: "restricted", reviewer: "human" },
+        },
+      },
+    );
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain(":read-only");
+    expect(row.detail).not.toContain("catalog");
   });
 });
 
