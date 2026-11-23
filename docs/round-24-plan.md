@@ -327,6 +327,62 @@ unverified on two platforms.
 **Recommendation:** require them to be *declared* (`test.skipIf` with a reason), not
 to be equal. Equality is not the goal; visibility is.
 
+## 7a. Results (2026-11-23, branch `round-24`)
+
+**E22 — the Windows failures, named.** Run 45270085792 ran commit `972c74f`, which
+predates the hook-trust canonicalization, and its job log carries **14** failures,
+not three. Nine were POSIX fixtures, three were `hook gate` refusals fixed by
+`1efa66d`, one was a product bug (`C:\...` plugin entries read as package names;
+fixed in `scripts/doctor.ts`), one was a timing budget. Two reruns (45289611552
+and the one before it) took the count 14 → 3 → 1. The survivor is `resume after a
+watchdog kill`: with a 15 s budget it took 15.07 s and produced no turn terminal.
+Left failing on purpose — it is the only Windows row that is a code-path claim,
+and a skip would read green. Cause unnamed.
+
+**E23 — the 33 did not go anywhere; they were never published.** `.gitignore:24-26`
+keeps `test/bench.test.ts`, `test/bench-stats.test.ts` and
+`test/native-history-harness.test.ts` out of the repository (33 tests between
+them), and `test:offline` still lists all three, so `bun test` on a runner is
+given three paths that do not exist, runs the other 35 files, and exits 0. Every
+CI number is 406; the local 439 was the outlier, and the platform table now says
+which frame each number belongs to (D149). This also means a *published* test file
+that is renamed would silently disappear from CI.
+
+**E25 — bound, by a read rather than a label.** `credential` holds one active
+`opencode` row, `cred_14b22fd9b001apW4pAdrUmjbtt`, label `Default`, whose value
+contains `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; `workspace` is empty. The rename probe
+was not run because it was no longer needed — one fewer account change.
+
+**E26 — the policy could not be made.** `/policies/new` offers one target,
+"Members tagged with…", with `Add tag` disabled and "No member tags yet. Tag
+members first"; Settings → Members has no tag affordance (only View/Invite), the
+Models table has no per-model control, and there is no member page. The compile
+question is **unmeasured**, which is weaker than round 23 implied. Cleanup
+verification, read after every step: Controls "No policies yet" and "No
+reservations yet", no tag anywhere, `debug config --standalone` unchanged at one
+`document` + two `directory` sources, `opencode models` unchanged at 112 lines.
+
+**E27 — orphans, bounded by a real window.** `test/seam/windows-real.mjs` now
+samples CIM every 250 ms for 60 s after `close()`, then 20 s for two more cycles,
+and fails on anything this run started that is still alive. Run 45289291661: live
+host visible in all three cycles (`1428`, `5540`, `8844`, parent `1056` each
+time), no survivor at any sample. The claim is "none observed in the measured
+case" plus the mechanism (`anomalyco/opencode#62602`, `SILENT_BREAKAWAY_OK`).
+
+**E24 — artifacts, and what they cost.** The matrix job runs
+`check:offline -- --reporter=junit …` and uploads `junit-${{ matrix.os }}`
+(SHA-pinned `upload-artifact`). Three dispatches this round (ci/seam ×2, ci/real
+×1), about $0.57 at the round-23 rate; each artifact carries `tests="406"` and
+per-file counts, so the next count question is a download rather than a run.
+
+**D147** Windows: suite is a support claim; 405 of 406 pass, one named failure
+(fix it or keep it red — no skip). **D148** E18/D146: binding is measured, the
+compile claim is unmeasured because no policy can target this member. **D149**
+counts quote the published frame; a local number says so. **D150** orphan: none
+observed over 60 s × 1 + 20 s × 2, with the mechanism stated. **D151** the claims
+table in `platform-support.md` owns numbers; the ledger links. **D152** cadence
+unchanged; artifacts make a scheduled run diagnosable.
+
 ## 8. Definition of done
 
 - E22–E27 each recorded with command, output excerpt, and cost (turns, dispatches).

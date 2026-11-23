@@ -88,23 +88,46 @@ all 404; `/api/integration` exists but returns an empty list when no workspace i
 connected, and `/api/policies/current` appears in the binary only as a string
 (E-R22-08).
 
-**Round 23 measured the connected case, and the answer is still no.** The
-workspace `Default` (`wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`) is bound to this machine —
-`opencode auth list` stores an `OpenCode` entry labelled `Default`, the workspace
-name — and the Console reports a connected client. Disabling one model
-(`beam-free`) in that workspace, waiting past the fetch window, and re-reading
-the host changed nothing: the same one `document` and two `directory` sources, no
-Console source, and `beam-free` still listed by `opencode models --standalone`
-(111 lines). The toggle was restored to `enabled` afterwards. So a workspace
+**Round 23 measured the connected case, and the answer is still no.** Disabling
+one model (`beam-free`) in the workspace, waiting past the fetch window, and
+re-reading the host changed nothing: the same one `document` and two `directory`
+sources, no Console source, and `beam-free` still listed by `opencode models
+--standalone`. The toggle was restored to `enabled` afterwards. So a workspace
 restriction is not visible through either surface this plugin can read, and the
 no-attribution rule is measured rather than inferred.
 
-What that leaves untested is the wording of a denial: the vendor says a
+**Round 24 corrects the premise and then hits the policy surface.** Round 23's
+binding rested on a label — `auth list` prints `OpenCode  Default  stored`, and
+`Default` is also the workspace name — so it was consistent-with rather than
+measured. E25 replaced it with a direct read. `opencode debug paths db` returns
+`~/.local/share/opencode/opencode.db`; its `credential` table holds one active
+`opencode` row, `cred_14b22fd9b001apW4pAdrUmjbtt`, label `Default`, whose value
+contains `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6` (367 characters, last written
+2026-11-16), while the `workspace` table is empty. The stored token is scoped to
+that workspace, and the CLI keeps no second binding record. No rename probe was
+run and none is needed.
+
+E26 then tried to create the Providers/Tools policy that would test compilation.
+The Controls page reads "No policies yet. Every member can use all 76 enabled
+models", and `/policies/new` offers one target, "Members tagged with…", whose
+`Add tag` is disabled because no member tags exist. This build has no member page
+carrying Controls (Settings → Members offers only View and Invite), no per-model
+control on the Models table, and no tag affordance anywhere — `Tag` appears only
+as a table filter. So the changelog's hand-picked-member route is not in this
+build, a tag cannot be created to use the route that is, and a policy cannot be
+created on this account at all. The compile question is therefore **unmeasured
+rather than negative**, which is weaker than round 23 implied: a model toggle
+never tested a policy, and a policy could not be made to test. The Console was
+left exactly as found — no policy, no reservation, no tag; `debug config` still
+one `document` and two `directory` sources; `opencode models` unchanged at
+112 lines.
+
+What that leaves untested is still the wording of a denial: the vendor says a
 Console-derived denial names the workspace, while a local statement does not.
-Reproducing it needs a member tag and a Providers or Tools deny, which is a
-larger account change than a model toggle, and it would not change the doctor
-— the plugin still cannot attribute the decision it sees. E19 stays unmeasured
-with that cost stated.
+Reproducing it needs a member tag and a Providers or Tools deny; the tag half is
+not reachable in this build, so E19 stays unmeasured with that cost stated. It
+would not change the doctor either way — the plugin still cannot attribute the
+decision it sees.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
 source and a stated precedence, and `chrome://policy` can reload and show it.

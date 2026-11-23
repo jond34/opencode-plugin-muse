@@ -1,7 +1,13 @@
 # Platform support: what is tested, inferred, and unmeasured
 
 Linux is the tested surface, and macOS joined it on 2026-11-23 (run 45282185770,
-`macos-15`): 406 tests, 0 failures. The earlier cancellation was capacity, not
+`macos-15`, arm64 — the log resolves git at `/opt/homebrew/bin/git`): 406 tests,
+0 failures. That 406 is the *published* frame: a runner checks out the repo and
+runs 35 test files, while a local checkout runs 38 and reports 439, because
+`.gitignore:24-26` deliberately keeps `test/bench.test.ts`,
+`test/bench-stats.test.ts` and `test/native-history-harness.test.ts` out of the
+repository (33 tests, local-only records). Every count below says which frame it
+comes from, because comparing the two silently produced a phantom gap (D149). The earlier cancellation was capacity, not
 configuration — that job queued fifteen minutes with zero steps — and the retry
 was acquired at once. It also found a real bug: three `hook-gate` tests failed
 because `os.tmpdir()` on macOS is `/var/folders/...`, a symlink into
@@ -40,14 +46,59 @@ download; this one proves the resolver against the real thing.
 
 | Surface | Linux | macOS | Windows | Evidence |
 |---|---|---|---|---|
-| Offline suite (`bun run check:offline`) | Tested: 439 tests, 0 fail | Tested: 406 tests, 0 fail on `macos-15` (the CI subset is smaller than a local run) | Fails on path and home-directory fixtures (`the plugins row`, `the policies row`, `hook gate`). Informational by D137, and the suite's hosts are `.mjs` fixtures under node, so a pass would not exercise the CLI seam | Runs 45282185770 (macOS), 45270085792 (first dispatch); local run 2026-11-23; D126, D137 |
+| Offline suite (`bun run check:offline`) | Tested: 406 published, 0 fail; 439 in a local checkout (38 files, three of them gitignored) | Tested: 406, 0 fail on `macos-15`, arm64 | 406 published, 1 fail: `resume after a watchdog kill` never produced a turn terminal within 15 s; the other 405 pass. Not informational (D147) — the suite is a support claim on a runner, and the seam job still owns the CLI behaviour | Runs 45282185770 and 45289611552 (macOS), 45289611552 (Ubuntu and Windows), JUnit artifacts per OS; local run 2026-11-23; D126, D147 |
 | Spawn resolution | `muse` on `PATH`, tested | POSIX path: the launcher script on `PATH`; the suite passes, a real launch is unmeasured | Resolved: `MUSE_BIN`, then `muse.exe` on PATH, then `muse-bin-<version>.exe` named by `.muse-version` beside the shim, then the newest `muse-bin-*.exe`. Observed on `windows-latest` with a stub: bare name `ENOENT`, explicit `.cmd` `EINVAL`, resolved binary spawns | E11 (run 45270085792); `src/host.ts`; E-R22-01, E-R22-03 |
 | Shutdown / close | Drain, then `SIGTERM`, then `SIGKILL` | Same code path; the suite passes, no real launch | No graceful rung (Node documents `SIGTERM` as forceful there), and the SDK's Windows path is **child-only**: `ownsProcessGroup` is false on `win32` and it has no `taskkill` route. Measured on a real host (E16c): `muse serve` itself recorded `exit reason recorded: stdin_closed` and the process was gone after `close()` | `src/watchdog.ts`; E16c (run 45281586619); E-R21-07; E-D135 |
-| Orphaned process after close | Not observed | Not observed | No survivor in the measured case: a real `muse serve` was alive and visible (`8728|muse-bin-1.4.25-R9361.1.exe|8744`), `close()` returned, and three seconds later the process table held nothing. The host's own stderr says it ended on stdin EOF, which is host-side evidence rather than the runner reaping it. A stub `.cmd` under `child.kill()` did leak a grandchild (E12), and a third-party harness needed `taskkill /PID /T /F` — treat the process table as the test, not the exit code | E16c (run 45281586619); E12; E-R21-07, E-R21-08; Paseo #6193 |
+| Orphaned process after close | Not observed | Not observed | No survivor at any sample across three cycles: a real `muse serve` was alive and visible in each (`1428|muse-bin-1.4.25-R9361.1.exe|1056`, then 5540, then 8844), `close()` returned, and the process table was polled every 250 ms for 60 s, then 20 s twice, holding nothing. The host's own stderr says it ended on stdin EOF. Bounded, not a guarantee: `TerminateProcess` names one pid, libuv's job object carries `SILENT_BREAKAWAY_OK`, and `anomalyco/opencode#62602` documents the same leak class — so the claim is "none observed in the measured case", not "cannot happen". A stub `.cmd` under `child.kill()` did leak a grandchild (E12) | E16c/E27 (run 45289291661); E12; E-R21-07, E-R21-08; Paseo #6193; #62602 |
 | Token ledger mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`: Node's `chmod` changes only the write bit, and ACLs are not modeled | `src/usage-ledger.ts`; Node `fs` docs; E-D134 |
 | Hook trust-record mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`; same write-bit limit | `src/hooks.ts`; Node `fs` docs; E-D134 |
 | UAC on a headless spawn | Not applicable | Not applicable | The vendor documents a UAC prompt when the sandbox initialises; a headless spawn cannot answer it, and it surfaces 900 s later as `host_idle_timeout`, which names the wrong cause. No Windows host here | Vendor Windows list; `scripts/doctor.ts` `platform()`; E-D136 |
 | Sandbox setup inventory | Not applicable | Not applicable | Setup creates persistent local users, a group, profiles, a ProgramData root and workspace ACL/sharing changes, and issue #138 reports that none of it is disclosed before the prompt. Open upstream | E-R21-09; `meta-models/muse-code-sdk#138` |
+
+## The Windows suite, assertion by assertion (E22)
+
+The first dispatch (run 45270085792, commit `972c74f`, before the hook-trust
+canonicalization landed) reported **14** failures, not the three a truncated log
+read had suggested. Reading the job log through `gh api .../jobs/<id>/logs` —
+`gh run view --log` drops the rest of a step after any line over 64 KiB and still
+exits 0 (`cli/cli#15019`) — separated them by what they measure:
+
+- **Nine POSIX fixtures**: `the plugins row` ×2 and `the policies row` (a `/tmp`
+  source with a Windows checkout, and a home-directory fold the test spelled with
+  forward slashes), `host config` ×3 (a `0700` mode Windows ignores, and a symlink
+  a runner cannot create), `file permissions` (the same mode), `toolset
+  observation` ×2 (POSIX roots compared against a win32 `join`).
+- **Three `hook gate` refusals** — a real Windows defect *of that commit*: the
+  trust record was written under the unresolved path. `1efa66d` fixes it, and the
+  rerun passes all twenty `hook gate` tests.
+- **One product bug of its own**: a plugin entry written as an absolute Windows
+  path (`C:\...`) was read as a *package name*, so the doctor answered "this
+  checkout is not listed" for a config that listed it. Fixed in
+  `scripts/doctor.ts` by excluding `isAbsolute` entries from the package test.
+- **One timing failure**: `resume after a watchdog kill` waits for a turn
+  terminal, and a Windows cold start exceeded the budget.
+
+Three dispatches later the count is **1**: the same resume test, now given 15 s,
+took 15.07 s and produced no terminal. That is left failing rather than skipped —
+it is the only Windows row that is a code path claim rather than a fixture, and a
+skip would report it as green. Cause not yet named.
+
+## Claims, one owner each (D151)
+
+Every number in this file comes from one place. The ledger links here instead of
+restating it, which is what stops a count from drifting in three sentences.
+
+| Claim | Evidence | Run or command | Measured at | Frame |
+|---|---|---|---|---|
+| Offline suite passes on Linux | 439/0, 38 files | `bun run test:offline`, JUnit `scratch/local.xml` | 2026-11-23 | local checkout |
+| Offline suite passes on `ubuntu-latest` | 406/0, 35 files | run 45289611552, artifact `junit-ubuntu-latest` | 2026-11-23 | published checkout |
+| Offline suite passes on `macos-15` (arm64) | 406/0 | runs 45282185770, 45289611552 | 2026-11-23 | published checkout |
+| Offline suite on `windows-latest` | 405/1 | run 45289611552, artifact `junit-windows-latest` | 2026-11-23 | published checkout |
+| Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner |
+| `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner |
+| The Console credential is scoped to workspace `Default` | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, value contains `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6` | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account |
+| A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account |
+| A Console policy cannot be created here | target requires a member tag; no tag UI in this build | Console `/policies/new`, Settings → Members | 2026-11-23 | this account |
 
 ## What a Windows user is consenting to
 
@@ -75,13 +126,14 @@ which is the read a user can rely on.
 
 ## Condition that changes this record
 
-A Windows desktop, or a turn on a hosted Windows runner. The desktop questions —
-UAC, SmartScreen, the interactive sign-in — cannot be answered on a runner; one
-hour on any signed-in Windows 11 machine, with the doctor and one turn, settles
-them. The turn needs a subscription login, not an API key: `muse auth` stores
-provider keys and `src/host-config.ts` deletes `META_API_KEY` from the child
-environment, so a key would test a route the plugin does not ship (round 23,
-E16b withdrawn). Until then the honest status is "tested on Linux and macOS;
+A Windows *desktop* — and only a desktop. A hosted Windows runner cannot stand in
+for one: it cannot answer UAC or SmartScreen, cannot complete the interactive
+sign-in, and has no subscription credential to spend a turn with (`muse auth`
+stores provider keys, and `src/host-config.ts` deletes `META_API_KEY` from the
+child environment, so a key would test a route the plugin does not ship — round
+23, E16b withdrawn). One hour on any signed-in Windows 11 machine, with the
+doctor and one turn, settles the desktop questions. A runner settles only the
+suite, which is what D147 does with it. Until then the honest status is "tested on Linux and macOS;
 Windows spawn, install, configure, handshake and close measured on a hosted
 Server runner; best effort on a desktop" — not parity, and no Windows desktop
 claim.
