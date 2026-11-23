@@ -37,13 +37,17 @@ Seven findings, each with its experiment:
 
 | Doctor | Gates findings by default | Which checks are required | Skip / could-not-evaluate | Source |
 |---|---|---|---|---|
-| `codex doctor` | yes, exit 1 | rows with status `Fail`; `warn` and `idle` do not gate | reported as a row; no separate code | source (E-D92) |
+| `codex doctor` | yes, exit 1 | rows with status `Fail`; `warn` does not gate | none: every check runs, so there is no skip state | source (E-D92) |
 | `brew doctor` | yes, exit 1 | every finding (`fatal: true`); the relaxation is an internal caller | — | E-D81 |
 | `expo-doctor` | yes, exit 1 | every failed check | `Log.exit` on failure | source (E-D93) |
 | `ripr doctor` | yes, exit 2 | required checks; optional probes stay advisory | 2; `check` is advisory by contract | docs (E-D94) |
 | `flutter doctor` | warning status on issues | `diagnose()` returning false | — | source (E-D96) |
 | Vue Doctor | no | none by default; `--fail-on` / `--min-score` opt in | `--strict` → exit 3 | docs (E-D90) |
 | `claude doctor` | no, always 0 | none | always 0 | measured (E-D91) |
+
+> Round 18 §1 re-read the source: `CheckStatus` has three values and no skip
+> state, and the header adopts the PATH rule with two named exceptions. The codex
+> row above is the corrected one (E-D100, E-D101).
 
 Four gate, two do not, one uncounted. The round-15 objection — "the doctor class
 splits against gating" — came from a set that omitted `codex doctor`, `expo-doctor`
@@ -53,9 +57,12 @@ and `ripr doctor` and counted only brew against Vue and claude.
 disagrees about *what is required*. `codex doctor` is the sharpest case: it has the
 same rows this doctor has (installation, config, auth, runtime, state), it prints
 `warn` for anomalies, and it exits 1 only on `Fail` — the narrow gate, in the tool
-whose charter `scripts/doctor.ts` copies line for line, including "PATH entries are
-untrusted data: checks may inspect them, but must not execute the programs they
-select" (E-D92). `ripr doctor` draws the same line between required checks and
+whose charter `scripts/doctor.ts` adopts. The rule is one sentence: "PATH entries
+are untrusted data: checks may inspect them, but must not execute the programs they
+select." The header then names the two exceptions — `muse` for the host probe and
+`opencode` for the plugin entries, "which no other surface answers" — because the
+literal rule would forbid the host probe this tool exists to run. The amendment is
+the evidence the charter is operative, not a copy (E-D101). `ripr doctor` draws the same line between required checks and
 advisory probes. Brew is the counter-lesson about *width*: it gates every finding
 and then tells you to ignore them, which is why the narrow set matters.
 
@@ -197,7 +204,7 @@ and round-16 records respectively.
 |---|---|---|
 | E-D90 | What are Vue Doctor's documented defaults and codes? | `--fail-on none`, `--gate all`, `--min-score` opt-in, `--strict` → 3; exit 0/1/2/3; `--offline` is network-only. Cited from the CLI reference. |
 | E-D91 | Does `claude doctor` gate, and what does it say about a bad settings file? | Exit 0 in every case on 2.1.237 and 2.1.299; byte-identical output for a misspelt key; names malformed JSON and wrong types, never changes the code. Two independent measured write-ups. |
-| E-D92 | Does `codex doctor` gate? | Yes, exit 1 iff `overall_status == CheckStatus::Fail`; `warn` does not gate; read-mostly charter; PATH entries inspected, never executed. Source. |
+| E-D92 | Does `codex doctor` gate, and what is its status model? | Yes, exit 1 iff `overall_status == CheckStatus::Fail`; `CheckStatus` has three values — `Ok`, `Warning`, `Fail` — and no skip state, because every check runs; `warn` never gates. `--json` carries `schema_version`, `generated_at`, `overall_status`, `codex_version`. Read-mostly charter; PATH entries inspected, never executed. Source. |
 | E-D93 | Does `expo-doctor` gate? | Yes; `Log.exit` when any check fails, and the maintainer calls the non-zero exit intentional. Source and issue. |
 | E-D94 | What does `ripr` do? | `check` advisory (0 with findings); `gate evaluate` 2 on block; `doctor` 0/2; the swarm variant adds 3 for a blocking decision. Docs. |
 | E-D95 | What does alint's 2 mean? | Its own config or usage; 3 is its internal error. Docs. |
