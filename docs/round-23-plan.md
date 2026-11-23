@@ -344,9 +344,20 @@ reproduced locally with a symlinked `TMPDIR`, and the retry (45282185770) passed
 subscription lives in `auth.json`, which the plugin links in and whose sibling
 env var it deletes. No secret was created.
 
-**E18, E19, E21 — blocked, not attempted.** All three need the owner: a Console
-workspace, a policy, and a `user`-scoped `gh` token. The Console cell stays
-unmeasured.
+**E21 — allowance is nowhere near the limit.** The documented route is gone:
+`users/{u}/settings/billing/actions` and `.../shared-storage` both return **410
+This endpoint has been moved** (2026-11-23). The live one is
+`users/{u}/settings/billing/usage?year=&month=`, which reports per-SKU quantity
+and a gross/net split. November 2026 for this repo: 11 Linux minutes ($0.066),
+6 Windows ($0.060), 1 macOS ($0.062) — gross $0.188, **net $0.00**. Across all
+repos: gross $3.84, net $0.00. Nothing has left the allowance, so a scheduled
+monthly matrix (≈$0.20) is affordable; weekly macOS runs would be about $1 a
+month. **D145: schedule monthly once the workflow is on the default branch** —
+a `schedule:` trigger only fires from the default branch, so this cannot be
+added today.
+
+**E18, E19 — still blocked.** Both need a Console workspace and a policy, which
+is an owner action; the Console cell stays unmeasured.
 
 Checks actually run: `npm run build`; `bun run check:offline` (439 tests, 38
 files, 0 fail); `bun test test/hook-gate.test.ts` under a symlinked `TMPDIR`
