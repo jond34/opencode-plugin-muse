@@ -330,10 +330,13 @@ to be equal. Equality is not the goal; visibility is.
 ## 7a. Results (2026-11-23, branch `round-24`)
 
 **E22 — the Windows failures, named.** Run 45270085792 ran commit `972c74f`, which
-predates the hook-trust canonicalization, and its job log carries **14** failures,
-not three. Nine were POSIX fixtures, three were `hook gate` refusals fixed by
-`1efa66d`, one was a product bug (`C:\...` plugin entries read as package names;
-fixed in `scripts/doctor.ts`), one was a timing budget. Two reruns (45289611552
+predates the hook-trust canonicalization, and its job log (job `138027278561`)
+carries **13** failures, not three: 391 pass, 2 skip, 13 fail. Recounted from the
+job's own summary block on 2026-11-23: 7 POSIX fixtures, 3 `hook gate` refusals
+fixed by `1efa66d`, 2 from a product bug (`C:\...` plugin entries read as package
+names; fixed in `scripts/doctor.ts`), 1 timing budget. The earlier "14" in this
+file was a hand count and is corrected here; `docs/evidence-audit.md` F1 records
+why. Two reruns (45289611552
 and the one before it) took the count 14 → 3 → 1. The survivor is `resume after a
 watchdog kill`: with a 15 s budget it took 15.07 s and produced no turn terminal.
 Left failing on purpose — it is the only Windows row that is a code-path claim,

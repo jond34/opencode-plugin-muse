@@ -58,23 +58,26 @@ download; this one proves the resolver against the real thing.
 ## The Windows suite, assertion by assertion (E22)
 
 The first dispatch (run 45270085792, commit `972c74f`, before the hook-trust
-canonicalization landed) reported **14** failures, not the three a truncated log
-read had suggested. Reading the job log through `gh api .../jobs/<id>/logs` —
+canonicalization landed) reported **13** failures (job `138027278561`: 391 pass,
+2 skip, 13 fail), not the three a truncated log read had suggested. Reading the job log through `gh api .../jobs/<id>/logs` —
 `gh run view --log` drops the rest of a step after any line over 64 KiB and still
 exits 0 (`cli/cli#15019`) — separated them by what they measure:
 
-- **Nine POSIX fixtures**: `the plugins row` ×2 and `the policies row` (a `/tmp`
-  source with a Windows checkout, and a home-directory fold the test spelled with
-  forward slashes), `host config` ×3 (a `0700` mode Windows ignores, and a symlink
-  a runner cannot create), `file permissions` (the same mode), `toolset
-  observation` ×2 (POSIX roots compared against a win32 `join`).
+- **Seven POSIX fixtures**: `the policies row` (a home-directory fold the test
+  spelled with forward slashes), `host config` ×3 (a `0700` mode Windows ignores,
+  a symlink a runner cannot create, and a POSIX literal compared against a win32
+  path), `file permissions` (the same mode), `toolset observation` ×2 (POSIX roots
+  compared against a win32 `join`).
 - **Three `hook gate` refusals** — a real Windows defect *of that commit*: the
   trust record was written under the unresolved path. `1efa66d` fixes it, and the
   rerun passes all twenty `hook gate` tests.
-- **One product bug of its own**: a plugin entry written as an absolute Windows
+- **Two, from one product bug**: a plugin entry written as an absolute Windows
   path (`C:\...`) was read as a *package name*, so the doctor answered "this
-  checkout is not listed" for a config that listed it. Fixed in
-  `scripts/doctor.ts` by excluding `isAbsolute` entries from the package test.
+  checkout is not listed" for a config that listed it, and the two-copies case
+  compared package against package. Fixed in `scripts/doctor.ts` by excluding
+  `isAbsolute` entries from the package test; both `the plugins row` cases pass
+  now without a fixture change, which is how the bug was found rather than
+  argued.
 - **One timing failure**: `resume after a watchdog kill` waits for a turn
   terminal, and a Windows cold start exceeded the budget.
 
@@ -96,7 +99,7 @@ restating it, which is what stops a count from drifting in three sentences.
 | Offline suite on `windows-latest` | 405/1 | run 45289611552, artifact `junit-windows-latest` | 2026-11-23 | published checkout |
 | Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner |
 | `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner |
-| The Console credential is scoped to workspace `Default` | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, value contains `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6` | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account |
+| The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account |
 | A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account |
 | A Console policy cannot be created here | target requires a member tag; no tag UI in this build | Console `/policies/new`, Settings → Members | 2026-11-23 | this account |
 
