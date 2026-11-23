@@ -55,6 +55,12 @@ argument about width, not about polarity.
 
 ## 2. The survey, with the axis that predicts
 
+> Round 16 §1 corrects the axis this section uses. "Who authors the severity" is a
+> proxy: `rustc` is a counterexample, because its own default lints (`dead_code`,
+> `unused_import`) exit 0. The rule that survives is that a finding gates when it
+> means a declaration the user made is not in force; the tally below still fits, but
+> the reason is that property, not authorship.
+
 | Tool | Contract | Who authors the severity | Gates by default |
 |---|---|---|---|
 | `nginx -t` | non-zero on a config error | the tool | yes |

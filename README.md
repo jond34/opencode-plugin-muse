@@ -521,11 +521,11 @@ file (`config`), when a policy statement was dropped (`policies` warns), or when
 own denies are not in force, which is the failure rounds 11–14 kept finding. The
 rows about the machine and the install (`host` schema drift, `plugins` naming the
 published build) stay advisory, because they warn on a checkout that works.
-`--no-strict` reports only: 1 for a `fail` and nothing else. `--strict` adds the one
-case the default exempts, a run told not to look, so `--offline` exits 0 by default
-and 1 with `--strict`. A machine without the host, a CI runner, exits 1 by default
-because the gate cannot certify a config it never read; pass `--offline` when there
-is nothing to check, or `--no-strict` for the report alone.
+`--no-strict` reports only: 1 for a `fail` and nothing else. `--offline` does not
+look, so the gate cannot certify what it did not read and the run exits 1; add
+`--no-strict` for the report alone. A machine without the host, a CI runner, exits
+1 by default for the same reason — pass `--no-strict` when there is nothing to
+check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
