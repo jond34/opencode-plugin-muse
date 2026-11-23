@@ -28,13 +28,16 @@ from a version that was not run.
 
 The drop is local-visible and remote-silent. A statement that fails validation is
 removed before `opencode debug config` prints the document, so the warning exists
-only in the server log (E-D58, E-D59: three declared printed one; a duplicate
-statement and `experimental.policies` both survive the print). The doctor reads
-that log rather than the file (E-D62–E-D65): its `policies` row reports each
-diagnostic for a config file this run read, by pointer and action, and says `ok`
-only when the log named one of those files and reported no drop. A file the host
-refuses is absent from `debug config` entirely, so a separate `config` row
-reports it once (E-D64). A Console-delivered policy
+only in the host's log output (E-D58, E-D59: three declared printed one; a
+duplicate statement and `experimental.policies` both survive the print). The
+doctor reads that output rather than the file (E-D62–E-D65): it spawns
+`opencode --print-logs debug config`, so the diagnostics arrive on its own
+stderr, and its `policies` row reports each one by pointer and action, saying
+`ok` only when the stream carried a structured log line and reported no drop
+(E-D70; empty output is `skipped`, never `ok`). A file the host refuses is absent
+from `debug config` entirely, so a separate `config` row reports it once
+(E-D64). Because attribution is the stream and not a list of paths, a rejected
+file in any ancestor directory the host walked is reported as well (E-D66). A Console-delivered policy
 is decoded remotely, where unknown actions and effects are filtered without a
 diagnostic (`anomalyco/opencode#60252`, open) — nothing here can observe that
 path.
