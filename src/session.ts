@@ -380,6 +380,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   /** The clocks for the running turn, and whose turn they belong to. */
   private watchdog: TurnWatchdog | null = null;
   private watchdogTurnId: string | null = null;
+  /** Requests the host has sent that this side has not answered yet. */
+  private bridgePending = 0;
   private sessionInfo: HarnessSessionInfo;
   /**
    * How this session's native id was obtained. A resume that fell back to a
@@ -447,8 +449,14 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       });
     }
     const commandId = host.connection.mintCommandId();
+    // The listener is assigned once the session exists: the host cannot call a
+    // tool before `session/start` is answered, and a call that arrives during
+    // construction is caught by the seed in `armWatchdog`.
+    let bridgeListener: ((pending: number, label?: string) => void) | undefined;
     const bridgeServer = input.toolBridge
-      ? await startToolBridgeServer(input.toolBridge)
+      ? await startToolBridgeServer(input.toolBridge, {
+          onPendingChange: (pending, label) => bridgeListener?.(pending, label),
+        })
       : undefined;
     // `SessionConfig` is open: `mcpServers` and `developerPrompt` share it on
     // both start and resume. A blank developer prompt is the explicit clear and
@@ -557,6 +565,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       bridgeServer,
       resumeOutcome,
     );
+    bridgeListener = (pending, label) => created.noteBridgePending(pending, label);
     host.registerSink(created);
     created.emit({ type: "session.updated", session: created.info });
     return created;
@@ -886,6 +895,65 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         ),
       onExpire: (reason) => this.onWatchdogExpire(turnId, reason, config),
     });
+    // A call may already be in flight when the turn is admitted (the host can
+    // ask for a tool before `turn/start` returns), and that call is not silence.
+    if ((this.bridgeServer?.pending ?? this.bridgePending) > 0) {
+      this.watchdog.setBridgePending(true);
+    }
+  }
+
+  /**
+   * The host is backing off between model attempts. Extend the idle clock by
+   * the delay it named, and say which attempt this is: a retry that repeats
+   * forever is a different problem from a host that went silent.
+   */
+  private noteModelRetry(params: unknown): void {
+    const retry = (params ?? {}) as {
+      attempt?: unknown;
+      maxAttempts?: unknown;
+      retryDelayMs?: unknown;
+      errorKind?: unknown;
+    };
+    const delayMs = typeof retry.retryDelayMs === "number" ? retry.retryDelayMs : 0;
+    this.watchdog?.noteRetry(delayMs);
+    if (typeof retry.attempt === "number") {
+      const ceiling =
+        typeof retry.maxAttempts === "number" ? `/${retry.maxAttempts}` : "";
+      const kind = typeof retry.errorKind === "string" ? ` (${retry.errorKind})` : "";
+      console.warn(
+        `[opencode-muse] model retry ${retry.attempt}${ceiling} in ${delayMs} ms${kind}; the turn is still running`,
+      );
+    }
+  }
+
+  /**
+   * A bridged call started or settled. The idle clock follows the phase, and
+   * the host is told what the session is waiting on so a client can show it
+   * instead of silence. The declaration is live-only (a restart, resume, or
+   * the next user input ends it), which is exactly the lifetime of a call.
+   */
+  noteBridgePending(pending: number, label?: string): void {
+    const was = this.bridgePending;
+    this.bridgePending = pending;
+    this.watchdog?.setBridgePending(pending > 0);
+    if (was === 0 && pending > 0) this.declareExternalWait(label);
+    else if (was > 0 && pending === 0) this.clearExternalWait();
+  }
+
+  /** Best-effort: a status signal must never be the reason a turn fails. */
+  private declareExternalWait(label: string | undefined): void {
+    void this.host.connection
+      .command("session/declareExternalWait", {
+        sessionId: this.nativeId,
+        ...(label === undefined ? {} : { reason: label }),
+      })
+      .catch(() => undefined);
+  }
+
+  private clearExternalWait(): void {
+    void this.host.connection
+      .command("session/clearExternalWait", { sessionId: this.nativeId })
+      .catch(() => undefined);
   }
 
   private stopWatchdog(): void {
@@ -904,12 +972,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
    */
   private onWatchdogExpire(
     turnId: string,
-    reason: "first_byte" | "idle",
-    config: { firstByteMs: number; idleMs: number },
+    reason: "first_byte" | "idle" | "tool_ceiling",
+    config: { firstByteMs: number; idleMs: number; toolCeilingMs?: number },
   ): void {
     this.watchdog = null;
     this.watchdogTurnId = null;
-    const budget = reason === "first_byte" ? config.firstByteMs : config.idleMs;
+    const budget =
+      reason === "first_byte"
+        ? config.firstByteMs
+        : reason === "idle"
+          ? config.idleMs
+          : (config.toolCeilingMs ?? 0);
     const active = this.turns.get(turnId);
     // An admitted turn whose `turn/started` never arrived is still a turn
     // opencode is waiting on, so it must get its terminal rather than be
@@ -924,7 +997,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       message:
         reason === "first_byte"
           ? `Muse sent no frame within ${budget} ms; the host was ended and the turn failed`
-          : `Muse sent no frame for ${budget} ms after starting; the host was ended and the turn failed`,
+          : reason === "tool_ceiling"
+            ? `a bridged tool call was still running after ${budget} ms; the host was ended and the turn failed`
+            : `Muse sent no frame for ${budget} ms after starting; the host was ended and the turn failed`,
     });
     this.retireTurn(turnId, failure);
     void this.endWedgedHost(this.nativeTurnId(turnId) ?? turnId);
@@ -1297,6 +1372,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     // Arrival is what the clocks measure. Only a substantive frame counts, so
     // keepalives and usage echoes cannot make a wedged turn look alive.
     this.watchdog?.touch(isSubstantiveProgress(notification.method));
+    if (notification.method === "turn/modelRetryScheduled") {
+      this.noteModelRetry(notification.params);
+    }
     // Splice-fill: a page may only be replayed in view order, so live frames
     // wait for the fill to finish rather than overtaking it. A second gap is
     // queued by `onViewGap` instead, since it starts its own fill.

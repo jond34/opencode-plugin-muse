@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HarnessEvent } from "../src/contract/index.js";
+import type { HarnessEvent, HarnessToolBridge } from "../src/contract/index.js";
 import { MuseHarnessSession, type SessionHost } from "../src/session.js";
 import {
   createTurnWatchdog,
@@ -46,6 +46,7 @@ describe("watchdog clocks", () => {
       "item/completed",
       "approval/requested",
       "userInput/requested",
+      "turn/modelRetryScheduled",
     ]) {
       expect(isSubstantiveProgress(method)).toBe(true);
     }
@@ -160,6 +161,54 @@ describe("watchdog clocks", () => {
     expect(expired).toBe(false);
   });
 
+  test("a pending bridge call suspends the idle clock and resumes it", async () => {
+    const expiries: string[] = [];
+    const watchdog = createTurnWatchdog({
+      firstByteMs: 0,
+      idleMs: 20,
+      warnMs: 0,
+      onExpire: (reason) => expiries.push(reason),
+    });
+    watchdog.touch(true);
+    watchdog.setBridgePending(true);
+    // Longer than the idle budget: the silence belongs to our tool, not the host.
+    await sleep(60);
+    expect(expiries).toHaveLength(0);
+    watchdog.setBridgePending(false);
+    await sleep(60);
+    expect(expiries).toEqual(["idle"]);
+  });
+
+  test("a retry extends the idle clock by the delay the host reported", async () => {
+    const expiries: string[] = [];
+    const watchdog = createTurnWatchdog({
+      firstByteMs: 0,
+      idleMs: 20,
+      warnMs: 0,
+      retryCapMs: 600_000,
+      onExpire: (reason) => expiries.push(reason),
+    });
+    watchdog.touch(true);
+    watchdog.noteRetry(100);
+    await sleep(60);
+    expect(expiries).toHaveLength(0);
+    watchdog.stop();
+  });
+
+  test("the tool ceiling is off unless it is configured", async () => {
+    const expiries: string[] = [];
+    const watchdog = createTurnWatchdog({
+      firstByteMs: 0,
+      idleMs: 0,
+      warnMs: 0,
+      onExpire: (reason) => expiries.push(reason),
+    });
+    watchdog.setBridgePending(true);
+    await sleep(50);
+    expect(expiries).toHaveLength(0);
+    watchdog.stop();
+  });
+
   test("a late frame cannot revive an expired turn", async () => {
     let calls = 0;
     const watchdog = createTurnWatchdog({
@@ -215,6 +264,370 @@ async function collect(session: MuseHarnessSession): Promise<HarnessEvent[]> {
   })();
   return events;
 }
+
+/**
+ * E-D13: a bridged call is the host waiting on *us*, so it is not silence.
+ *
+ * The fake host receives the real bridge URL in `session/start` and posts a real
+ * `tools/call` to it over loopback, which is the same request Muse's own MCP
+ * client makes. The tool then parks, which is what a long build looks like from
+ * this side of the bridge.
+ */
+function bridgeHost(
+  onTurnStart: (server: { url: string; headers: Record<string, string> }) => void,
+  options: { rejectWaits?: boolean } = {},
+): { host: SessionHost; steps: string[]; commands: Array<Record<string, unknown>> } {
+  const steps: string[] = [];
+  const commands: Array<Record<string, unknown>> = [];
+  let counter = 0;
+  let started: Record<string, unknown> = {};
+  const host: SessionHost = {
+    connection: {
+      mintCommandId: () => `cmd-${counter++}`,
+      command: async (method: string, params?: Record<string, unknown>) => {
+        steps.push(method);
+        commands.push({ method, ...(params ?? {}) });
+        if (
+          options.rejectWaits === true &&
+          (method === "session/declareExternalWait" || method === "session/clearExternalWait")
+        ) {
+          throw new Error("method not found");
+        }
+        if (method === "session/start") {
+          started = params ?? {};
+          return { session: { sessionId: "native-1" } };
+        }
+        if (method === "turn/start") {
+          const config = (started.config ?? {}) as {
+            mcpServers?: Record<string, { url?: string; headers?: Record<string, string> }>;
+          };
+          const server = config.mcpServers?.opencode;
+          if (server?.url !== undefined) {
+            // After the ack, so the turn is admitted before the call arrives.
+            setTimeout(() => onTurnStart({ url: server.url as string, headers: server.headers ?? {} }), 10);
+          }
+          return { turnId: "native-turn-1", startedNewTurn: true };
+        }
+        if (method === "turn/interrupt") return new Promise(() => {});
+        return {};
+      },
+    },
+    registerSink: () => {},
+    unregisterSink: () => {},
+    close: async () => {
+      steps.push("host.close");
+    },
+  };
+  return { host, steps, commands };
+}
+
+function parkedBridge(): { bridge: HarnessToolBridge; calls: () => number; release: () => void } {
+  let calls = 0;
+  let release: (() => void) | undefined;
+  const bridge: HarnessToolBridge = {
+    listTools: () => [
+      { name: "bash", description: "run a command", inputSchema: { type: "object" } },
+    ],
+    callTool: () => {
+      calls += 1;
+      return new Promise((resolve) => {
+        release = () => resolve({ content: [{ type: "text", text: "done" }] });
+      });
+    },
+  };
+  return {
+    bridge,
+    calls: () => calls,
+    release: () => release?.(),
+  };
+}
+
+describe("a turn waiting on a bridged tool", () => {
+  test("a call longer than the idle window does not fail the turn", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "60";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-bridge-"));
+    const { host } = bridgeHost((server) => {
+      void fetch(server.url, {
+        method: "POST",
+        headers: { ...server.headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 7,
+          method: "tools/call",
+          params: { name: "bash", arguments: { command: "npm test" } },
+        }),
+      }).catch(() => undefined);
+    });
+    const parked = parkedBridge();
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc",
+      cwd: root,
+      toolBridge: parked.bridge,
+    });
+    const events = await collect(session);
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    // One frame proves the stream opened; the idle clock is the one at issue.
+    session.handleNotification({ method: "item/delta", params: { sessionId: "native-1" } } as never);
+    await sleep(250);
+
+    expect(parked.calls()).toBe(1);
+    expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(0);
+    expect(session.hostExited).toBe(false);
+
+    parked.release();
+    await sleep(60);
+    expect(session.hostExited).toBe(false);
+    await session.close();
+  }, 10_000);
+
+  test("a host that dies during a bridged call fails the turn as host death", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "1000";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-bridge-"));
+    const { host } = bridgeHost((server) => {
+      void fetch(server.url, {
+        method: "POST",
+        headers: { ...server.headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "bash", arguments: {} },
+        }),
+      }).catch(() => undefined);
+    });
+    const parked = parkedBridge();
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc",
+      cwd: root,
+      toolBridge: parked.bridge,
+    });
+    const events = await collect(session);
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    // An announced turn is one opencode is waiting on, so its death is reported.
+    session.handleNotification({
+      method: "turn/started",
+      params: { sessionId: "native-1", turnId: "native-turn-1" },
+    } as never);
+    await sleep(60);
+    expect(parked.calls()).toBe(1);
+    session.handleHostExit();
+    await sleep(30);
+    const terminal = events.find((event) => event.type === "turn.terminal");
+    expect(terminal && "failure" in terminal ? terminal.failure?.code : undefined).toBe(
+      "event_stream_failed",
+    );
+  }, 10_000);
+
+  test("an optional ceiling still bounds a tool that never returns", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "1000";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    process.env.MUSE_TOOL_CEILING_MS = "40";
+    try {
+      const root = await mkdtemp(join(tmpdir(), "muse-bridge-"));
+      const { host } = bridgeHost((server) => {
+        void fetch(server.url, {
+          method: "POST",
+          headers: { ...server.headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 8,
+            method: "tools/call",
+            params: { name: "bash", arguments: {} },
+          }),
+        }).catch(() => undefined);
+      });
+      const parked = parkedBridge();
+      const session = await MuseHarnessSession.create(host, {
+        sessionId: "oc",
+        cwd: root,
+        toolBridge: parked.bridge,
+      });
+      const events = await collect(session);
+      await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+      session.handleNotification({ method: "item/delta", params: { sessionId: "native-1" } } as never);
+      await sleep(200);
+      const terminal = events.find((event) => event.type === "turn.terminal");
+      expect(terminal && "failure" in terminal ? terminal.failure?.message : undefined).toContain(
+        "bridged tool call",
+      );
+    } finally {
+      delete process.env.MUSE_TOOL_CEILING_MS;
+    }
+  }, 10_000);
+});
+
+/**
+ * E-D14: a provider retry is the host saying "I am backing off", not silence.
+ * The wire carries `turn/modelRetryScheduled` with the delay the host chose, so
+ * the clock can be extended from a durable fact rather than guessed.
+ */
+describe("provider retries", () => {
+  function retryFrame(delayMs: number): never {
+    return {
+      method: "turn/modelRetryScheduled",
+      params: {
+        sessionId: "native-1",
+        turnId: "native-turn-1",
+        attempt: 1,
+        maxAttempts: 5,
+        retryDelayMs: delayMs,
+        errorKind: "rate_limit",
+        httpStatus: 429,
+      },
+    } as never;
+  }
+
+  test("a retry longer than the idle window does not fail the turn", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "50";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-retry-"));
+    const { host } = wedgedHost();
+    const session = await MuseHarnessSession.create(host, { sessionId: "oc", cwd: root });
+    const events = await collect(session);
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    session.handleNotification({
+      method: "turn/started",
+      params: { sessionId: "native-1", turnId: "native-turn-1" },
+    } as never);
+    session.handleNotification(retryFrame(200));
+    await sleep(150);
+    session.handleNotification({
+      method: "item/delta",
+      params: { sessionId: "native-1", turnId: "native-turn-1", itemId: "i", delta: { type: "text", text: "x" } },
+    } as never);
+    session.handleNotification({
+      method: "turn/completed",
+      params: { sessionId: "native-1", turnId: "native-turn-1", terminal: "completed" },
+    } as never);
+    await sleep(30);
+    const terminal = events.find((event) => event.type === "turn.terminal");
+    expect(terminal && "failure" in terminal ? terminal.failure : "none").toBeNull();
+    expect(session.hostExited).toBe(false);
+    await session.close();
+  }, 10_000);
+
+  test("the extension is capped, so a retry storm still ends", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "50";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    process.env.MUSE_RETRY_CAP_MS = "80";
+    try {
+      const root = await mkdtemp(join(tmpdir(), "muse-retry-"));
+      const { host } = wedgedHost();
+      const session = await MuseHarnessSession.create(host, { sessionId: "oc", cwd: root });
+      const events = await collect(session);
+      await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+      session.handleNotification({
+        method: "turn/started",
+        params: { sessionId: "native-1", turnId: "native-turn-1" },
+      } as never);
+      session.handleNotification(retryFrame(200));
+      await sleep(200);
+      const terminal = events.find((event) => event.type === "turn.terminal");
+      expect(terminal && "failure" in terminal ? terminal.failure?.code : undefined).toBe(
+        "host_idle_timeout",
+      );
+    } finally {
+      delete process.env.MUSE_RETRY_CAP_MS;
+    }
+  }, 10_000);
+});
+
+/**
+ * E-D15: the wait is declared on the session while a bridged call runs, so a
+ * client can show "waiting on bash" instead of silence. The live probe proved
+ * the host serves `externalWait`; this pins when the plugin sends the pair.
+ */
+describe("declaring the wait", () => {
+  test("a bridged call is declared once and cleared when it settles", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "1000";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-wait-"));
+    const { host, commands } = bridgeHost((server) => {
+      void fetch(server.url, {
+        method: "POST",
+        headers: { ...server.headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: { name: "bash", arguments: { command: "npm test" } },
+        }),
+      }).catch(() => undefined);
+    });
+    const parked = parkedBridge();
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc",
+      cwd: root,
+      toolBridge: parked.bridge,
+    });
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    await sleep(80);
+    expect(parked.calls()).toBe(1);
+    const declares = commands.filter((row) => row.method === "session/declareExternalWait");
+    expect(declares).toHaveLength(1);
+    expect(declares[0]?.reason).toBe("bash: npm test");
+
+    parked.release();
+    await sleep(80);
+    const clears = commands.filter((row) => row.method === "session/clearExternalWait");
+    expect(clears).toHaveLength(1);
+    expect(declares).toHaveLength(1);
+    await session.close();
+  }, 10_000);
+
+  test("a host that rejects the declaration does not fail the turn", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "1000";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-wait-"));
+    const { host, steps } = bridgeHost(
+      (server) => {
+        void fetch(server.url, {
+          method: "POST",
+          headers: { ...server.headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 12,
+            method: "tools/call",
+            params: { name: "bash", arguments: {} },
+          }),
+        }).catch(() => undefined);
+      },
+      { rejectWaits: true },
+    );
+    const parked = parkedBridge();
+    const session = await MuseHarnessSession.create(host, {
+      sessionId: "oc",
+      cwd: root,
+      toolBridge: parked.bridge,
+    });
+    const events = await collect(session);
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    session.handleNotification({
+      method: "turn/started",
+      params: { sessionId: "native-1", turnId: "native-turn-1" },
+    } as never);
+    await sleep(80);
+    expect(steps).toContain("session/declareExternalWait");
+    parked.release();
+    session.handleNotification({
+      method: "turn/completed",
+      params: { sessionId: "native-1", turnId: "native-turn-1", terminal: "completed" },
+    } as never);
+    await sleep(40);
+    const terminal = events.find((event) => event.type === "turn.terminal");
+    expect(terminal && "failure" in terminal ? terminal.failure : "none").toBeNull();
+    await session.close();
+  }, 10_000);
+});
 
 describe("the abort ladder", () => {
   test("an idle turn fails as a timeout, interrupts, then closes the host", async () => {

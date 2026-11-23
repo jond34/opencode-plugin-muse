@@ -18,7 +18,21 @@ export interface ToolBridgeServer {
   readonly token: string;
   /** The MCP session id issued at initialize. */
   readonly sessionId: string | null;
+  /** Requests the host has sent and this side has not answered yet. */
+  readonly pending: number;
   close(): Promise<void>;
+}
+
+/** Optional hooks for the server's caller. */
+export interface ToolBridgeServerOptions {
+  /**
+   * Called when a `tools/call` starts or settles. `pending` is the number of
+   * tool calls in flight; `label` is the tool and its first string argument,
+   * and is present only when a call starts. The session uses it to stand the
+   * idle clock down (that silence is ours, not the host's) and to declare the
+   * wait on the session.
+   */
+  readonly onPendingChange?: (pending: number, label?: string) => void;
 }
 
 /** The MCP server name this bridge is declared under in `mcpServers`. */
@@ -48,7 +62,32 @@ function readBody(request: IncomingMessage, maxBytes = 8 * 1024 * 1024): Promise
   });
 }
 
-type InFlight = Map<string, { controller: AbortController; response: ServerResponse }>;
+type InFlight = Map<
+  string,
+  { controller: AbortController; response: ServerResponse; tool?: string }
+>;
+
+/** How many `tools/call` requests this side still owes an answer. */
+function toolCalls(inFlight: InFlight): number {
+  let count = 0;
+  for (const entry of inFlight.values()) if (entry.tool !== undefined) count += 1;
+  return count;
+}
+
+/**
+ * A short label for the wait: the tool's own name plus its first string
+ * argument, which is what a person needs to recognise the call.
+ */
+function toolLabel(name: string, args: unknown): string {
+  const normalized = normalizeToolName(name);
+  const first =
+    args !== null && typeof args === "object" && !Array.isArray(args)
+      ? Object.values(args as Record<string, unknown>).find(
+          (value): value is string => typeof value === "string" && value.trim().length > 0,
+        )
+      : undefined;
+  return first === undefined ? normalized : `${normalized}: ${first.trim().slice(0, 60)}`;
+}
 
 async function handleMessage(
   message: Record<string, unknown>,
@@ -172,7 +211,10 @@ async function handleMessage(
  * The endpoint is bound to 127.0.0.1 on an ephemeral port and protected by a
  * random bearer token, so it cannot be reached or guessed by another session.
  */
-export async function startToolBridgeServer(bridge: HarnessToolBridge): Promise<ToolBridgeServer> {
+export async function startToolBridgeServer(
+  bridge: HarnessToolBridge,
+  options: ToolBridgeServerOptions = {},
+): Promise<ToolBridgeServer> {
   const token = randomBytes(32).toString("hex");
   let mcpSessionId: string | null = null;
   let issuedSessionId: string | null = null;
@@ -183,7 +225,7 @@ export async function startToolBridgeServer(bridge: HarnessToolBridge): Promise<
       mcpSessionId = value;
     }, () => issuedSessionId, (value) => {
       issuedSessionId = value;
-    }, inFlight);
+    }, inFlight, options.onPendingChange);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -199,6 +241,9 @@ export async function startToolBridgeServer(bridge: HarnessToolBridge): Promise<
     token,
     get sessionId() {
       return issuedSessionId;
+    },
+    get pending() {
+      return toolCalls(inFlight);
     },
     close: () =>
       new Promise<void>((resolve) => {
@@ -218,6 +263,7 @@ async function handleRequest(
   getIssued: () => string | null,
   setIssued: (value: string) => void,
   inFlight: InFlight,
+  onPendingChange?: (pending: number, label?: string) => void,
 ): Promise<void> {
   if (request.method === "GET") {
     // The streamable-HTTP transport may open a server-to-client SSE stream.
@@ -264,7 +310,15 @@ async function handleRequest(
       ? String(message.id)
       : undefined;
   const controller = new AbortController();
-  if (key !== undefined) inFlight.set(key, { controller, response });
+  const params = (message.params ?? {}) as Record<string, unknown>;
+  const label =
+    message.method === "tools/call" && typeof params.name === "string"
+      ? toolLabel(params.name, params.arguments)
+      : undefined;
+  if (key !== undefined) {
+    inFlight.set(key, label === undefined ? { controller, response } : { controller, response, tool: label });
+    if (label !== undefined) onPendingChange?.(toolCalls(inFlight), label);
+  }
   // A dropped POST is a cancellation too (streamable HTTP, 2026-07-28): the
   // client closes the connection instead of sending a notification.
   response.on("close", () => {
@@ -278,7 +332,11 @@ async function handleRequest(
     controller.signal,
     inFlight,
   );
-  if (key !== undefined) inFlight.delete(key);
+  if (key !== undefined) {
+    const settled = inFlight.get(key);
+    inFlight.delete(key);
+    if (settled?.tool !== undefined) onPendingChange?.(toolCalls(inFlight));
+  }
   if (controller.signal.aborted) {
     if (!response.destroyed) response.destroy();
     return;
