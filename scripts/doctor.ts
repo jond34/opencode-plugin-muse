@@ -61,6 +61,8 @@ interface HookReport {
 }
 
 interface Report {
+  schemaVersion: 1;
+  pluginVersion: string;
   asOf: string;
   checks: Check[];
   hooks: HookReport | null;
@@ -671,7 +673,13 @@ async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
   const env = process.env;
   const root = process.cwd();
-  const report: Report = { asOf: new Date().toISOString(), checks: [], hooks: null };
+  const report: Report = {
+    schemaVersion: 1,
+    pluginVersion: packageVersion(),
+    asOf: new Date().toISOString(),
+    checks: [],
+    hooks: null,
+  };
   report.checks.push(versions(), platform(), containment(env));
 
   // Whether `opencode debug config` answered: the one fact the checks cannot

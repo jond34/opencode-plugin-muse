@@ -51,6 +51,8 @@ function workspace(): { root: string; state: string } {
 }
 
 function parse(out: string): {
+  schemaVersion: number;
+  pluginVersion: string;
   asOf: string;
   checks: Array<{ id: string; status: string; detail: string; remediation?: string }>;
   hooks: { file: string | null; trusted: boolean } | null;
@@ -71,6 +73,14 @@ describe("doctor --json", () => {
     expect(ids).toContain("ledger");
     expect(report.checks.find((check) => check.id === "host")?.status).toBe("skipped");
     expect(report.hooks?.file).toBeNull();
+  });
+
+  test("carries the report schema and the package version", () => {
+    const { root, state } = workspace();
+    const { out } = run(["--json", "--offline", "--no-strict"], root, state);
+    const report = parse(out);
+    expect(report.schemaVersion).toBe(1);
+    expect(report.pluginVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   test("two runs differ only in their timestamp", () => {

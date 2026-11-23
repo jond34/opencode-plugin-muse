@@ -543,8 +543,8 @@ bun run doctor          # what this install is: versions, host, hooks, ledger
 `bun run doctor` spawns the host once (a handshake and an empty session, no
 turn), then prints one row per check: versions and schema drift, the containment
 switches, plugin entries, installed hooks, the trust record, today's ledger, and
-the allowance window. `--json` is the same report for a bug report; home paths
-print as `~` and no credential or identity is read.
+the allowance window. `--json` is the same report for a bug report, and it carries `schemaVersion` and
+`pluginVersion`; home paths print as `~` and no credential or identity is read.
 
 The `plugins` row runs `opencode debug config` (about a second, no model call)
 and reports every config source that lists this package, and whether any of them
@@ -565,7 +565,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 416 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 417 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
