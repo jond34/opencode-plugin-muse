@@ -83,7 +83,28 @@ describe("usage ledger", () => {
     await appendUsage(entry({ costUsd: 0.02 }), env);
     await appendUsage(entry({ step: 2, costUsd: 0.03, costPartial: true }), env);
     const summary = await summarizeUsage(ledgerPath(new Date("2026-11-19T12:00:00.000Z"), env));
-    expect(summary).toMatchObject({ costUsd: 0.05, pricedTurns: 2, partialCost: 1 });
+    expect(summary).toMatchObject({
+      costUsd: 0.05,
+      costBasis: "postpaid",
+      pricedTurns: 2,
+      partialCost: 1,
+    });
+  });
+
+  test("a flat-rate session reports tokens and turns, not a $0 bill", async () => {
+    const env = tempEnv();
+    // What a subscription turn looks like: usage, no per-token price.
+    await appendUsage(entry({ input: 8_400, output: 120 }), env);
+    const summary = await summarizeUsage(ledgerPath(new Date("2026-11-19T12:00:00.000Z"), env));
+
+    // The primary numbers are the ledger's whole point.
+    expect(summary.turns).toBe(1);
+    expect(summary.input).toBe(8_400);
+    expect(summary.output).toBe(120);
+    // Zero cost is labelled as unpriced, not as a price of zero.
+    expect(summary.costUsd).toBe(0);
+    expect(summary.costBasis).toBe("unpriced");
+    expect(summary.pricedTurns).toBe(0);
   });
 
   test("a missing file summarizes as empty", async () => {

@@ -109,7 +109,18 @@ export interface UsageSummary {
   readonly cacheWrite: number;
   readonly output: number;
   readonly toolCalls: number;
+  /**
+   * USD from the turns that reported a price. Postpaid sessions only: a
+   * subscription turn reports no per-token price, so a zero here means
+   * "unpriced", never "free". Tokens and turns are the primary numbers.
+   */
   readonly costUsd: number;
+  /**
+   * How to read `costUsd`: `postpaid` when at least one turn carried a price,
+   * `unpriced` when none did — the flat-rate shape, not a $0 bill. `muse usage`
+   * is the only authoritative allowance read.
+   */
+  readonly costBasis: "postpaid" | "unpriced";
   /** Turns that carried a priced cumulative delta, out of all turns. */
   readonly pricedTurns: number;
   /** Turns whose cost was provisional. */
@@ -253,6 +264,7 @@ export async function summarizeUsage(file: string = ledgerPath()): Promise<Usage
     output,
     toolCalls,
     costUsd,
+    costBasis: pricedTurns > 0 ? "postpaid" : "unpriced",
     pricedTurns,
     partialCost,
     reseeds,
