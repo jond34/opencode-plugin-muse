@@ -37,32 +37,32 @@ function installDir() {
 }
 
 /**
- * PIDs of every running Muse process, by image name.
+ * Every running Muse process, as `pid|image|parentPid`.
  *
  * `tasklist` does not accept wildcards and the binary's name carries a version
- * (`muse-bin-1.4.25-R9361.1.exe`), so the filter has to come from PowerShell.
+ * (`muse-bin-1.4.25-R9361.1.exe`). CIM also reports the parent, which is the
+ * whole point of an orphan check: the survivor's parent is the process that
+ * should have reaped it.
  */
-function musePids() {
+function museProcesses() {
+  const script =
+    "Get-CimInstance Win32_Process -Filter \"Name LIKE 'muse%'\" | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.Name, $_.ParentProcessId }";
   try {
-    const out = execFileSync(
-      "powershell",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Get-Process -Name 'muse-bin-*','muse' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }",
-      ],
-      { encoding: "utf8", timeout: 30_000 },
-    );
+    const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      timeout: 30_000,
+    });
     return out
       .split(/\r?\n/)
-      .map((line) => Number.parseInt(line.trim(), 10))
-      .filter((pid) => Number.isInteger(pid));
-  } catch {
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  } catch (error) {
+    console.log(`process query failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`);
     return [];
   }
 }
 
+const pidOf = (row) => Number.parseInt(row.split("|")[0], 10);
 const dir = installDir();
 console.log(`install dir: ${dir ?? "(LOCALAPPDATA unset)"}`);
 if (dir !== undefined) {
@@ -131,8 +131,9 @@ const bare = spawnSync("muse", ["--version"], { encoding: "utf8", timeout: 60_00
 console.log(`bare muse: ${bare.error?.code ?? `status ${bare.status}`} (informational)`);
 
 // E16c: the real serve lifecycle, closed exactly as the plugin closes it.
-const before = musePids();
-console.log(`E16c pids before: [${before.join(", ")}]`);
+const before = museProcesses();
+console.log(`E16c before: [${before.join(" ")}]`);
+let during = [];
 try {
   const host = await MuseHost.spawn({
     museBin: bin.command,
@@ -146,34 +147,42 @@ try {
     `handshake: museHome=${host.museHome} granted=[${host.grantedCapabilities().join(", ")}]`,
   );
   check("real serve completed the handshake", host.grantedCapabilities().includes("sessionMcp"));
-  console.log(`E16c pids during: [${musePids().join(", ")}]`);
+  during = museProcesses();
+  console.log(`E16c during: [${during.join(" ")}]`);
   await host.close();
   console.log("close: returned");
 } catch (error) {
   check("real serve completed the handshake", false, error instanceof Error ? error.message : String(error));
 }
 
+// A live host must be visible to the probe. If it is not, the survivor count
+// below means nothing, so say that instead of reporting a clean close.
+check("E16c probe saw the live host", during.length > 0, `during=[${during.join(" ")}]`);
+
 // The ladder drains stdin then hard-kills; give Windows a moment to settle.
-await new Promise((resolve) => setTimeout(resolve, 2_000));
-const after = musePids();
-const survivors = after.filter((pid) => !before.includes(pid));
-console.log(`E16c pids after: [${after.join(", ")}] survivors=[${survivors.join(", ")}]`);
+await new Promise((resolve) => setTimeout(resolve, 3_000));
+const after = museProcesses();
+const survivors = after.filter((row) => !before.some((old) => pidOf(old) === pidOf(row)));
+console.log(`E16c after: [${after.join(" ")}] survivors=[${survivors.join(" ")}]`);
 
 if (survivors.length > 0) {
-  for (const pid of survivors) {
+  for (const row of survivors) {
+    const pid = pidOf(row);
     const killed = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { encoding: "utf8" });
     console.log(`taskkill ${pid}: status=${killed.status} ${(killed.stdout ?? "").trim()}`);
   }
   await new Promise((resolve) => setTimeout(resolve, 1_000));
-  const remainder = musePids().filter((pid) => !before.includes(pid));
-  console.log(`E16c after taskkill: survivors=[${remainder.join(", ")}]`);
+  const remainder = museProcesses().filter((row) => !before.some((old) => pidOf(old) === pidOf(row)));
+  console.log(`E16c after taskkill: survivors=[${remainder.join(" ")}]`);
   console.log(
     remainder.length === 0
       ? "E16c: close() left an orphan and taskkill /T /F cleared it"
       : "E16c: close() left an orphan that taskkill /T /F did not clear",
   );
+} else if (during.length > 0) {
+  console.log("E16c: no survivor after close()");
 } else {
-  console.log("E16c: no survivor after close() (inconclusive if the runner reaps the tree)");
+  console.log("E16c: measurement invalid — the probe never saw the host");
 }
 
 rmSync(scratch, { recursive: true, force: true });
