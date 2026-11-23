@@ -964,13 +964,17 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         });
       }
       const requirementId = this.requestRequirements.get(request.id);
-      await this.host.connection.command("approval/decide", {
-        sessionId: this.nativeId,
-        approvalId: request.id,
-        choiceId,
-        ...(requirementId === undefined ? {} : { requirementId }),
-        ...(input.feedback === undefined ? {} : { feedback: input.feedback }),
-      });
+      try {
+        await this.host.connection.command("approval/decide", {
+          sessionId: this.nativeId,
+          approvalId: request.id,
+          choiceId,
+          ...(requirementId === undefined ? {} : { requirementId }),
+          ...(input.feedback === undefined ? {} : { feedback: input.feedback }),
+        });
+      } catch (error) {
+        this.applyApprovalRejection(error, request.id, choiceId);
+      }
       return;
     }
 
@@ -982,6 +986,67 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
         answers,
       });
     }
+  }
+
+  /**
+   * The three typed rejections `approval/decide` can answer with.
+   *
+   * `approvalAlreadyResolved` is a success in disguise: the host carries the
+   * winning decision, so the request settles here instead of staying pending
+   * forever. The other two leave the approval open — it really is still
+   * undecided — so the request stays pending, the stage token is refreshed where
+   * the wire carried one, and the caller is told the decision did not apply.
+   * Nothing is retried: a stale decision is stale, and the wire carries the
+   * rejected choice on `approvalChoiceInvalid`, not a replacement menu, so no
+   * menu is invented locally.
+   */
+  private applyApprovalRejection(error: unknown, approvalId: string, choiceId: string): void {
+    if (!(error instanceof MspError)) throw error;
+    switch (error.kind) {
+      case "approvalAlreadyResolved": {
+        const resolution = error.data.resolution as { decision?: unknown } | undefined;
+        const decision = typeof resolution?.decision === "string" ? resolution.decision : "abort";
+        this.settleApprovalFromHost(approvalId, decision);
+        return;
+      }
+      case "approvalRequirementStale": {
+        const next = error.data.currentRequirementId;
+        if (typeof next === "string") this.requestRequirements.set(approvalId, next);
+        const current = this.requests.get(approvalId);
+        if (current?.status === "pending") {
+          this.emit({ type: "request.updated", request: current });
+        }
+        throw new HarnessError({
+          code: "invalid_input",
+          adapterId: ADAPTER_ID,
+          message: `Approval ${approvalId} moved to a new stage: the decision was stale. Decide again.`,
+        });
+      }
+      case "approvalChoiceInvalid": {
+        const rejected = typeof error.data.choiceId === "string" ? error.data.choiceId : choiceId;
+        throw new HarnessError({
+          code: "invalid_input",
+          adapterId: ADAPTER_ID,
+          message: `Muse rejected choice ${rejected} for approval ${approvalId}; the approval is still open.`,
+        });
+      }
+      default:
+        throw error;
+    }
+  }
+
+  /** Apply a decision the host says already won, without re-sending it. */
+  private settleApprovalFromHost(approvalId: string, decision: string): void {
+    const current = this.requests.get(approvalId);
+    if (!current || current.status !== "pending") return;
+    const updated: HarnessRuntimeRequest = {
+      ...current,
+      status: toRequestStatus(decision),
+      resolvedAt: now(),
+    };
+    this.requests.set(approvalId, updated);
+    this.requestRequirements.delete(approvalId);
+    this.emit({ type: "request.updated", request: updated });
   }
 
   private toUserInputAnswers(input: HarnessRequestResponse): Array<Record<string, unknown>> {
