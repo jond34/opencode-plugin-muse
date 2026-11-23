@@ -69,7 +69,6 @@ interface Report {
 interface Options {
   readonly json: boolean;
   readonly offline: boolean;
-  readonly strict: boolean;
   readonly noStrict: boolean;
   readonly trustHooks: boolean;
   readonly forgetHooks: boolean;
@@ -79,7 +78,6 @@ function parseArgs(argv: readonly string[]): Options {
   return {
     json: argv.includes("--json"),
     offline: argv.includes("--offline"),
-    strict: argv.includes("--strict"),
     noStrict: argv.includes("--no-strict"),
     trustHooks: argv.includes("--trust-hooks"),
     forgetHooks: argv.includes("--forget-hooks"),
@@ -629,15 +627,18 @@ async function probeHost(
 }
 
 /**
- * D68/D69/D75: what the run's exit code says, and what the flags add.
+ * D68/D69/D75/D83: what the run's exit code says, and what the flags add.
  *
  * The default answers *did this run check the config it was asked about*: a
  * `config` row (the host refused a file) and a `policies` warn (a statement was
  * dropped) both mean the user's own config is not in force, which is the failure
- * rounds 11 to 14 kept finding. A `fail` returns 1, and nothing else does.
- * `--no-strict` returns to report-only. `--strict` also fails a run that was told
- * not to look (`--offline`), which the default exempts because the user asked for
- * it (D76).
+ * rounds 11 to 14 kept finding. The rule is the property, not who wrote the check:
+ * a finding gates when it means a declaration the user made is not in force, and
+ * `rustc`'s own `dead_code` is the counterexample that keeps the rule narrow (D82).
+ *
+ * Two orthogonal flags. `--no-strict` reports only. `--offline` does not look, so
+ * the gate cannot certify what it did not read: it exits 1 like an unanswered run,
+ * and `--offline --no-strict` is the report-only offline invocation (D83, D84).
  *
  * The rows about the machine and the install stay advisory at every level: on this
  * machine a working run warns `host`, and this checkout's own run warns `plugins`
@@ -650,8 +651,6 @@ async function probeHost(
 export interface Gate {
   /** `--no-strict`: report only, never gate. */
   readonly gated: boolean;
-  /** `--strict`: also fail a run that did not look. */
-  readonly strict: boolean;
   /** False under `--offline`: the user asked for a run that does not look. */
   readonly asked: boolean;
   /** Whether `opencode debug config` answered, so the config rows describe a run. */
@@ -661,7 +660,7 @@ export interface Gate {
 export function exitCode(checks: readonly Check[], gate: Gate): number {
   if (checks.some((check) => check.status === "fail")) return 1;
   if (!gate.gated) return 0;
-  if (!gate.asked) return gate.strict ? 1 : 0;
+  if (!gate.asked) return 1;
   if (!gate.answered) return 1;
   const discarded = checks.some((check) => check.id === "config");
   const dropped = checks.some((check) => check.id === "policies" && check.status === "warn");
@@ -837,7 +836,6 @@ async function main(): Promise<number> {
   }
   return exitCode(report.checks, {
     gated: !options.noStrict,
-    strict: options.strict,
     asked: !options.offline,
     answered: read,
   });

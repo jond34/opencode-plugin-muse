@@ -55,7 +55,7 @@ describe("the doctor says which platform it is on", () => {
     const root = mkdtempSync(join(tmpdir(), "muse-doctor-platform-"));
     const state = mkdtempSync(join(tmpdir(), "muse-state-"));
     const result = Bun.spawnSync({
-      cmd: [process.execPath, SCRIPT, "--json", "--offline"],
+      cmd: [process.execPath, SCRIPT, "--json", "--offline", "--no-strict"],
       cwd: root,
       env: { ...process.env, XDG_STATE_HOME: state },
       stdout: "pipe",

@@ -24,10 +24,11 @@ import {
 /**
  * E-D12: is the doctor's output stable and secret-free?
  *
- * Every run is `--offline`, so these tests never spawn a host. The online shape
- * was checked by hand against the installed CLI; what a test can hold is the
- * contract: one row per check, no home path, no credential shape, and two runs
- * that differ only in their timestamp.
+ * Every run is `--offline --no-strict` where only the report matters, so these
+ * tests never spawn a host and do not gate; the gate itself is pinned in `the
+ * gate`. The online shape was checked by hand against the installed CLI; what a
+ * test can hold is the contract: one row per check, no home path, no credential
+ * shape, and two runs that differ only in their timestamp.
  */
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "doctor.ts");
@@ -60,7 +61,7 @@ function parse(out: string): {
 describe("doctor --json", () => {
   test("reports one row per check and skips the host offline", () => {
     const { root, state } = workspace();
-    const { code, out } = run(["--json", "--offline"], root, state);
+    const { code, out } = run(["--json", "--offline", "--no-strict"], root, state);
     expect(code).toBe(0);
     const report = parse(out);
     const ids = report.checks.map((check) => check.id);
@@ -166,7 +167,7 @@ describe("doctor trust flags", () => {
     const env = { ...process.env, XDG_STATE_HOME: state };
 
     expect(hooksFileTrusted(root, env)).toBe(false);
-    const { code, out } = run(["--json", "--offline", "--trust-hooks"], root, state);
+    const { code, out } = run(["--json", "--offline", "--no-strict", "--trust-hooks"], root, state);
     expect(code).toBe(0);
     expect(hooksFileTrusted(root, env)).toBe(true);
     // The record is per handler, and the doctor says how many it wrote.
@@ -206,7 +207,7 @@ describe("doctor trust flags", () => {
     const env = { ...process.env, XDG_STATE_HOME: state };
     run(["--json", "--offline", "--trust-hooks"], root, state);
     expect(hooksFileTrusted(root, env)).toBe(true);
-    const { code } = run(["--json", "--offline", "--forget-hooks"], root, state);
+    const { code } = run(["--json", "--offline", "--no-strict", "--forget-hooks"], root, state);
     expect(code).toBe(0);
     expect(hooksFileTrusted(root, env)).toBe(false);
   });
@@ -283,7 +284,7 @@ describe("the plugins row", () => {
 
   test("offline reports the row as skipped without spawning anything", () => {
     const { root, state } = workspace();
-    const { code, out } = run(["--json", "--offline"], root, state);
+    const { code, out } = run(["--json", "--offline", "--no-strict"], root, state);
     expect(code).toBe(0);
     const row = parse(out).checks.find((check) => check.id === "plugins");
     expect(row?.status).toBe("skipped");
@@ -389,7 +390,7 @@ describe("the policies row", () => {
 
   test("offline reports the row as skipped without spawning anything", () => {
     const { root, state } = workspace();
-    const { code, out } = run(["--json", "--offline"], root, state);
+    const { code, out } = run(["--json", "--offline", "--no-strict"], root, state);
     expect(code).toBe(0);
     expect(parse(out).checks.find((check) => check.id === "policies")?.status).toBe("skipped");
   });
@@ -475,7 +476,6 @@ describe("the gate", () => {
   /** A run that looked and was asked to look; every case departs from this. */
   const gate = (state: Partial<Gate> = {}): Gate => ({
     gated: true,
-    strict: false,
     asked: true,
     answered: true,
     ...state,
@@ -505,12 +505,6 @@ describe("the gate", () => {
       want: 1,
     },
     {
-      name: "a config row returns 1 under strict",
-      checks: [row("config", "warn")],
-      gate: gate({ strict: true }),
-      want: 1,
-    },
-    {
       name: "a config row returns 0 under --no-strict",
       checks: [row("config", "warn")],
       gate: gate({ gated: false }),
@@ -531,13 +525,13 @@ describe("the gate", () => {
     {
       name: "policies skipped for declaring none returns 0",
       checks: [row("policies", "skipped")],
-      gate: gate({ strict: true }),
+      gate: gate(),
       want: 0,
     },
     {
       name: "environmental rows stay advisory at every level",
       checks: [row("plugins", "warn"), row("host", "warn"), row("allowance", "warn")],
-      gate: gate({ strict: true }),
+      gate: gate(),
       want: 0,
     },
     {
@@ -547,21 +541,9 @@ describe("the gate", () => {
       want: 1,
     },
     {
-      name: "a run that was asked and got no answer returns 1 under strict",
-      checks: [row("plugins", "skipped"), row("policies", "skipped")],
-      gate: gate({ strict: true, answered: false }),
-      want: 1,
-    },
-    {
-      name: "--offline returns 0 by default, because the user said not to look",
+      name: "--offline returns 1, because the gate cannot certify a run that did not look",
       checks: [row("plugins", "skipped"), row("policies", "skipped")],
       gate: gate({ asked: false, answered: false }),
-      want: 0,
-    },
-    {
-      name: "--offline --strict returns 1, because the gate was asked for anyway",
-      checks: [row("plugins", "skipped"), row("policies", "skipped")],
-      gate: gate({ strict: true, asked: false, answered: false }),
       want: 1,
     },
   ];
@@ -569,12 +551,14 @@ describe("the gate", () => {
     test(name, () => expect(exitCode(checks, state)).toBe(want));
   }
 
-  test("--offline --strict exits 1 and still reports both rows skipped", () => {
+  test("--offline exits 1, and --no-strict is the report-only escape", () => {
     const { root, state } = workspace();
-    const { code, out } = run(["--json", "--offline", "--strict"], root, state);
-    expect(code).toBe(1);
-    const report = parse(out);
+    const gated = run(["--json", "--offline"], root, state);
+    expect(gated.code).toBe(1);
+    const report = parse(gated.out);
     expect(report.checks.find((check) => check.id === "plugins")?.status).toBe("skipped");
     expect(report.checks.find((check) => check.id === "policies")?.status).toBe("skipped");
+
+    expect(run(["--json", "--offline", "--no-strict"], root, state).code).toBe(0);
   });
 });
