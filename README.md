@@ -109,13 +109,20 @@ percentages rather than a per-turn cost.
   that allows everything except `.env` reads. Muse's sandbox cannot cover a
   bridged call for the same reason it does not cover opencode's own tools: the
   call executes in opencode's process, and the pinned toolset has no shell tool
-  for Muse to fence. A managed Muse plane is not a layer either: on 1.4.25 the
-  `policy` plane admits no member, the `defaults` plane's four members all
-  report `user_overridable=true`, and this plugin's private `settings.json` is a
-  user file. So the promise is visibility and vetoability, not containment:
-  every call crosses opencode's transcript and its rules. The one hard stop that
+  for Muse to fence. A managed Muse plane is not a layer either, and the reason
+  is narrower than it looks: Muse's 1.4.2 changelog describes a managed policy
+  that restricts permission profiles (`muse serve` refuses and lists the allowed
+  ones), but on 1.4.25 the `policy` plane still admits no member, the `defaults`
+  plane's four members all report `user_overridable=true`, and this plugin's
+  private `settings.json` is a user file. The behaviour ships and the local
+  document does not express it; if one is ever delivered, the encounter is a
+  refused start, not a rule this plugin can read. So the promise is visibility
+  and vetoability, not containment:
+  every call crosses opencode's transcript and its rules. The hard stop that
   survives `--auto`, or an agent whose rules allow everything, is a configured
-  `deny` — saved approvals never override one. Repo-supplied
+  `deny` — saved approvals never override one — and the one above it is a
+  `policies` statement, which outranks saved approvals as well as `--auto` and
+  never prompts. Repo-supplied
   Muse hooks (`project` handlers) are refused
   when a session opens: the host names every installed handler's origin, and a
   workspace file is accepted only after its exact hash is recorded
@@ -142,6 +149,22 @@ percentages rather than a per-turn cost.
   forceful kill there — so the host is ended after the drain window rather than
   asked to stop; the doctor's `platform` row prints the ladder this machine
   actually has.
+- **Posture and ceilings.** The plugin pins no permission profile and does not
+  declare Muse's beta capability, so it cannot read the posture its own session
+  runs under: `permissionState` and the profile catalog are served only to a
+  client that opts into `experimentalApi`. `bun run doctor` does declare it, on
+  its own connection, and prints the profile Muse would start under, its axes and
+  the catalog. The axes govern Muse's own shell, not the calls the plugin
+  bridges. That row is a read, not a promise — saved approvals and any managed
+  policy are invisible to it, and a policy that denies this plugin is invisible
+  in the same way: the plugin is not loaded, and the turn fails as `Model
+  unavailable` rather than as a policy. For a turn ceiling the plugin adds none: a
+  client-side cap would fire after the spend it exists to prevent. opencode's
+  `agent.<name>.steps` is the knob that exists, off by default, enforced in
+  opencode's own prompt loop; whether it sees a turn this plugin drives is
+  unmeasured here; the fragment is under **A ceiling for an unattended run**.
+  The durable ceiling is the provider's own limit, which the allowance warning
+  approaches before it is reached.
 - **Model catalog.** The catalog is a snapshot taken at startup. Muse's session
   protocol has no catalog subscription, so a model added or newly entitled in
   Muse appears only after opencode restarts; contributor variants are read from
@@ -172,11 +195,52 @@ percentages rather than a per-turn cost.
 ### A hard stop, if you want one
 
 opencode's base policy allows everything but `.env` reads, so a fresh install
-stops nothing a bridged call might do. A `deny` rule does, and it is the only
-thing that survives `--auto`. In opencode's V2 vocabulary an MCP tool's action is
-`<server>_<tool>`, and the bridge's server is named `opencode`, so the bridged
-shell is `opencode_bash` — not `shell`, which is opencode's own tool. Rules are
-ordered and the last match wins:
+stops nothing a bridged call might do. Two mechanisms stop it, and they are not
+interchangeable. `policies` is the recommended one: a statement is binary, never
+prompts, and is applied after agent rules and saved approvals, so neither
+`--auto` nor an "Allow always" outranks it. `permissions` is the per-agent form,
+further down, and it is the one to reach for when you want a prompt rather than
+a block.
+
+Two `policies` statements reach this plugin, and both were measured on
+2026-11-23:
+
+```jsonc
+// opencode.jsonc
+{
+  "policies": [
+    { "action": "plugin.use", "resource": "/home/you/src/opencode-plugin-muse", "effect": "deny" },
+    { "action": "provider.use", "resource": "muse", "effect": "deny" }
+  ]
+}
+```
+
+Each works, and each is silent about itself. The first means the plugin is not
+loaded at all, however it was configured; the second means it loads and its
+provider is hidden. Either way the turn fails with `Model unavailable:
+muse/muse-spark-1.3` — the sentence a typo in the model id also produces — while
+`opencode models` goes on listing the models, because the catalog is not the
+policy. If a turn failed and the message says the model is unavailable, a policy
+is one of the reasons.
+
+`tool.use` is the denial that names itself. Its resource is `<action>:<value>`,
+matched against every check the tool makes, so `read:*` covers every read and
+`opencode_bash:*` the bridged shell:
+
+```jsonc
+{ "policies": [{ "action": "tool.use", "resource": "read:*", "effect": "deny" }] }
+```
+
+A denied check fails with `Blocked by configuration policy`, the model receives
+it as a tool error, and the turn continues: in the measured run the model
+retried with a relative path, then used `glob` and `grep` to read the same file
+and answered. Expect a refusal the model can route around, not a wall — and not
+a content boundary either, since `grep` read what `read` was refused.
+
+`permissions` is the other form: per agent, ordered, last match wins, and able
+to `ask`. In opencode's V2 vocabulary an MCP tool's action is `<server>_<tool>`,
+and the bridge's server is named `opencode`, so the bridged shell is
+`opencode_bash` — not `shell`, which is opencode's own tool:
 
 ```jsonc
 // opencode.jsonc
@@ -191,8 +255,7 @@ ordered and the last match wins:
 That blocks the bridged shell at opencode's gate and leaves opencode's own tools
 alone. The same rule with `opencode_edit` or `opencode_read` denies those too;
 all three together leave Muse with no tools, which is a coherent posture but not
-a useful default. A narrower `resource` names a path or a command prefix, and
-`ask` in place of `deny` gives you a prompt instead of a block.
+a useful default. A narrower `resource` names a path or a command prefix.
 
 Muse's permission profile is the other half, and it is yours, not the plugin's:
 the plugin pins none, so a session runs whatever your default is. `Unrestricted`
@@ -200,6 +263,48 @@ records `approval: allowAll, filesystem: unrestricted, network: enabled`
 (measured on 1.4.25). The plugin never passes `--disable-sandbox` — under the
 pinned toolset Muse owns no shell tool for its sandbox to fence — and it does not
 turn a profile back on either.
+
+### A ceiling for an unattended run
+
+The plugin adds no cap: a client-side one would fire after the spend it exists to
+prevent, and the plugin cannot see a step before it costs anything. opencode has
+the knob, per agent:
+
+```jsonc
+// opencode.jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": { "build": { "steps": 12 } }
+}
+```
+
+`steps` is a positive maximum, unset by default, enforced in opencode's own
+prompt loop — on the last step it removes tools and asks for a text summary. It
+does count a turn this plugin drives (measured 2026-11-23), and the smallest
+value is a trap: with `steps: 1` opencode ends the turn before the first model
+call, so the run prints nothing, reports zero tokens, and exits 0. Give it the
+number of steps you would accept, not 1. Whether 2 buys exactly one model call is
+unmeasured.
+
+### Headless runs
+
+`opencode run` works under two conditions — one entry for this package, and
+`steps` above 1. A scripted turn with the checkout as the only plugin produced
+text and three bridged tool calls (measured 2026-11-23). Break either condition
+and the turn is silent.
+
+- **`steps: 1`** ends the turn before the model is called, as above.
+- **Two entries for one package.** opencode loads one instance per package name
+  and the first entry wins. A global `@jonathand34/opencode-plugin-muse` in
+  `~/.config/opencode` is merged ahead of a project's
+  `plugin: ["/path/to/checkout"]`, so the published build runs and the checkout
+  never starts — while the log still prints `loading plugin` for the checkout.
+  If you are testing local changes, drop the package entry, or point
+  `XDG_CONFIG_HOME` at a config that lists only the checkout.
+
+A turn that produces nothing prints nothing: zero bytes on stdout, exit code 0.
+The plugin cannot help with that one — no request reaches it, so no hook runs
+and there is no part to attach a warning to.
 
 ## What a turn looks like
 

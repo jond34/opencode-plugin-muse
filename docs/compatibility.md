@@ -15,7 +15,15 @@ the last tested pair (the internal W2 record, not published).
 
 The plugin compiles against the 2.3.2 plugin package and runs inside the 2.3.2
 host. The `SessionRequest.messages` metadata field added in 2.3.2 is additive
-and unused. Record the actual host version in every live run; do not generalize
+and unused.
+
+The policy vocabulary this pair reads is `policies` (2.2.3 and newer).
+`plugin.use`, `provider.use` and `tool.use` all take effect on 2.3.2 and were
+measured on 2026-11-23 (E-D47–E-D49): a denied `tool.use` check fails with
+`Blocked by configuration policy`, a denied plugin is not loaded, and a denied
+provider is hidden. Clients older than 2.2.3 ignore `plugin.use`, `mcp.use`,
+`skill.use` and the current meaning of `integration.use`, so anything relying on
+them needs 2.3.2 or newer here. Record the actual host version in every live run; do not generalize
 from a version that was not run.
 
 W2 evidence for this pair: `npm run check:offline` green (197 tests at W2; the

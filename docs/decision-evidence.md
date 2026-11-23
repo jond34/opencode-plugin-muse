@@ -855,3 +855,378 @@ Round 4's sentences (D16–D21) are in `implementation-plan.md` § 9.2 and in
 Nothing above proves field behaviour: every fixture experiment proves what this
 adapter does with a shape, not how often that shape occurs. Field frequency
 needs U13, which is why it is a product call rather than an experiment.
+
+## Round 8 — the posture you cannot read
+
+Round 8 answers the "Leaning against" note (quoted in `round-8-plan.md` §1).
+Everything below was run 2026-11-23 against Muse Code 1.4.25, `@muse-code/sdk`
+1.4.24, and opencode 2.3.2. The suite ended at 380 pass / 0 fail / 984 expect /
+37 files.
+
+### E-D36 — what the doctor can see locally about opencode's posture
+
+**Question.** Is any part of opencode's posture reachable without a host?
+
+**Method.** `grep -rn "opencode.json\|loadConfig\|configPath\|discoverConfig"
+src/*.ts`, plus a read of `scripts/doctor.ts`.
+
+**Result.** Nothing. `src/` contains no read of opencode's config — no
+`opencode.json`, no config-path resolution, no rule parser. The doctor's local
+rows are versions, platform, containment (four environment variables), the trust
+record and the ledger. There is no "configured rules" half to report; the only
+posture facts available are the host's own (E-D37).
+
+**Consequence.** D37's option B has no subject matter. C is the row.
+
+### E-D37 — what `experimentalApi` serves, on a doctor-style connection
+
+**Question.** Does the flag buy the catalog and `permissionState`, and what
+differs from a stable run?
+
+**Method.** `scratch/e-d37.ts` — two runs of the doctor's own sequence (the
+plugin's `serve` args via `serveArgs`, `usage/read`, `session/start`,
+`session/read`, `hook/list`, `session/leave`), one with
+`capabilities.experimentalApi: true` and one without.
+
+**Result, stable:**
+
+```
+initialize.experimentalApi: false
+initialize.grantedCapabilities: ["sessionMcp"]
+permissionProfile/list → experimentalRequired -32601 "permissionProfile/list requires experimentalApi capability"
+start.session: {"permissionState":null,"approvalMode":{"mode":"onRequest","source":"startup"}}
+```
+
+**Result, experimental:**
+
+```
+initialize.experimentalApi: true
+permissionProfile/list → 4 rows, keys available,description,label,profileId,reviewerAuthority
+start.session: {"permissionState":{"axes":{"approval":"onRequest","filesystem":"sandboxed","network":"off","reviewer":"autoReview"},"profileId":":auto-review","reviewerAttached":true,"reviewerAuthority":"autoReview"}}
+pinned.session: {"permissionState":{"axes":{"approval":"onRequest","filesystem":"sandboxed","network":"restricted","reviewer":"human"},"profileId":":read-only","reviewerAttached":true,"reviewerAuthority":"human"}}
+```
+
+`schema.experimentalFingerprint` is identical in both runs
+(`sha256:47a1c9ff…`) and `schema.compatibilityEpoch` is `0`, so the flag changes
+what the connection may call, not the binary's surface. `permissionProfile` is
+`null` on the session view even when pinned: the read-back is
+`permissionState.profileId`.
+
+**Decisions.** D37 → C, D38 → C.
+
+### E-D38 — the cost of the read
+
+**Method.** Timings printed by the same probe.
+
+**Result.** spawn + initialize 456 ms stable / 467 ms experimental — one process
+either way; `permissionProfile/list` 1 ms; `session/read` 44–53 ms. The whole
+sequence differs by two requests at roughly 1 ms each, with no second host.
+
+### E-D39 — the policy plane, formalised
+
+**Method.** `scratch/cfg/p1-p6.json` and `q1-q6.json` through
+`muse config validate --plane policy --file`, then `muse config status --json`.
+
+**Result.** Twelve of twelve refused:
+
+```
+enterprise_document_invalid: plane=policy reason=unknown_member                     (p1–p6, top level)
+enterprise_document_invalid: plane=policy reason=unknown_member location=settings   (q1–q6, nested)
+```
+
+Status:
+
+```json
+{"generation":"sha256:01658952…","pinned_at":"runtime_open","schema_version":1,
+ "sources":[{"plane":"defaults","source_class":"system_file","state":"absent"},
+            {"plane":"policy","source_class":"system_file","state":"absent"}]}
+```
+
+Against that, the 1.4.2 changelog (quoted in `round-8-plan.md` §3.4) describes
+the behaviour. The behaviour ships; the local document vocabulary does not.
+
+### E-D40 — a refused start
+
+**Method.** `scratch/e-d40.ts`: `session/start` with
+`permissionProfile: ":not-a-profile"` and `"not-a-profile"` on a live host, then
+a plain start.
+
+**Result.**
+
+```
+:not-a-profile → MspError {"code":-32030,"kind":"commandRejected",
+  "message":"command 01a20763-… rejected: no profile :not-a-profile in the host catalog"}
+plain start → {"permissionState":null,"approvalMode":{"mode":"onRequest","source":"startup"}}
+```
+
+Two facts decide D40: the host names the cause, and `startParams()` in
+`src/session.ts` has no `permissionProfile` member, so the plugin cannot send
+one. The refusal the plugin could meet — a saved default outside a managed
+policy — needs a policy this machine does not have.
+
+**Decision.** D40 → A.
+
+### E-D41 — does `steps` bind a bridged turn
+
+**Question.** Does `agent.build.steps: 1` cut a turn this plugin drives?
+
+**Method.** `scratch/e-d41/`: an `opencode.json` with the local plugin and
+`agent.build.steps: 1`, three files, and a prompt asking for three reads, run as
+`opencode --standalone run --agent build --model muse/muse-spark-1.3`.
+
+**Result.** Not observed. Five runs (JSON and text output, bash and `zsh -lc`,
+with and without `OPENCODE_CONFIG`) each produced one `step_start` /
+`step_finish` pair with `reason:"stop"` and `tokens:{input:0,output:0}`, no tool
+call and no assistant text; the server shut down about two seconds later. The
+provider is registered — the muse models list — so the request path fails before
+a Muse turn exists. Nothing here says anything about the cap.
+
+**Decision.** D39 keeps both sentences: the knob exists, is enforced on v2 in
+opencode's own loop, and is unmeasured for this path. The row says so rather than
+claiming a ceiling.
+
+### E-D42 — an ACP client inside opencode's engine
+
+One search, 2026-11-23: `anomalyco/opencode#51646` (ACP client mode) is still
+closed as not planned, and no client mode appears in the docs. Round 7's verdict
+stands; no install, no change.
+
+### Decisions
+
+- **D37** — the doctor reports posture, read on its own connection; warns when
+  the profile is `:unrestricted`; the detail says saved approvals and a managed
+  policy are invisible. Built, tested, and run live.
+- **D38** — `experimentalApi` on the doctor's connection only. `MuseHost.spawn`
+  takes it as an option; the user's session keeps `sessionMcp`.
+- **D39** — no client-side cap. Document opencode's `agent.steps` as the knob
+  that exists, off by default, unmeasured for this path; the durable ceiling is
+  the provider's.
+- **D40** — no new error code. The host names the cause, and the plugin cannot
+  send the profile that would trigger it.
+- **D41** — still no pin. New reason: a pin is unverifiable without the read and
+  overridable by a managed policy.
+
+`decision-coverage.md` carries the rows and the restated counts; `README.md`
+carries the posture-and-ceilings paragraph and the corrected managed-plane
+sentence.
+
+## Round 9 — what the user cannot see
+
+### E-D41, re-read — what the five runs actually recorded (S0)
+
+**Method.** Re-read the five runs left in `scratch/e-d41/` on 2026-11-22. No new
+run; this is the existing evidence, read properly for the first time.
+
+| Run | stdout | stderr | End | Duration |
+|---|---|---|---|---|
+| 1 | `step_start`/`step_finish`, `reason:"stop"`, 0 tokens | none captured | exit 0 | 0.95 s |
+| 2 | empty | 61,248 B, 309 lines, all `INFO` | `shutdown started signal=SIGTERM` | 7.56 s |
+| 3 | empty | 60,724 B, all `INFO` | `shutdown started signal=SIGTERM` | 7.60 s |
+| 4 | same pair as run 1 | empty | exit 0 | 0.93 s |
+| 5 | empty | 64,537 B, all `INFO` | `shutdown started signal=SIGTERM` | 7.53 s |
+
+**Correction to the plan, and to round 8.** The plan's §3.1 says the log shows
+"the plugin loading — three `msg=\"loading plugin\"` lines" and "the process gone
+eight seconds later". Both are wrong in a way that matters.
+
+- There are **three plugin ids and sixteen instantiations of each**: 48
+  `loading plugin` lines per run (45 in run 3, 63 in run 5). The plugin is
+  re-created on every config event. In run 2 the first block is at 25.041 s and
+  the last at 30.9 s; between blocks the log carries `config.updated`,
+  `provider.updated`, `model.updated`, `agent.updated`, `command.updated` and
+  `mcp connected` lines. `setup()` therefore runs sixteen times in one process.
+- The process was **killed, not exited**: `shutdown started signal=SIGTERM` at
+  30.487 s, 6.0 s after `cli starting`. Runs 3 and 5 the same, at 7.6 s and
+  7.5 s. The watcher-stop lines that follow are teardown.
+- Zero `ERROR` or `WARN` lines in any of the three logs. The startup path is
+  silent, not complaining.
+
+So the stderr logs describe **startup**, and a killed one. The completed turns
+are runs 1 and 4: `step_start` and `step_finish` 0.95 s apart, `reason:"stop"`,
+zero tokens, no parts, exit 0. That is the phenomenon worth explaining, and the
+startup churn is a separate observation.
+
+**New hypothesis, recorded not decided — H6.** `setup()` runs once per config
+event, sixteen times per process. Each run re-creates the adapter, calls
+`setGlobalRegistry`, spawns the host handshake and re-registers
+`provider.transform` and the AI SDK hook under the same provider id. Last-wins
+registration, or an earlier instance's cleanup closing the host a later one just
+started, would leave a registered provider whose model cannot answer — which is
+exactly a `step_finish` with no parts. This is not in the plan's H1–H5 table and
+is now the cheapest explanation for a turn that ends in under a second.
+
+**Ledger gap.** `~/.local/state/opencode-muse/` holds `usage-2026-11-20.jsonl`,
+`-21` and `-22`, and no file for 2026-11-23. `allowance-notice.json` was written
+at 06:36, before these runs. This is **not** evidence that setup failed: the
+ledger row is `void appendLedgerRow(...)` (`src/plugin.ts:391`), a floating
+promise, and a one-shot `run` exits before background work (`#48683`).
+
+**What S0 does not settle.** Whether any setup threw (H1), whether the runtime
+hooks fired (H2), whether the host answered (H3), or whether the duplicate
+install matters (H4). It also does not show that the sixteen instantiations
+happen in a run that completes: the only logs that show them are the killed
+ones. S1 has to measure a completed run, with a timeout longer than startup.
+
+### E-D43 — does `setup()` complete under `opencode run`
+
+**Method.** Twelve synchronous `process.stderr.write` markers at the setup
+milestones in `src/plugin.ts` (entry, config, adapter, registry, host facts,
+models, containment, ledger, provider transform, AI SDK hook, session hooks,
+cleanup) and one module-level marker in `src/index.ts`. One scripted turn per
+configuration, `--standalone --print-logs`, `timeout 180`. Both files reverted
+with `git checkout` afterwards; `git diff src/` is empty.
+
+**Instrument errors, recorded because they cost two runs.** `--log-level` is
+rejected by 2.3.2 at every position (usage text, exit 1), and `--print-logs` is
+only accepted before `run`. A run without `--print-logs` captures none of the
+server's output, so markers look absent when they are not.
+
+**Result, user's merged configuration** (global `@jonathand34/opencode-plugin-muse`
+plus the project's local path): `[MUSE-TOP]` **once**, `[MUSE-MARK]` **zero**
+times, `loading plugin` **117** times (39 rounds × 3 ids), and the turn itself
+succeeded — three `read` calls, text "done", exit 0.
+
+**Result, local plugin only** (temp `XDG_CONFIG_HOME`): `[MUSE-TOP]` once, all
+twelve markers once, turn answered "ready", 40 `loading plugin` lines for one
+id.
+
+**What this decides.** H1 is refuted: `setup()` completes all twelve milestones
+and does not throw. The 39–117 reload rounds do not re-run `setup()` — the
+module is imported once and the ESM cache makes the later "loads" logging only.
+The interesting half is the zero: in the merged configuration the checkout's
+`setup()` never runs at all, while the turn works. That is E-D44.
+
+### E-D44 — is the duplicate install the cause
+
+**Method.** Three configurations, each in a throwaway `XDG_CONFIG_HOME` with a
+copy of `~/.config/muse/auth.json` so the Muse login survives, and never
+editing the real config: (a) the local path alone; (b) local path first, npm
+package second; (c) the user's merged config, where the global file supplies
+the npm entry and the project supplies the local one.
+
+| Configuration | Local `setup()` | Turn |
+|---|---|---|
+| local path only | runs, 12 markers | answers |
+| local path, then npm package | runs, 12 markers | answers |
+| merged: global npm + project local | **never runs** | answers, served by npm |
+
+**What this decides.** H4 is confirmed, with a mechanism: **one instance per
+package name, first entry wins**. A clean file with the checkout first shadows
+the npm copy; the merged configuration puts the global file's entry ahead of
+the project's, so the published build wins and the checkout is loaded but never
+started. Every E-D41 run therefore measured the published build, not the tree.
+
+The failure is silent in the only place a developer looks: the log prints
+`loading plugin` for the local path, so the checkout appears to be in use.
+
+### E-D45 — do V2 provider hooks wire headless
+
+**Not run; superseded.** The question was whether `ctx.aisdk.hook` reaches a
+headless turn at all. E-D44 answered it: with the checkout as the only plugin,
+a scripted `opencode run` produced text and three bridged tool calls. The hook
+wires. A canned-model plugin would have proved less than that did.
+
+### E-D46 — what a user sees on a silent turn
+
+**Method.** `agent.build.steps: 1` with the checkout, default output format,
+then the same run with `--format json`.
+
+**Result.** Default: **zero bytes on stdout**, one banner line on stderr
+(`> build · muse-spark-1.3`), exit 0. JSON: one `step_start`, one
+`step_finish` with `reason:"stop"`, `tokens:{input:0,output:0}`, 1.1 s.
+
+**What this decides.** H5 in shape: nothing failed, opencode saved an empty
+stop, and the exit code says success. It also closes D43's options: the request
+never reaches the provider, so no session hook fires and the plugin has no turn
+to attach a warning part to. There is nothing for this code to make louder.
+
+### E-D47 — a `plugin.use` denial on the checkout
+
+**Method.** Temp `XDG_CONFIG_HOME`, plugin list holding only the local path,
+`policies: [{action:"plugin.use", resource:"<absolute path>", effect:"deny"}]`.
+
+**Result.** Zero `loading plugin` lines — the plugin is not loaded. `opencode
+models` exits 0 and **still lists `meta/muse-*`**, which is the catalog, not the
+policy. A run exits 1 with empty stdout and
+`ModelUnavailableError: Model unavailable: muse/muse-spark-1.3`.
+
+### E-D48 — a `provider.use` denial on `muse`
+
+**Method.** Same temp config, `{action:"provider.use", resource:"muse", effect:"deny"}`.
+
+**Result.** The plugin loads (6 rounds) and the provider is hidden; the run
+fails identically: exit 1, empty stdout, `ModelUnavailableError`.
+
+**What E-D47 and E-D48 decide.** The two strongest denials produce one
+indistinguishable user-visible failure, and it names no policy. A user who
+denies the plugin sees the same sentence as a user with a typo in the model id.
+The docs' `Blocked by configuration policy` text is for `tool.use` only.
+
+### E-D49 — a `tool.use` denial on a bridged call
+
+**Method.** Checkout only, `policies: [{action:"tool.use", resource:"read:*",
+effect:"deny"}]`, one turn asking for a file read, `--format json`.
+
+**Result.** The bridged `read` returns `state.status:"error"`,
+`error:"Blocked by configuration policy"`. The turn survives: the model retried
+with a relative path (blocked again), then used `glob` and `grep` to read the
+file, and answered "done". Exit 0, final step 197 input / 302 output tokens.
+
+**What this decides.** This is the only denial that names itself, and it lands
+as a tool error rather than a turn failure — which is the shape D43 asked for
+and could not have. It also shows what a `tool.use` deny is not: a content
+boundary. `grep` read the same file the `read` tool was refused.
+
+### E-D50 — does `steps` bind a bridged turn
+
+**Method.** Checkout only, `agent.build.steps: 1`, JSON format; control was the
+same configuration without the key.
+
+**Result.** With `steps: 1`: one `step_start`/`step_finish` pair,
+`reason:"stop"`, zero tokens, 0.95–1.1 s, exit 0. Control: text plus three tool
+calls, real token counts.
+
+**What this decides.** Yes. The cap applies before the first model call, so
+`steps: 1` does not mean "one model call" — it means none. D39's second
+sentence is settled for this path, and E-D41's silent turns are explained: the
+`steps: 1` in that probe's own `opencode.json` produced them, not the plugin.
+
+**Limitations, recorded rather than papered over.** A Console-delivered policy
+was not tested (no workspace here). Whether `steps: 2` yields exactly one model
+call is unmeasured. The trigger for the 39 reload rounds is not identified —
+whatever it is, it does not re-run `setup()`. And the experiment budget was
+seven model-touching turns against a planned two: every discriminator needed a
+fresh process, and the first two attempts were the instrument errors above.
+
+### Decisions
+
+- **D42 — `opencode run` is supported, with two named requirements.** Not
+  documented as unsupported (it works), not claimed to work unconditionally
+  (it does not). The README's new `### Headless runs` names both silent breaks:
+  `steps: 1` ends the turn before the first model call, and a second entry for
+  the same package shadows the checkout. Option D — detect headless at setup and
+  print a line — is not implementable for either break: in the `steps: 1` case
+  no request reaches the plugin, and in the shadowed case `setup()` never runs.
+- **D43 — no warning part (A), and the reason is structural.** A turn that
+  settles with zero parts never reached the provider, so no session hook fires
+  and there is no part to attach. B, C and D all assume a request the plugin
+  never sees. The README says what the user sees instead: zero bytes, exit 0.
+- **D44 — no duplicate-install warning (A).** The copy that loses is not
+  running, so it cannot warn; the copy that wins cannot see the entry it beat,
+  because the plugin has no config read (E-D36). Documented as a harness rule
+  instead, with the workaround that actually works: drop the package entry, or
+  point `XDG_CONFIG_HOME` at a config that lists only the checkout.
+- **D45 — the README's hard stop is corrected and `policies` is named (C).**
+  The `permissions` example stays, because it is the per-agent form and still
+  works; a `policies` block follows it as the stronger one, with all three
+  denials and their measured user-visible shapes. `docs/compatibility.md` gains
+  the vocabulary line and the 2.2.3 floor.
+- **D46 — the doctor says it cannot see a policy against itself (C), with no
+  new probe.** The posture row's detail now ends with the shape of the failure:
+  the plugin is not loaded and the turn fails as `Model unavailable`. There is
+  nothing to probe: a `plugin.use` deny means no code of ours runs, and a
+  `provider.use` deny is applied outside the transform that registers the
+  provider.
+- **D47 — `steps` binds this path, settled.** `steps: 1` produces zero model
+  calls, not one. The README's ceiling section now says so and its example uses
+  `12`; D39's second sentence is measured rather than open.
