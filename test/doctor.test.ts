@@ -18,6 +18,7 @@ import {
   policyRow,
   postureCheck,
   type ConfigLog,
+  type Gate,
 } from "../scripts/doctor.js";
 
 /**
@@ -468,82 +469,104 @@ describe("this run's own log output", () => {
  * than inferred from one spawned run. E-D75 measured what four real trees return;
  * these pin the rule each of those numbers follows from.
  */
-describe("the strict gate", () => {
+describe("the gate", () => {
   type Row = "ok" | "warn" | "fail" | "skipped";
   const row = (id: string, status: Row) => ({ id, status, detail: "" });
+  /** A run that looked and was asked to look; every case departs from this. */
+  const gate = (state: Partial<Gate> = {}): Gate => ({
+    gated: true,
+    strict: false,
+    asked: true,
+    answered: true,
+    ...state,
+  });
   const cases: Array<{
     name: string;
     checks: ReturnType<typeof row>[];
-    strict: boolean;
-    read: boolean;
+    gate: Gate;
     want: number;
   }> = [
     {
-      name: "a fail returns 1 with or without the flag",
+      name: "a fail returns 1 with or without the gate",
       checks: [row("host", "fail")],
-      strict: false,
-      read: true,
+      gate: gate({ gated: false }),
       want: 1,
     },
     {
-      name: "a clean run returns 0 under strict",
+      name: "a clean run returns 0",
       checks: [row("plugins", "ok"), row("policies", "ok")],
-      strict: true,
-      read: true,
+      gate: gate(),
       want: 0,
     },
     {
-      name: "a config row returns 0 by default",
+      name: "a config row returns 1 by default",
       checks: [row("config", "warn")],
-      strict: false,
-      read: true,
-      want: 0,
+      gate: gate(),
+      want: 1,
     },
     {
       name: "a config row returns 1 under strict",
       checks: [row("config", "warn")],
-      strict: true,
-      read: true,
+      gate: gate({ strict: true }),
       want: 1,
     },
     {
-      name: "a dropped policy statement returns 1 under strict",
+      name: "a config row returns 0 under --no-strict",
+      checks: [row("config", "warn")],
+      gate: gate({ gated: false }),
+      want: 0,
+    },
+    {
+      name: "a dropped policy statement returns 1 by default",
       checks: [row("policies", "warn")],
-      strict: true,
-      read: true,
+      gate: gate(),
       want: 1,
     },
     {
-      name: "policies skipped for declaring none returns 0 under strict",
+      name: "a dropped policy statement returns 0 under --no-strict",
+      checks: [row("policies", "warn")],
+      gate: gate({ gated: false }),
+      want: 0,
+    },
+    {
+      name: "policies skipped for declaring none returns 0",
       checks: [row("policies", "skipped")],
-      strict: true,
-      read: true,
+      gate: gate({ strict: true }),
       want: 0,
     },
     {
-      name: "environmental rows stay advisory under strict",
+      name: "environmental rows stay advisory at every level",
       checks: [row("plugins", "warn"), row("host", "warn"), row("allowance", "warn")],
-      strict: true,
-      read: true,
+      gate: gate({ strict: true }),
       want: 0,
     },
     {
-      name: "a run that did not look returns 0 by default",
+      name: "a run that was asked and got no answer returns 1 by default",
       checks: [row("plugins", "skipped"), row("policies", "skipped")],
-      strict: false,
-      read: false,
+      gate: gate({ answered: false }),
+      want: 1,
+    },
+    {
+      name: "a run that was asked and got no answer returns 1 under strict",
+      checks: [row("plugins", "skipped"), row("policies", "skipped")],
+      gate: gate({ strict: true, answered: false }),
+      want: 1,
+    },
+    {
+      name: "--offline returns 0 by default, because the user said not to look",
+      checks: [row("plugins", "skipped"), row("policies", "skipped")],
+      gate: gate({ asked: false, answered: false }),
       want: 0,
     },
     {
-      name: "a run that did not look returns 1 under strict",
+      name: "--offline --strict returns 1, because the gate was asked for anyway",
       checks: [row("plugins", "skipped"), row("policies", "skipped")],
-      strict: true,
-      read: false,
+      gate: gate({ strict: true, asked: false, answered: false }),
       want: 1,
     },
   ];
-  for (const { name, checks, strict, read, want } of cases) {
-    test(name, () => expect(exitCode(checks, { strict, read })).toBe(want));
+  for (const { name, checks, gate: state, want } of cases) {
+    test(name, () => expect(exitCode(checks, state)).toBe(want));
   }
 
   test("--offline --strict exits 1 and still reports both rows skipped", () => {
