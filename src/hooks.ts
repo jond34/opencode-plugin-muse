@@ -254,12 +254,21 @@ export function readHookTrust(env: NodeJS.ProcessEnv = process.env): HookTrustEn
   });
 }
 
-/** Replace the record for this path, keeping every other path's entry. */
+/**
+ * Replace the record for this path, keeping every other path's entry.
+ *
+ * The path is canonicalized before it is stored, the same way every reader
+ * canonicalizes it: `os.tmpdir()` on macOS is `/var/folders/...` while its
+ * resolved form is `/private/var/folders/...`, and a record keyed by the
+ * unresolved form would silently never match — the user accepts a hook and is
+ * asked again. A caller passing either form now lands on one key.
+ */
 export function recordHookTrust(entry: HookTrustEntry, env: NodeJS.ProcessEnv = process.env): void {
   const path = hookTrustPath(env);
-  const entries = readHookTrust(env).filter((row) => row.canonicalPath !== entry.canonicalPath);
-  entries.push(entry);
-  const version = entry.handlers === undefined ? 1 : 2;
+  const stored = { ...entry, canonicalPath: canonicalRoot(entry.canonicalPath) };
+  const entries = readHookTrust(env).filter((row) => row.canonicalPath !== stored.canonicalPath);
+  entries.push(stored);
+  const version = stored.handlers === undefined ? 1 : 2;
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify({ version, entries }, null, 2)}\n`, { mode: 0o600 });
@@ -277,7 +286,8 @@ export function forgetHookTrust(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   const existing = readHookTrust(env);
-  const kept = existing.filter((row) => row.canonicalPath !== canonicalPath);
+  const canonical = canonicalRoot(canonicalPath);
+  const kept = existing.filter((row) => row.canonicalPath !== canonical);
   if (kept.length === existing.length) return false;
   const path = hookTrustPath(env);
   const temporary = `${path}.${process.pid}.tmp`;
