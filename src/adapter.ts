@@ -88,6 +88,9 @@ export class MuseHarnessAdapter implements LanguageAdapter {
           () => this.forgetHost(host),
           () => this.forgetHost(host),
         );
+        // `exited` never settles when only the transport died, so a hung host
+        // would stay cached and every later open would land on it.
+        void host.gone?.then(() => this.forgetHost(host));
         return host;
       },
       (error) => {

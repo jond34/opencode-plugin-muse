@@ -62,22 +62,33 @@ function listening(url: string): Promise<boolean> {
  * under test is `startRouting`'s subscription to `exited` plus `close`'s
  * ordering, so the fields those two touch are all this needs.
  */
-function bareHost(exited: Promise<unknown>, onExit: () => void): MuseHost {
+function bareHost(options: {
+  exited: Promise<unknown>;
+  closed?: Promise<void>;
+  onExit?: (reason: string) => void;
+}): MuseHost {
   const sink: NotificationSink = {
     sessionId: "native-1",
     handleNotification: () => {},
-    handleHostExit: onExit,
+    handleHostExit: (reason) => options.onExit?.(reason ?? "exited"),
   };
+  let resolveGone = (_reason: string) => {};
+  const gone = new Promise<string>((resolve) => {
+    resolveGone = resolve;
+  });
   const bare = Object.create(MuseHost.prototype) as MuseHost;
   Object.assign(bare as unknown as Record<string, unknown>, {
     connection: {
       onNotification: () => {},
       onServerRequest: () => {},
       close: async () => {},
+      closed: options.closed ?? new Promise<void>(() => {}),
     },
     initializeResult: {},
     fingerprintWarning: undefined,
-    exited,
+    exited: options.exited,
+    gone,
+    resolveGone,
     child: {},
     sinks: new Map([[sink.sessionId, sink]]),
     closed: false,
@@ -93,7 +104,7 @@ describe("a host that dies mid-session", () => {
       resolveExit = () => resolve({});
     });
     const reported: string[] = [];
-    const host = bareHost(exited, () => reported.push("exit"));
+    const host = bareHost({ exited, onExit: (reason) => reported.push(reason) });
 
     // `close` sets `closed` before the connection closes, and only then does
     // the child exit, so an intentional shutdown must find the guard set.
@@ -109,11 +120,51 @@ describe("a host that dies mid-session", () => {
       resolveExit = () => resolve({});
     });
     const reported: string[] = [];
-    bareHost(exited, () => reported.push("exit"));
+    bareHost({ exited, onExit: (reason) => reported.push(reason) });
 
     resolveExit();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(reported).toEqual(["exit"]);
+    expect(reported).toEqual(["exited"]);
+  });
+
+  test("a transport EOF is reported while the process is still alive", async () => {
+    let resolveClosed = () => {};
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    const reported: string[] = [];
+    const host = bareHost({
+      // The hung-host shape: the process never exits, only its stdout ends.
+      exited: new Promise(() => {}),
+      closed,
+      onExit: (reason) => reported.push(reason),
+    });
+
+    resolveClosed();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(reported).toEqual(["transportEof"]);
+    expect(await host.gone).toBe("transportEof");
+  });
+
+  test("a later real exit does not report the death twice", async () => {
+    let resolveClosed = () => {};
+    let resolveExit = (_value: unknown) => {};
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    const exited = new Promise((resolve) => {
+      resolveExit = resolve;
+    });
+    const reported: string[] = [];
+    bareHost({ exited, closed, onExit: (reason) => reported.push(reason) });
+
+    resolveClosed();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    resolveExit({});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(reported).toEqual(["transportEof"]);
   });
   test("its running turn is retired instead of left waiting", async () => {
     const { host, commands } = fakeHost(STARTED);
@@ -136,6 +187,28 @@ describe("a host that dies mid-session", () => {
     expect(terminal?.turn.status).toBe("failed");
     expect(terminal?.failure?.code).toBe("event_stream_failed");
     // A dead host cannot be asked to leave the session.
+    expect(commands.some((entry) => entry.method === "session/leave")).toBe(false);
+  });
+
+  test("a transport EOF fails the turn as retryable, without claiming the exit", async () => {
+    const { host, commands } = fakeHost(STARTED);
+    const session = await MuseHarnessSession.create(host, { sessionId: "oc", cwd: "/tmp" });
+    const events = collect(session);
+    session.handleNotification({
+      method: "turn/started",
+      params: { turnId: "t1", sessionId: "native-1" },
+    } as MuseNotification);
+
+    session.handleHostExit("transportEof");
+    const emitted = await events;
+    const terminal = emitted.find(
+      (event): event is Extract<HarnessEvent, { type: "turn.terminal" }> =>
+        event.type === "turn.terminal",
+    );
+
+    expect(terminal?.turn.status).toBe("failed");
+    expect(terminal?.failure?.retryable).toBe(true);
+    expect(terminal?.failure?.message).not.toContain("exited");
     expect(commands.some((entry) => entry.method === "session/leave")).toBe(false);
   });
 
@@ -201,6 +274,48 @@ describe("a host that dies mid-session", () => {
         expect(spawns).toBe(2);
         expect(second).not.toBe(first);
         expect(hosts[1]?.commands.some((entry) => entry.method === "session/start")).toBe(true);
+      } finally {
+        await adapter.close();
+      }
+    } finally {
+      MuseHost.spawn = original;
+    }
+  });
+
+  test("the adapter drops a host whose transport died but whose process lives", async () => {
+    const original = MuseHost.spawn;
+    let spawns = 0;
+    let gone = (_reason: string) => {};
+    const firstGone = new Promise<string>((resolve) => {
+      gone = resolve;
+    });
+    MuseHost.spawn = (async () => {
+      const fake = fakeHost(STARTED);
+      spawns += 1;
+      return {
+        connection: fake.host.connection,
+        initializeResult: {},
+        fingerprintWarning: undefined,
+        // The process never exits: only the transport is gone.
+        exited: new Promise(() => {}),
+        gone: spawns === 1 ? firstGone : new Promise(() => {}),
+        registerSink: fake.host.registerSink,
+        unregisterSink: fake.host.unregisterSink,
+        grantedCapabilities: () => [],
+        close: async () => {},
+      } as unknown as MuseHost;
+    }) as typeof MuseHost.spawn;
+
+    try {
+      const adapter = new MuseHarnessAdapter({});
+      try {
+        await adapter.openSession({ sessionId: "oc", cwd: "/tmp" });
+        expect(spawns).toBe(1);
+        gone("transportEof");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        await adapter.openSession({ sessionId: "oc", cwd: "/tmp" });
+        expect(spawns).toBe(2);
       } finally {
         await adapter.close();
       }

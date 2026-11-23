@@ -17,7 +17,7 @@ import type {
 } from "./contract/index.js";
 import { HarnessError, nativeRef } from "./contract/index.js";
 import { MspError } from "@muse-code/sdk";
-import type { MuseNotification, NotificationSink } from "./host.js";
+import type { HostDeathReason, MuseNotification, NotificationSink } from "./host.js";
 import { startToolBridgeServer, normalizeToolName, BRIDGE_MCP_SERVER_NAME, type ToolBridgeServer } from "./bridge.js";
 import { MUSE_CAPABILITIES } from "./capabilities.js";
 import {
@@ -1029,14 +1029,19 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
    * with an error instead of hanging on notifications that will never arrive,
    * then close without asking a dead host to leave the session.
    */
-  handleHostExit(): void {
+  handleHostExit(reason: HostDeathReason = "exited"): void {
     if (this.closed || this.hostGone) return;
     this.hostGone = true;
+    // A transport EOF may leave the process alive, so the failure says what was
+    // observed instead of claiming an exit, and a retry can reach a new host.
+    const transportEof = reason === "transportEof";
     const failure = new HarnessError({
       code: "event_stream_failed",
       adapterId: ADAPTER_ID,
-      message: "Muse host exited while this turn was running",
-      retryable: false,
+      message: transportEof
+        ? "Muse host closed its output while this turn was running"
+        : "Muse host exited while this turn was running",
+      retryable: transportEof,
     });
     for (const [turnId, active] of this.turns) {
       if (!active.terminal) this.retireTurn(turnId, failure);

@@ -93,9 +93,19 @@ export interface NotificationSink {
   /** The native Muse session id notifications are addressed to. */
   readonly sessionId: string;
   handleNotification(notification: MuseNotification): void;
-  /** The host process is gone; this session can never serve another turn. */
-  handleHostExit?(): void;
+  /** The host is gone; this session can never serve another turn. */
+  handleHostExit?(reason: HostDeathReason): void;
 }
+
+/**
+ * How a host stopped serving.
+ *
+ * `exited` is the process ending. `transportEof` is the connection ending
+ * while the process may still be alive — the SDK's own `TransportEof` arm,
+ * which the facade maps to `hostExited({ kind: "transportEof" })`. The
+ * distinction is only in the words: both retire the turn and reopen elsewhere.
+ */
+export type HostDeathReason = "exited" | "transportEof";
 
 /**
  * Answer one MSP server request.
@@ -177,9 +187,17 @@ export class MuseHost {
   /** The SDK's advisory schema-fingerprint warning, when it served one. */
   readonly fingerprintWarning: FingerprintWarning | undefined;
   readonly exited: Promise<ProcessExit>;
+  /**
+   * Resolves once, with the reason, when this host stops serving. Unlike
+   * `exited`, it also settles for a transport EOF that leaves the process
+   * alive, so callers that cache the host (the adapter) can drop it.
+   */
+  readonly gone: Promise<HostDeathReason>;
   private readonly child: MuseServeChild;
   private readonly sinks = new Map<string, NotificationSink>();
   private closed = false;
+  private exitAnnounced = false;
+  private resolveGone: (reason: HostDeathReason) => void = () => {};
 
   private constructor(
     connection: Connection,
@@ -193,6 +211,9 @@ export class MuseHost {
     this.fingerprintWarning = fingerprintWarning;
     this.child = child;
     this.exited = exited;
+    this.gone = new Promise<HostDeathReason>((resolve) => {
+      this.resolveGone = resolve;
+    });
   }
 
   static async spawn(options: MuseHostOptions = {}): Promise<MuseHost> {
@@ -319,9 +340,16 @@ export class MuseHost {
     // will never arrive. `exited` never rejects in practice, but a second arm
     // keeps an unhandled rejection from taking the process with it.
     void this.exited.then(
-      () => this.announceExit(),
-      () => this.announceExit(),
+      () => this.announceExit("exited"),
+      () => this.announceExit("exited"),
     );
+
+    // A host that closes stdout while still running emits no exit at all, so
+    // watching the process alone leaves every pending wait hanging. The SDK
+    // resolves `closed` on that EOF; `exited` stays the authoritative arm for
+    // how the process ended, and `announceExit` latches so only the first one
+    // reports.
+    void this.connection.closed.then(() => this.announceExit("transportEof"));
   }
 
   /**
@@ -331,10 +359,12 @@ export class MuseHost {
    * shutdown must not look like a crash, and the registry closes its sessions
    * before the adapter closes the host, so nothing is left waiting here.
    */
-  private announceExit(): void {
-    if (this.closed) return;
+  private announceExit(reason: HostDeathReason): void {
+    if (this.closed || this.exitAnnounced) return;
+    this.exitAnnounced = true;
+    this.resolveGone(reason);
     // Copy: a sink may unregister itself while this loop runs.
-    for (const sink of [...this.sinks.values()]) sink.handleHostExit?.();
+    for (const sink of [...this.sinks.values()]) sink.handleHostExit?.(reason);
   }
 
   registerSink(sink: NotificationSink): void {
