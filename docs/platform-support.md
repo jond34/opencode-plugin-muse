@@ -1,14 +1,19 @@
 # Platform support: what is tested, inferred, and unmeasured
 
-Linux is the tested surface. macOS and Windows are configured in the offline
-matrix, and the matrix has been dispatched once (2026-11-23, branch `ci/seam`):
-Ubuntu passed, Windows failed on path and home-directory fixtures, and macOS was
-never given a runner — the job sat queued for fifteen minutes with zero steps
-and was cancelled. macOS therefore stays unmeasured for a reason that has
-nothing to do with this code. The matrix proves the suite's fixtures, not the
-seam: its hosts are `.mjs` fixtures under node, so a green run says nothing
-about `muse.cmd`, the ledger mode, UAC, or a close that leaves a process behind
-(D126). The Windows rows below still need a Windows host.
+Linux is the tested surface, and macOS joined it on 2026-11-23 (run 45282185770,
+`macos-15`): 406 tests, 0 failures. The earlier cancellation was capacity, not
+configuration — that job queued fifteen minutes with zero steps — and the retry
+was acquired at once. It also found a real bug: three `hook-gate` tests failed
+because `os.tmpdir()` on macOS is `/var/folders/...`, a symlink into
+`/private/var/folders/...`, and the trust record was written under the unresolved
+form while every reader canonicalized it, so an accepted hook would have been
+refused forever. `recordHookTrust` now canonicalizes on write (`src/hooks.ts`).
+
+The matrix proves the suite, not the seam: its hosts are `.mjs` fixtures under
+node, so a green run says nothing about `muse.cmd`, the ledger mode, UAC, or a
+close that leaves a process behind (D126). Windows is measured separately, with
+the vendor's installer and a real `muse serve` (E16a/E16c, run 45281586619); the
+rows below say which Windows surfaces that covers and which it does not.
 
 **The Windows spawn row is a contract, and the resolver meets it.** The vendor's
 Windows install puts `muse` on PATH as a `muse.cmd` shim, and Node refuses to
@@ -20,16 +25,25 @@ shim and names the active one in `.muse-version` (E-R22-03), so the plugin reads
 that pointer at startup and spawns the native binary; `MUSE_BIN` still wins over
 everything. When nothing resolves, the start fails with a message naming
 `MUSE_BIN`, the expected `muse-bin-<version>.exe` and the directory it searched,
-rather than Node's bare `EINVAL` (D135). The seam job proves that mechanism with
-a stub binary; it does not run `muse serve`, and no real Windows host has run
-the plugin.
+rather than Node's bare `EINVAL` (D135).
+
+Measured with the vendor installer on `windows-latest` (E16a, run 45281586619):
+the install ran unauthenticated and exited 0, leaving `.muse-version`
+(`1.4.25-R9361.1`), `muse-bin-1.4.25-R9361.1.exe` (413,176,056 bytes), `muse.cmd`
+(176 bytes), `.muse-launcher.ps1`, `.muse-channel` and `.muse-release-info.json`
+— and no `muse.exe`, so the `path-exe` branch has no vendor-made instance. The
+resolver returned `source=version-file` for that binary, `--version` printed
+`Muse Code 1.4.25 (1.4.25-R9361.1)` with exit 0, and `config validate --plane
+policy` accepted `{"schema_version":1}`. The bare `muse` still failed `ENOENT`
+after install. The stub seam job keeps the contract testable without a 413 MB
+download; this one proves the resolver against the real thing.
 
 | Surface | Linux | macOS | Windows | Evidence |
 |---|---|---|---|---|
-| Offline suite (`bun run check:offline`) | Tested: 439 tests, 0 fail | Dispatched 2026-11-23: no runner was assigned; the job was cancelled after 15 minutes in the queue | Dispatched 2026-11-23: fails on path and home-directory fixtures (`the plugins row`, `the policies row`, `hook gate`). Informational by D137, and the suite's hosts are `.mjs` fixtures under node, so a pass would not exercise the CLI seam | Run 45270085792; local run 2026-11-23; D126, D137 |
-| Spawn resolution | `muse` on `PATH`, tested | Vendor ships a native binary; unmeasured | Resolved: `MUSE_BIN`, then `muse.exe` on PATH, then `muse-bin-<version>.exe` named by `.muse-version` beside the shim, then the newest `muse-bin-*.exe`. Observed on `windows-latest` with a stub: bare name `ENOENT`, explicit `.cmd` `EINVAL`, resolved binary spawns | E11 (run 45270085792); `src/host.ts`; E-R22-01, E-R22-03 |
-| Shutdown / close | Drain, then `SIGTERM`, then `SIGKILL` | Same code path; unmeasured | No graceful rung (Node documents `SIGTERM` as forceful there), and the SDK's Windows path is **child-only**: `ownsProcessGroup` is false on `win32` and it has no `taskkill` route, so a grandchild can survive `host.close()` and hold the pipes | `src/watchdog.ts`; E-R21-07; E-D135 |
-| Orphaned process after close | Not observed | Unmeasured | Observed in miniature: a `ping` started by a `.cmd` survived `child.kill()` on `windows-latest` (E12); the native child's tree read inconclusive there. No real host has run `host.close()`. A third-party harness needed `taskkill /PID /T /F`, found the tree gone but `taskkill` exiting 255 because a child had already exited, and threw on it: treat the process table as the test, not the exit code | E12; E-R21-07, E-R21-08; Paseo #6193 (third party) |
+| Offline suite (`bun run check:offline`) | Tested: 439 tests, 0 fail | Tested: 406 tests, 0 fail on `macos-15` (the CI subset is smaller than a local run) | Fails on path and home-directory fixtures (`the plugins row`, `the policies row`, `hook gate`). Informational by D137, and the suite's hosts are `.mjs` fixtures under node, so a pass would not exercise the CLI seam | Runs 45282185770 (macOS), 45270085792 (first dispatch); local run 2026-11-23; D126, D137 |
+| Spawn resolution | `muse` on `PATH`, tested | POSIX path: the launcher script on `PATH`; the suite passes, a real launch is unmeasured | Resolved: `MUSE_BIN`, then `muse.exe` on PATH, then `muse-bin-<version>.exe` named by `.muse-version` beside the shim, then the newest `muse-bin-*.exe`. Observed on `windows-latest` with a stub: bare name `ENOENT`, explicit `.cmd` `EINVAL`, resolved binary spawns | E11 (run 45270085792); `src/host.ts`; E-R22-01, E-R22-03 |
+| Shutdown / close | Drain, then `SIGTERM`, then `SIGKILL` | Same code path; the suite passes, no real launch | No graceful rung (Node documents `SIGTERM` as forceful there), and the SDK's Windows path is **child-only**: `ownsProcessGroup` is false on `win32` and it has no `taskkill` route. Measured on a real host (E16c): `muse serve` itself recorded `exit reason recorded: stdin_closed` and the process was gone after `close()` | `src/watchdog.ts`; E16c (run 45281586619); E-R21-07; E-D135 |
+| Orphaned process after close | Not observed | Not observed | No survivor in the measured case: a real `muse serve` was alive and visible (`8728|muse-bin-1.4.25-R9361.1.exe|8744`), `close()` returned, and three seconds later the process table held nothing. The host's own stderr says it ended on stdin EOF, which is host-side evidence rather than the runner reaping it. A stub `.cmd` under `child.kill()` did leak a grandchild (E12), and a third-party harness needed `taskkill /PID /T /F` — treat the process table as the test, not the exit code | E16c (run 45281586619); E12; E-R21-07, E-R21-08; Paseo #6193 |
 | Token ledger mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`: Node's `chmod` changes only the write bit, and ACLs are not modeled | `src/usage-ledger.ts`; Node `fs` docs; E-D134 |
 | Hook trust-record mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`; same write-bit limit | `src/hooks.ts`; Node `fs` docs; E-D134 |
 | UAC on a headless spawn | Not applicable | Not applicable | The vendor documents a UAC prompt when the sandbox initialises; a headless spawn cannot answer it, and it surfaces 900 s later as `host_idle_timeout`, which names the wrong cause. No Windows host here | Vendor Windows list; `scripts/doctor.ts` `platform()`; E-D136 |
@@ -61,10 +75,13 @@ which is the read a user can rely on.
 
 ## Condition that changes this record
 
-A macOS runner that is actually assigned, or a real Windows host. The first is
-a queue problem, not a code one: the 2026-11-23 dispatch got no macOS runner at
-all. The second needs the hardware; a Windows 11 VM under KVM is the cheapest
-route, and Microsoft's evaluation VMs were withdrawn in October 2024
-(E-R22-09). Until then the honest status is "tested on Linux; Windows resolved
-and seam-checked, unverified on a real host; macOS unmeasured", not parity, and
-Windows is not claimed as working.
+A Windows desktop, or a turn on a hosted Windows runner. The desktop questions —
+UAC, SmartScreen, the interactive sign-in — cannot be answered on a runner; one
+hour on any signed-in Windows 11 machine, with the doctor and one turn, settles
+them. The turn needs a subscription login, not an API key: `muse auth` stores
+provider keys and `src/host-config.ts` deletes `META_API_KEY` from the child
+environment, so a key would test a route the plugin does not ship (round 23,
+E16b withdrawn). Until then the honest status is "tested on Linux and macOS;
+Windows spawn, install, configure, handshake and close measured on a hosted
+Server runner; best effort on a desktop" — not parity, and no Windows desktop
+claim.

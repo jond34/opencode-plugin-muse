@@ -226,17 +226,21 @@ percentages rather than a per-turn cost.
 - **Attachments.** Images only. The wire's attachment vocabulary is `"image"` in
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
-- **Platforms.** Built and tested on Linux. The offline suite has been
-  dispatched once (2026-11-23): Ubuntu passed, Windows failed on path and
-  home-directory fixtures, and macOS never got a runner. On Windows the plugin
+- **Platforms.** Built and tested on Linux and macOS: the offline suite passes on
+  both (macOS `macos-15`, 406 tests, 2026-11-23), and that run caught a real
+  macOS-only bug in hook trust, now fixed. Windows is where the suite fails, on
+  path and home-directory fixtures rather than plugin code. On Windows the plugin
   does not spawn the `muse` on PATH, because that is a `muse.cmd` shim and Node
   refuses to spawn one without a shell (`EINVAL`; the bare name is `ENOENT`). It
   spawns the native `muse-bin-<version>.exe` the installer writes beside the shim
   and names in `.muse-version`, falling back to the newest such binary; `MUSE_BIN`
   still overrides, and a failure names the setting and the file it looked for.
-  That resolution is checked on a real Windows runner against a stub binary — no
-  real Windows host has run the plugin — and Windows is best-effort with three
-  named caveats: the shutdown ladder has no
+  That is not inference: the vendor installer was run on `windows-latest` and
+  produced exactly that layout (no `muse.exe`), the resolver named
+  `muse-bin-1.4.25-R9361.1.exe`, `--version` and `config validate` both exited 0,
+  and a real `muse serve` started, granted `sessionMcp`, and closed with no
+  process left behind. Windows is still best-effort with three named caveats:
+  the shutdown ladder has no
   graceful rung, the ledger and the hook trust record carry an inherited ACL
   rather than `0600` (Windows `chmod` changes only the write bit), and the
   vendor's sandbox may ask for UAC consent when it initialises — a headless spawn

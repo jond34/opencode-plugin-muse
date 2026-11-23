@@ -305,5 +305,54 @@ from the child env. E16b is withdrawn and replaced by E16c.
 
 - E16a pass + E16c no orphan → D141, D142, D143 settle themselves; only Q28's
   wording remains.
+
+## Execution record (2026-11-23)
+
+Branch `round-22`, commits pushed to throwaway refs `ci/real` and `ci/mac` and
+deleted after use. Nothing on `main`.
+
+**E16a — pass, and the install needs no credential.** Run 45281586619,
+`windows-latest`. The vendor script exited 0 with "Installed muse to
+~\AppData\Local\Programs\muse\muse.cmd". Layout: `.muse-version` =
+`1.4.25-R9361.1`, `muse-bin-1.4.25-R9361.1.exe` (413,176,056 bytes), `muse.cmd`
+(176), `.muse-launcher.ps1` (28,194), `.muse-channel`, `.muse-release-info.json`.
+No `muse.exe`, so `path-exe` has no vendor-made instance. Resolution:
+`source=version-file` → the 413 MB binary. `--version` → `Muse Code 1.4.25
+(1.4.25-R9361.1)`, exit 0. `config validate --plane policy --file` → `valid:
+plane=policy schema_version=1`, exit 0. Bare `muse` → `ENOENT` even after
+install. **D141 stands as written, D143 confirmed.**
+
+**E16c — no orphan, and the first probe was wrong.** The live host was visible
+as `8728|muse-bin-1.4.25-R9361.1.exe|8744`; `close()` returned; three seconds
+later the table was empty, and the host's own stderr read `muse serve: exit
+reason recorded: stdin_closed`. The first attempt used `Get-Process -Name
+'muse-bin-*'`, printed an empty list *while the host was alive*, and would have
+reported a clean close from no evidence; the script now samples with CIM and
+fails the measurement if the live sample is empty. **D142: no reaper.** Keep the
+`taskkill` note as documentation of what a future leak would need.
+
+**E17 — green, and it found a bug.** First attempt (45281817519) was acquired on
+`macos-15` — so round 22's cancellation was capacity — and failed 403/3: three
+`hook-gate` tests where `hooksTrusted` canonicalizes the workspace but the record
+was written with `os.tmpdir()`'s `/var/folders/...` while the real path is
+`/private/var/folders/...`. Accepted hooks would be refused forever. Fixed in
+`src/hooks.ts` (`recordHookTrust` and `forgetHookTrust` canonicalize on write),
+reproduced locally with a symlinked `TMPDIR`, and the retry (45282185770) passed
+406/0. **D144: macOS is tested**, and the wording can say so.
+
+**E16b — withdrawn before it ran.** `muse auth` stores provider API keys; the
+subscription lives in `auth.json`, which the plugin links in and whose sibling
+env var it deletes. No secret was created.
+
+**E18, E19, E21 — blocked, not attempted.** All three need the owner: a Console
+workspace, a policy, and a `user`-scoped `gh` token. The Console cell stays
+unmeasured.
+
+Checks actually run: `npm run build`; `bun run check:offline` (439 tests, 38
+files, 0 fail); `bun test test/hook-gate.test.ts` under a symlinked `TMPDIR`
+(20 pass) — that symlink reproduces the macOS path shape on Linux, and it is how
+the fix was confirmed without a Mac; YAML parsed with pyyaml; `node --check` on
+the seam script. Not run: the full `ci/seam` matrix (its Windows and macOS cells
+are already known and would spend macOS minutes for no new information).
 - E18 source appears → D146 settles itself.
 - E17 cancelled twice → the only open question is money (Q27/Q28), not code.
