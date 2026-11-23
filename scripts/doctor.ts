@@ -20,16 +20,17 @@ import {
   forgetHookTrust,
   hookGateRefusal,
   hooksDigest,
+  hooksFileHandlers,
   hooksFilePath,
   hookTrustPath,
-  readHookTrust,
   readHookRows,
   recordHookTrust,
+  trustedHandlerHashes,
   type HookRow,
 } from "../src/hooks.js";
-import { MuseHost } from "../src/host.js";
+import { MuseHost, shutdownLadder } from "../src/host.js";
 import { hasSchemaDrift, hostFactsFrom } from "../src/host-facts.js";
-import { ledgerPath, stateDirectory } from "../src/usage-ledger.js";
+import { describeFilePermissions, ledgerPath, stateDirectory } from "../src/usage-ledger.js";
 import { packageVersion } from "../src/version.js";
 
 type Status = "ok" | "warn" | "fail" | "skipped";
@@ -47,6 +48,9 @@ interface HookReport {
   readonly trusted: boolean;
   readonly rows: HookRow[] | null;
   readonly refusal: string | null;
+  /** Handlers the workspace file declares, and how many of them are accepted. */
+  readonly handlers?: number;
+  readonly accepted?: number;
 }
 
 interface Report {
@@ -92,6 +96,27 @@ function versions(): Check {
   };
 }
 
+/**
+ * What this platform actually gives the plugin.
+ *
+ * Three behaviours differ on Windows and none of them is measurable from here:
+ * the shutdown ladder has no graceful rung (`SIGTERM` is a forceful kill), the
+ * ledger's mode is an inherited ACL rather than `0600`, and the vendor's sandbox
+ * may ask for UAC consent at init — which a headless spawn cannot answer, so it
+ * surfaces 900 s later as `host_idle_timeout`. Saying so is the whole check.
+ */
+function platform(): Check {
+  const windows = process.platform === "win32";
+  return {
+    id: "platform",
+    status: "ok",
+    detail:
+      `${process.platform}: shutdown ${shutdownLadder().join(" -> ")}; ` +
+      `ledger ${describeFilePermissions(ledgerPath(new Date(), process.env))}` +
+      (windows ? "; a UAC prompt at sandbox init can surface as host_idle_timeout" : ""),
+  };
+}
+
 function containment(env: NodeJS.ProcessEnv): Check {
   const on = (name: string): string => {
     const value = env[name]?.trim();
@@ -133,16 +158,15 @@ function trustState(env: NodeJS.ProcessEnv, root: string): HookReport {
   const file = hooksFilePath(root);
   const exists = existsSync(file);
   const digest = hooksDigest(file);
-  const canonical = canonicalRoot(root);
-  const trusted =
-    digest !== null &&
-    readHookTrust(env).some(
-      (entry) => entry.canonicalPath === canonical && entry.hooksSha256 === digest,
-    );
+  const handlers = hooksFileHandlers(file);
+  const trustedHashes = trustedHandlerHashes(root, env);
+  const trusted = handlers.length > 0 && handlers.every((handler) => trustedHashes.has(handler.sha256));
   return {
     file: exists ? redact(file) : null,
     digest: digest === null ? null : digest.slice(0, 12),
     trusted,
+    handlers: handlers.length,
+    accepted: handlers.filter((handler) => trustedHashes.has(handler.sha256)).length,
     rows: null,
     refusal: null,
   };
@@ -220,7 +244,7 @@ async function main(): Promise<number> {
   const env = process.env;
   const root = process.cwd();
   const report: Report = { asOf: new Date().toISOString(), checks: [], hooks: null };
-  report.checks.push(versions(), containment(env));
+  report.checks.push(versions(), platform(), containment(env));
 
   const trust = trustState(env, root);
 
@@ -235,16 +259,33 @@ async function main(): Promise<number> {
       });
     } else if (options.trustHooks) {
       const digest = hooksDigest(file) as string;
-      recordHookTrust(
-        { canonicalPath: canonicalRoot(root), hooksSha256: digest, acceptedAtMs: Date.now() },
-        env,
-      );
-      trust.trusted = true;
-      report.checks.push({
-        id: "hooks-trust",
-        status: "ok",
-        detail: `recorded ${redact(file)} (${digest.slice(0, 12)}) in ${redact(hookTrustPath(env))}`,
-      });
+      const handlers = hooksFileHandlers(file);
+      // A file with no handler this module can read is not recorded as trusted:
+      // the record would name nothing, and the gate would then refuse anyway.
+      if (handlers.length === 0) {
+        report.checks.push({
+          id: "hooks-trust",
+          status: "fail",
+          detail: `${redact(file)} declares no hook handler this plugin can read`,
+          remediation: "check the file's shape; nothing was recorded",
+        });
+      } else {
+        recordHookTrust(
+          {
+            canonicalPath: canonicalRoot(root),
+            handlers: handlers.map((handler) => ({ sha256: handler.sha256, label: handler.label })),
+            acceptedAtMs: Date.now(),
+          },
+          env,
+        );
+        trust.trusted = true;
+        trust.accepted = handlers.length;
+        report.checks.push({
+          id: "hooks-trust",
+          status: "ok",
+          detail: `recorded ${handlers.length} handler(s) from ${redact(file)} (${digest.slice(0, 12)}) in ${redact(hookTrustPath(env))}`,
+        });
+      }
     } else {
       const removed = forgetHookTrust(canonicalRoot(root), env);
       trust.trusted = false;
@@ -283,7 +324,7 @@ async function main(): Promise<number> {
         detail:
           probe.hooks.length === 0
             ? "no installed handlers"
-            : `${probe.hooks.length} handler(s): ${probe.hooks
+            : `${probe.hooks.length} handler(s), ${trust.accepted ?? 0} of ${trust.handlers ?? 0} declared accepted: ${probe.hooks
                 .map(
                   (row) =>
                     `${row.handlerKind}/${row.event}` +

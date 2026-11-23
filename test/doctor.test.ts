@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookGateRefusal, hooksDigest, hooksFilePath, hooksTrusted } from "../src/hooks.js";
+import {
+  hookGateRefusal,
+  hooksDigest,
+  hooksFileHandlers,
+  hooksFilePath,
+  hooksFileTrusted,
+} from "../src/hooks.js";
 
 /**
  * E-D12: is the doctor's output stable and secret-free?
@@ -73,16 +79,24 @@ describe("doctor --json", () => {
 });
 
 describe("doctor trust flags", () => {
-  test("--trust-hooks records a file the session gate then accepts", () => {
+  test("--trust-hooks records the handlers the session gate then accepts", () => {
     const { root, state } = workspace();
     mkdirSync(join(root, ".muse"), { recursive: true });
-    writeFileSync(hooksFilePath(root), '{"hooks":{"SessionStart":[]}}');
+    writeFileSync(
+      hooksFilePath(root),
+      '{"hooks":{"sessionStart":[{"hooks":[{"type":"command","command":"bun run setup"}]}]}}',
+    );
     const env = { ...process.env, XDG_STATE_HOME: state };
 
-    expect(hooksTrusted(root, hooksDigest(hooksFilePath(root)), env)).toBe(false);
-    const { code } = run(["--json", "--offline", "--trust-hooks"], root, state);
+    expect(hooksFileTrusted(root, env)).toBe(false);
+    const { code, out } = run(["--json", "--offline", "--trust-hooks"], root, state);
     expect(code).toBe(0);
-    expect(hooksTrusted(root, hooksDigest(hooksFilePath(root)), env)).toBe(true);
+    expect(hooksFileTrusted(root, env)).toBe(true);
+    // The record is per handler, and the doctor says how many it wrote.
+    expect(hooksFileHandlers(hooksFilePath(root))).toHaveLength(1);
+    expect(parse(out).checks.find((check) => check.id === "hooks-trust")?.detail).toContain(
+      "recorded 1 handler(s)",
+    );
     const projectRow = {
       enabled: true,
       event: "sessionStart",
@@ -92,16 +106,32 @@ describe("doctor trust flags", () => {
     expect(hookGateRefusal([projectRow], root, env)).toBeNull();
   });
 
+  test("--trust-hooks refuses a file with no readable handler, and records nothing", () => {
+    const { root, state } = workspace();
+    mkdirSync(join(root, ".muse"), { recursive: true });
+    writeFileSync(hooksFilePath(root), '{"hooks":{}}');
+    const env = { ...process.env, XDG_STATE_HOME: state };
+    const { code, out } = run(["--json", "--offline", "--trust-hooks"], root, state);
+    expect(code).toBe(1);
+    expect(parse(out).checks.find((check) => check.id === "hooks-trust")?.detail).toContain(
+      "declares no hook handler",
+    );
+    expect(hooksFileTrusted(root, env)).toBe(false);
+  });
+
   test("--forget-hooks revokes it", () => {
     const { root, state } = workspace();
     mkdirSync(join(root, ".muse"), { recursive: true });
-    writeFileSync(hooksFilePath(root), "{}");
+    writeFileSync(
+      hooksFilePath(root),
+      '{"hooks":{"sessionStart":[{"hooks":[{"type":"command","command":"bun run setup"}]}]}}',
+    );
     const env = { ...process.env, XDG_STATE_HOME: state };
     run(["--json", "--offline", "--trust-hooks"], root, state);
-    expect(hooksTrusted(root, hooksDigest(hooksFilePath(root)), env)).toBe(true);
+    expect(hooksFileTrusted(root, env)).toBe(true);
     const { code } = run(["--json", "--offline", "--forget-hooks"], root, state);
     expect(code).toBe(0);
-    expect(hooksTrusted(root, hooksDigest(hooksFilePath(root)), env)).toBe(false);
+    expect(hooksFileTrusted(root, env)).toBe(false);
   });
 
   test("trusting a workspace with no hooks file fails, with a reason", () => {

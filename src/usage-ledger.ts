@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -148,6 +149,28 @@ export function stateDirectory(env: NodeJS.ProcessEnv = process.env): string {
 /** `usage-YYYY-MM-DD.jsonl` inside the ledger directory. */
 export function ledgerPath(date: Date = new Date(), env: NodeJS.ProcessEnv = process.env): string {
   return join(stateDirectory(env), `usage-${date.toISOString().slice(0, 10)}.jsonl`);
+}
+
+/**
+ * How the ledger file's permissions can honestly be described.
+ *
+ * On POSIX the plugin writes `0600` and the mode can be read back. On Windows
+ * Node's `fs.chmod` "only the write permission can be changed, and the
+ * distinction among the permissions of group, owner, or others is not
+ * implemented", so printing `0600` there would report a guarantee the file does
+ * not have: it inherits the directory's ACL.
+ */
+export function describeFilePermissions(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === "win32") return "inherited ACL (Windows chmod changes only the write bit)";
+  try {
+    const mode = statSync(path).mode & 0o777;
+    return mode.toString(8).padStart(4, "0");
+  } catch {
+    return "unknown (no file yet)";
+  }
 }
 
 /**

@@ -179,6 +179,22 @@ export interface MuseHostOptions {
 }
 
 /**
+ * The shutdown rungs this platform actually has.
+ *
+ * The SDK owns the ladder — stdin EOF, a drain window, then SIGTERM and
+ * SIGKILL — so this plugin cannot skip a rung. What it can do is say which
+ * rungs are real. Node documents `SIGTERM`, `SIGKILL` and `SIGINT` on Windows as
+ * terminating the process "forcefully and abruptly", and `SIGTERM` as not
+ * supported there, so the last two rungs collapse into one hard kill: the host
+ * is ended, not drained gracefully, after the drain window.
+ */
+export function shutdownLadder(platform: NodeJS.Platform = process.platform): readonly string[] {
+  return platform === "win32"
+    ? ["stdin-eof", "drain", "hard-kill"]
+    : ["stdin-eof", "drain", "sigterm", "sigkill"];
+}
+
+/**
  * One `muse serve` process and its raw MSP connection.
  *
  * The host owns the connection and routes notifications to registered sinks by
