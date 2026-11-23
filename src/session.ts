@@ -915,7 +915,13 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       errorKind?: unknown;
     };
     const delayMs = typeof retry.retryDelayMs === "number" ? retry.retryDelayMs : 0;
-    this.watchdog?.noteRetry(delayMs);
+    // The frame carries the host's own bound (`attempt < nextAttempt <= maxAttempts`),
+    // so the clock can stop extending on the last one.
+    this.watchdog?.noteRetry(
+      delayMs,
+      typeof retry.attempt === "number" ? retry.attempt : undefined,
+      typeof retry.maxAttempts === "number" ? retry.maxAttempts : undefined,
+    );
     if (typeof retry.attempt === "number") {
       const ceiling =
         typeof retry.maxAttempts === "number" ? `/${retry.maxAttempts}` : "";

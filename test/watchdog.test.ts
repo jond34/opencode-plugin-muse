@@ -195,6 +195,28 @@ describe("watchdog clocks", () => {
     watchdog.stop();
   });
 
+  test("the last scheduled attempt does not extend the idle clock", async () => {
+    const expiries: string[] = [];
+    const watchdog = createTurnWatchdog({
+      firstByteMs: 0,
+      idleMs: 20,
+      warnMs: 0,
+      retryCapMs: 600_000,
+      onExpire: (reason) => expiries.push(reason),
+    });
+    watchdog.touch(true);
+    // Attempt 1 of 3 is a backoff: the host's own delay plus grace outlasts the
+    // window, and the turn is not a wedge.
+    watchdog.noteRetry(400, 1, 3);
+    await sleep(60);
+    expect(expiries).toHaveLength(0);
+    // Attempt 3 of 3 is the last: nothing more is scheduled, so the normal
+    // window applies and a silent host is a wedge again.
+    watchdog.noteRetry(400, 3, 3);
+    await sleep(60);
+    expect(expiries).toEqual(["idle"]);
+  });
+
   test("the tool ceiling is off unless it is configured", async () => {
     const expiries: string[] = [];
     const watchdog = createTurnWatchdog({

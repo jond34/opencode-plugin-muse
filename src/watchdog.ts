@@ -108,8 +108,12 @@ export interface TurnWatchdog {
    * The host scheduled a model retry: it is backing off, not wedged. Extends
    * the idle clock by the host's own delay plus a grace, capped by
    * `retryCapMs`. `retryCapMs: 0` keeps the normal reset instead.
+   *
+   * `attempt` and `maxAttempts` are the frame's own bound. On the last attempt
+   * there is nothing left to wait for, so the extension collapses to the normal
+   * reset: holding a turn the host is about to fail helps nobody.
    */
-  noteRetry(delayMs: number): void;
+  noteRetry(delayMs: number, attempt?: number, maxAttempts?: number): void;
   stop(): void;
   /** True once a budget expired; a late frame must not revive the turn. */
   readonly expired: boolean;
@@ -213,13 +217,20 @@ export function createTurnWatchdog(options: TurnWatchdogOptions): TurnWatchdog {
       armWarn();
       armIdle();
     },
-    noteRetry(delayMs: number): void {
+    noteRetry(delayMs: number, attempt?: number, maxAttempts?: number): void {
       if (expired || stopped) return;
       // A retry frame is the host answering, so the first-byte clock is done.
       firstByte = clear(firstByte);
       warned = false;
       armWarn();
       if (bridgePending) return;
+      // The last scheduled attempt is not a backoff: the host is about to try
+      // once more, and then it is done either way.
+      const lastAttempt = attempt !== undefined && maxAttempts !== undefined && attempt >= maxAttempts;
+      if (lastAttempt) {
+        armIdle();
+        return;
+      }
       const extension = Math.max(options.idleMs, Math.max(0, delayMs) + RETRY_GRACE_MS);
       const budget = retryCapMs > 0 ? Math.min(extension, retryCapMs) : options.idleMs;
       idle = clear(idle);
