@@ -197,6 +197,145 @@ export function pluginRow(documents: unknown, root: string, pkgName: string): Ch
   };
 }
 
+interface PolicySource {
+  readonly path?: unknown;
+  readonly info?: { readonly policies?: unknown } | null;
+}
+
+/**
+ * A JSONC reader, because the doctor has to read the file the host validated.
+ *
+ * Comments and trailing commas come out; everything else is left to
+ * `JSON.parse`, which then refuses what the host would refuse too. Strings are
+ * copied whole, so a `//` inside one is not a comment and a comma inside one is
+ * not structural.
+ */
+export function parseJsonc(text: string): unknown {
+  let out = "";
+  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  while (i < text.length) {
+    const char = text[i] as string;
+    if (char === '"') {
+      out += char;
+      i += 1;
+      while (i < text.length) {
+        const inside = text[i] as string;
+        out += inside;
+        i += 1;
+        if (inside === "\\" && i < text.length) {
+          out += text[i] as string;
+          i += 1;
+        } else if (inside === '"') {
+          break;
+        }
+      }
+      continue;
+    }
+    if (char === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i += 1;
+      continue;
+    }
+    if (char === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
+      i += 2;
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      // Only a structural comma can reach here, because a string ends with its
+      // own quote, so this cannot eat one that belongs to a value.
+      out = out.replace(/\s*,\s*$/, "");
+    }
+    out += char;
+    i += 1;
+  }
+  return JSON.parse(out) as unknown;
+}
+
+/**
+ * Statements a config file declares. `experimental.policies` counts because the
+ * host merges it into the same array (E-D59b), and undefined means the file
+ * declares none, so a document with no policy key contributes no row.
+ */
+function declaredStatements(value: unknown): number | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const doc = value as { policies?: unknown; experimental?: { policies?: unknown } | null };
+  const top = Array.isArray(doc.policies) ? doc.policies.length : 0;
+  const experimental = Array.isArray(doc.experimental?.policies)
+    ? (doc.experimental?.policies as unknown[]).length
+    : 0;
+  if (!Array.isArray(doc.policies) && !Array.isArray(doc.experimental?.policies)) return undefined;
+  return top + experimental;
+}
+
+/**
+ * D55: does every declared statement get enforced?
+ *
+ * A statement that fails validation is dropped before `opencode debug config`
+ * prints the document (E-D58, E-D59), so the surface cannot report a validation
+ * result — but it can be compared with the file it printed. Declared counts come
+ * from the file, enforced counts from the document, and a file with more of the
+ * former than the latter is the silent case: nothing matching means the action is
+ * allowed, so a typo reads as no policy at all. The enum is never re-derived
+ * here, which is what keeps this row from drifting with a new action name.
+ *
+ * Limits the row states by staying quiet: a source it cannot read is skipped,
+ * never guessed, and the remote (Console-delivered) path is not visible at all.
+ */
+export function policyRow(documents: unknown, read: (path: string) => string | undefined): Check {
+  if (!Array.isArray(documents)) {
+    return {
+      id: "policies",
+      status: "skipped",
+      detail: "`opencode debug config` did not answer; policy statements unknown",
+      remediation: "run `opencode debug config` directly to see why",
+    };
+  }
+  const sources: Array<{ source: string; declared: number; enforced: number }> = [];
+  for (const document of documents) {
+    const doc = document as PolicySource | null;
+    const path = doc?.path;
+    if (typeof path !== "string") continue;
+    const text = read(path);
+    if (text === undefined) continue;
+    let parsed: unknown;
+    try {
+      parsed = parseJsonc(text);
+    } catch {
+      continue;
+    }
+    const declared = declaredStatements(parsed);
+    if (declared === undefined) continue;
+    const enforced = Array.isArray(doc?.info?.policies) ? (doc.info.policies as unknown[]).length : 0;
+    sources.push({ source: redact(path), declared, enforced });
+  }
+  if (sources.length === 0) {
+    return {
+      id: "policies",
+      status: "skipped",
+      detail: "no readable config source declares `policies`; nothing to drop",
+    };
+  }
+  const dropped = sources.filter((source) => source.enforced < source.declared);
+  if (dropped.length === 0) {
+    const total = sources.reduce((sum, source) => sum + source.declared, 0);
+    return {
+      id: "policies",
+      status: "ok",
+      detail: `${total} statement(s) from ${sources.length} source(s), all enforced`,
+    };
+  }
+  return {
+    id: "policies",
+    status: "warn",
+    detail: `policy statements are not all enforced: ${dropped
+      .map((source) => `${source.source}: ${source.declared} declared, ${source.enforced} enforced`)
+      .join("; ")}`,
+    remediation:
+      "a statement that fails validation is dropped with a warning in the server log, and nothing matching means the action is allowed; check the action and effect names",
+  };
+}
+
 /** `opencode debug config`, or undefined when the CLI is absent or refuses. */
 function opencodeConfig(): unknown {
   const result = spawnSync("opencode", ["--standalone", "debug", "config"], {
@@ -424,8 +563,23 @@ async function main(): Promise<number> {
       status: "skipped",
       detail: "--offline: opencode's config was not read",
     });
+    report.checks.push({
+      id: "policies",
+      status: "skipped",
+      detail: "--offline: opencode's config was not read",
+    });
   } else {
-    report.checks.push(pluginRow(opencodeConfig(), join(import.meta.dir, ".."), packageName()));
+    const documents = opencodeConfig();
+    report.checks.push(pluginRow(documents, join(import.meta.dir, ".."), packageName()));
+    report.checks.push(
+      policyRow(documents, (path) => {
+        try {
+          return readFileSync(path, "utf8");
+        } catch {
+          return undefined;
+        }
+      }),
+    );
   }
 
   const trust = trustState(env, root);

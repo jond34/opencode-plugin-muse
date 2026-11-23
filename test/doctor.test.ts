@@ -10,7 +10,7 @@ import {
   hooksFilePath,
   hooksFileTrusted,
 } from "../src/hooks.js";
-import { pluginRow, postureCheck } from "../scripts/doctor.js";
+import { parseJsonc, pluginRow, policyRow, postureCheck } from "../scripts/doctor.js";
 
 /**
  * E-D12: is the doctor's output stable and secret-free?
@@ -268,5 +268,101 @@ describe("the plugins row", () => {
     expect(code).toBe(0);
     const row = parse(out).checks.find((check) => check.id === "plugins");
     expect(row?.status).toBe("skipped");
+  });
+});
+
+/**
+ * D55: a statement that fails validation is dropped before `debug config` prints
+ * the document (E-D58, E-D59), so the row compares the file with the document.
+ * These fixtures are the three E-D59 shapes plus the two ways the row stays
+ * quiet. The action enum is never consulted, which is the point.
+ */
+describe("the policies row", () => {
+  const document = (path: string, policies: unknown) => ({ type: "document", path, info: { policies } });
+  const read = (files: Record<string, string>) => (path: string) => files[path];
+
+  test("a statement the host dropped is named, with its source", () => {
+    const path = "/tmp/opencode/opencode.jsonc";
+    const file = `{
+      // one valid, one misspelled action
+      "policies": [
+        { "action": "tool.use", "resource": "read:*", "effect": "deny" },
+        { "action": "provider.ues", "resource": "muse", "effect": "deny" }
+      ]
+    }`;
+    const row = policyRow([document(path, [{ action: "tool.use" }])], read({ [path]: file }));
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain(path);
+    expect(row.detail).toContain("2 declared, 1 enforced");
+    expect(row.remediation).toContain("server log");
+    expect(row.remediation).toContain("nothing matching means the action is allowed");
+  });
+
+  test("experimental.policies counts, because the host merges it", () => {
+    const path = "/tmp/opencode/opencode.jsonc";
+    const file = `{
+      "policies": [{ "action": "tool.use", "resource": "read:*", "effect": "deny" }],
+      "experimental": { "policies": [{ "action": "tool.use", "resource": "write:*", "effect": "deny" }] },
+    }`;
+    const row = policyRow([document(path, [{}, {}])], read({ [path]: file }));
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("2 statement(s) from 1 source(s)");
+  });
+
+  test("each source is compared with its own document, not with the merged list", () => {
+    const global = "/tmp/opencode/opencode.jsonc";
+    const project = "/tmp/project/opencode.jsonc";
+    const row = policyRow(
+      [document(global, [{}]), document(project, [{}])],
+      read({ [global]: '{"policies":[{"action":"tool.use"}]}', [project]: '{"policies":[{"action":"tool.use"}]}' }),
+    );
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("2 statement(s) from 2 source(s)");
+  });
+
+  test("a file the doctor cannot read is skipped, not guessed", () => {
+    const row = policyRow([document("/tmp/opencode/opencode.jsonc", [{}])], () => undefined);
+    expect(row.status).toBe("skipped");
+    expect(row.detail).toContain("no readable config source");
+  });
+
+  test("a config that declares no policies is skipped, not ok", () => {
+    const path = "/tmp/opencode/opencode.json";
+    const row = policyRow([document(path, null)], read({ [path]: "{}" }));
+    expect(row.status).toBe("skipped");
+  });
+
+  test("a CLI that does not answer is skipped, not guessed", () => {
+    expect(policyRow(undefined, () => undefined).status).toBe("skipped");
+  });
+
+  test("a path under the home directory is folded", () => {
+    const path = join(homedir(), "cfg", "opencode.jsonc");
+    const row = policyRow(
+      [document(path, [{}])],
+      read({ [path]: '{"policies":[{"action":"tool.use"},{"action":"tool.ues"}]}' }),
+    );
+    expect(row.status).toBe("warn");
+    expect(row.detail).not.toContain(homedir());
+    expect(row.detail).toContain("~/cfg/opencode.jsonc");
+  });
+
+  test("the JSONC reader keeps a // inside a string and drops comments and trailing commas", () => {
+    const parsed = parseJsonc(`{
+      // comment
+      "policies": [{ "action": "tool.use", "resource": "https://example.com/a//b", "effect": "deny" },],
+      /* block */
+      "model": "muse/muse-spark-1.3",
+    }`) as { policies: Array<{ resource: string }>; model: string };
+    expect(parsed.policies).toHaveLength(1);
+    expect(parsed.policies[0]?.resource).toBe("https://example.com/a//b");
+    expect(parsed.model).toBe("muse/muse-spark-1.3");
+  });
+
+  test("offline reports the row as skipped without spawning anything", () => {
+    const { root, state } = workspace();
+    const { code, out } = run(["--json", "--offline"], root, state);
+    expect(code).toBe(0);
+    expect(parse(out).checks.find((check) => check.id === "policies")?.status).toBe("skipped");
   });
 });
