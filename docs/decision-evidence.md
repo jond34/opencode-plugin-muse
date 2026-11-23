@@ -389,6 +389,114 @@ and the failure is recorded here as well as the pass.
   guidance is for a client that can author rules, which this one cannot.
 - Conclusion: the gate is opencode's. README and the coverage row now say so.
 
+## Round 5
+
+### E-D19 — a live parked call, and `task/background` on it (two turns)
+
+**Question.** On a live host, does a bridged call that outlives the idle window
+survive, and does `task/background` accept a bridged call's `itemId`?
+
+**Method.** `scratch/live-long-call.ts`, through the production path
+(`MuseHarnessAdapter` → `MuseSession` → watchdog → tool bridge), not a
+reimplementation. The turn asked the model to call a bridged `sleep_ms` tool
+exactly once; the tool parks in-process. Run under `zsh -lc`:
+
+```
+MUSE_IDLE_TIMEOUT_MS=4000  PARK_MS=20000 PROBE_AT_MS=5000  BACKGROUND_AT_MS=6000  bun scratch/live-long-call.ts
+MUSE_IDLE_TIMEOUT_MS=15000 PARK_MS=25000 PROBE_AT_MS=20000 BACKGROUND_AT_MS=21000 bun scratch/live-long-call.ts
+```
+
+**Run 1 (4 s window, 20 s park).** The call was **not** killed while parked: the
+tool started at 3.9 s and returned at 23.9 s with no expiry in between. The turn
+failed at 27.9 s — exactly 4 s after the tool returned — while the host was still
+in its end-of-turn gate. The adapter surfaced no `tool.started` for the bridged
+call (the raw `item/started` frame did carry `kind: "toolCall"`), so no `itemId`
+was available and `task/background` was not attempted.
+
+**Run 2 (15 s window, 25 s park).** At 20.9 s the probe read
+`parkedFor=17642ms, terminal=false, failure=null` — **17.6 s inside a 15 s window
+with the turn still running.** That is the live proof the suspension works, and
+it is the measurement D22 wanted. Then:
+
+- `task/background` with the running call's `itemId` was **refused**:
+  `task/background command … rejected: invalid_target`. Branch (b) of § 10.3: a
+  bridged call is not a backgroundable Muse task. D18 stands as written, and no
+  backgrounding path is built (G4 is moot).
+- The host's own session record for the run:
+  `{"kind":"terminal","terminal":"completed","turn_duration_ms":36652,
+  "eot_gate_ms":8138,"time_to_first_token_ms":28481}` — the turn **completed**
+  at 36.7 s.
+- The plugin still failed it at 43.3 s: `host_idle_timeout`, "Muse sent no frame
+  for 15000 ms after starting". The clock had been armed at 28.3 s (the last
+  item), the host's end-of-turn gate was silent for 8.1 s, and the completion
+  frame at 36.7 s did not reset the clock. So the plugin reported a timeout for
+  a turn the host had recorded as completed 6.6 s earlier.
+
+**What this settles.** D16's suspension is real on a live host, not only against
+a fixture. `task/background` is closed for bridged calls. And the end-of-turn
+gate is a phase the clock does not know about — see U26.
+
+**What it does not settle.** Why the completion frame did not stop the clock:
+the probe logged frame *counts*, not frame *times*, so it cannot separate "the
+frame arrived late" from "the handler dropped it". At the 180 s default an 8.1 s
+gate is harmless, which is why this has not bitten a user. The next probe only
+needs timestamps on `turn/completed`, and it can ride on any future paid turn.
+
+**Cost.** Two turns, one more than § 10.3 planned: the 4 s window was too tight
+to observe a completed turn at all, so the second run repeated the measurement
+at 15 s. Both runs are recorded; neither was retried to make a result look
+cleaner.
+
+### E-D21 — does a declaration survive a resume? (free)
+
+**Question.** The docs say a `declareExternalWait` is live-only: "a serve restart,
+unload, or resume loses the declaration". Which of those is true?
+
+**Method.** `scratch/external-wait-resume.ts`: start a session, declare, read;
+`session/resume` with `excludeItems: true`, read again; then close the host,
+spawn a second one, resume the same session id, and read once more.
+
+**Result.** Two different answers, and the docs are right about the one that
+matters:
+
+| Step | `session/read` → `externalWait` |
+|---|---|
+| after declare | `{"reason":"bash: bun test"}` |
+| after **warm** resume (same host) | `{"reason":"bash: bun test"}` |
+| after **cold** resume (new host) | `null` |
+
+So the declaration is not lost by a resume as such; it is lost when the process
+that holds it goes away. D18's wording stands ("a status signal, not durability"),
+and the README sentence has to say *which* resume — see W6's edit. A warm resume
+that re-attaches to a live host keeps the declaration, which is the opposite of
+what the sentence said.
+
+### E-D22 — is `hook/list`'s `key` stable across an edit above it? (free)
+
+**Question.** If the doctor or a trust record keys on `key`, does inserting a
+handler above the others renumber the ones below?
+
+**Method.** `scratch/hook-key-stability.ts`: a temp workspace with two handlers
+under `PreToolUse`, `hook/list`; insert a third *above* them; read again in the
+same session and in a second one.
+
+**Result.** The keys did not shift. Before: `def-e7ba7226d34e8bb3` and
+`def-bd8c47548bdeacb6`. After: the same two, plus `def-64c7f408ba372952` for the
+inserted handler, identically in a fresh session.
+
+**What it means.** The vendor's key is `path:event:def-<hash>`, and the `def-`
+part is derived from the handler rather than its position — so it agrees with
+D23's content-hashing choice, and the branch "if keys shift, label by content
+hash" does not trigger. It does **not** make the key usable as a trust key on its
+own: the catalog never carries the command, so a `def-` hash cannot be checked
+against what will run, and its derivation is undocumented. The record keeps its
+own hash of the parsed handler; the vendor key stays a display label.
+
+**Incidental.** The file's event keys are the vendor's spellings: `PreToolUse`
+loads and is reported as `preToolUse`, while a lowercase `preToolUse` key is
+silently ignored — empty catalog, nothing on stderr. Worth knowing when a
+workspace's hooks "do nothing".
+
 ## Decisions taken
 
 These were owner calls, not experiments. The owner approved every experiment and

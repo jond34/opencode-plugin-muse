@@ -22,6 +22,14 @@ U11, P2, P4 — and nine closed on measured evidence rather than on argument: U2
 U3, U4, U6, U7, U8, U9, U10 and P4. Round 3 closed ten more: U5, U11, U12, U13,
 U14, U15, P1, P2 and P3 by decision and implementation.
 
+**Round 5 audit (HEAD `8e8448f`).** Each § 10.1 answer was checked against the
+vendor's published schema rather than against `src/`, and the three probes ran
+against the installed 1.4.25 host. The round moved seven rows and opened one it
+could not close (U26). Two claims in round 4's record were wrong in detail and
+are corrected here: the ACP route's premise (ACP does carry tools now; the real
+reason is that opencode is an ACP agent, not a client) and the "resume loses the
+declaration" caveat (a warm resume keeps it; a cold one loses it).
+
 **Round 4 audit (HEAD `9c1dc6d`).** The four commits since `09c4a54` were checked
 row by row against `src/`, not against this file's previous claims. Nineteen of
 the twenty rows closed. Four new rows opened, three of them created by the
@@ -107,7 +115,7 @@ still undispatched (`gh run list` shows no `test` run on `main`).
 | Model switch mid-session | `session/setModel` | H | protocol surface |
 | Reasoning effort / variant | Header-driven | H | `effort.ts`, second pass |
 | Sampling controls | Not expressible | X | A10 |
-| Structured output / `toolChoice` | Not used | D | edge table: "no current path uses structured output" |
+| Structured output / `toolChoice` | Not expressible | D | `generated/msp/methods/turn-start`: the nine members are `commandId`, `displayText`, `ifBusy`, `input`, `reasoningEffort`, `sessionId`, `tokenBudget`, `userShell`, `workspaceRoots` — there is no output-format member, and the escape hatch is closed by rule: "`turn/start.providerRequestOptions` is deliberately absent: **RULED to stay off the published schema.**" So this is not "unused": nothing on the wire can carry a schema. Vercel's `outputFormat` → `structured_output` has no counterpart here. A D rather than an X because the absence is a schema decision the vendor may revisit, not a transport impossibility |
 | Title / summarize one-off turns | Yes, ledgered as own kind | H | `language-model.ts:464` |
 | Sessionless completion (`model/complete`) | Rejected as a path | D | A14 |
 
@@ -129,7 +137,7 @@ still undispatched (`gh run list` shows no `test` run on `main`).
 
 | Dimension | This plugin | Status | Basis |
 |---|---|---|---|
-| ACP surface | Not built | D | seam-review §14, plan §7 R2 withdrawn |
+| ACP surface | Not built | D | seam-review §14, plan §7 R2 withdrawn. Premise corrected 2026-11-22: `muse acp` "runs the same Muse Code host as `muse serve`" — same login, same attestation — and ACP now **does** carry a tool channel, because "when the editor passes its MCP servers to the agent, Muse Code starts the stdio and HTTP servers for the session" (`guides/editors-acp`). The route still closes, for the real reason: opencode is an ACP *agent*, not a client. Its docs describe only the agent side (`opencode.ai/docs/cli/acp`), and a source-level audit of 2.0.29 records "Drive other ACP agents — Not supported… neither 2.x nor 1.x contains ACP client code". Reaching Muse over ACP from opencode would mean writing an ACP client, a second integration surface for the same turn |
 | Vendor partnership / host identity | Not pursued; the plugin says it is unofficial | D | D14: no partnership is sought, and the README says unofficial, not affiliated, not endorsed. Asking is the only move that changes the category, and it is a decision to leave alone |
 | Published terms, privacy statement | README identity + on-disk paragraphs | D | D14: what the plugin holds (no credentials), what it writes (one ledger file, counts only), what it sends (nothing but the turns), and the MIT licence. No separate policy document: there is no server, no account, and no data collection to describe |
 | Platform support (Windows, macOS) | Tested on Linux only | U | `.github/workflows/test.yml` runs the offline suite on all three, `workflow_dispatch` only: configured, never dispatched, and `gh run list` on 2026-11-22 shows no `test` run. U16. The vendor supports all three (native binary, PowerShell installer, and a documented Windows list: PowerShell instead of Bash, a UAC prompt when the sandbox initialises, no voice, no session messaging), so spawn resolution is not the concern; the matrix would only prove the suite, whose hosts are `.mjs` fixtures under node, not the seam. What it would not answer either way: POSIX modes on the ledger and trust record; the shutdown ladder, which Windows cannot honour — Node's docs say `SIGTERM`/`SIGKILL` "terminate the process forcefully and abruptly", so "drain, then SIGTERM, then SIGKILL" collapses to one hard kill; and the UAC prompt, which spawned headless surfaces as `host_idle_timeout` |
@@ -158,10 +166,18 @@ numberings were different in the first draft and only one survives.
 
 | Ref | Dimension | Why it bites | Cheapest closure |
 |---|---|---|---|
-| U17 | Bridged tool call outliving the idle clock | **Closed round 4 (D16).** The bridge reports its `tools/call` count; while one is in flight the idle clock is suspended and an optional `MUSE_TOOL_CEILING_MS` bounds the call instead (E-D13 measured the false kill first). Superseded: it fails healthy turns. 180 s is shorter than a build or a test suite, the failure names the host rather than the tool, so the user learns the wrong lesson — and the vendor sets **no** deadline of its own on a host-run tool. The peer numbers bracket us: `pi-muse-subscription` runs Muse with `tool_timeout_sec` set to a week and `idleMinutes` 20, and openclaw's model-idle windows are 120 s cloud / 300 s self-hosted — applied to a *model* request with keepalive comments, which is the phase distinction we lost. `STREAM_BUDGET_MS` in the vendor's quickstart is a test harness constant, not a wire limit, so nothing on the wire would have ended the call | Pause the idle clock while `bridge.ts` has a call in flight — the `inFlight` map already exists for aborts, so this is a size check beside `watchdog.touch` — and, better, declare it: see U19. The first-byte clock still bounds a host that never answers |
-| U18 | Provider-backoff dead air | **Closed round 4 (D17).** `turn/modelRetryScheduled` is substantive and extends the idle clock by the host's own `retryDelayMs` plus a grace, capped by `MUSE_RETRY_CAP_MS` (E-D14 measured the kill first). Superseded: the wire already distinguishes "thinking" from "retrying"; the plugin threw that away and then killed the host for it | Count `turn/modelRetryScheduled` as substantive in `isSubstantiveProgress`, and log the attempt/delay it carries |
+| U17 | Bridged tool call outliving the idle clock | **Closed round 4 (D16).** The bridge reports its `tools/call` count; while one is in flight the idle clock is suspended and an optional `MUSE_TOOL_CEILING_MS` bounds the call instead (E-D13 measured the false kill first). Superseded: it fails healthy turns. 180 s is shorter than a build or a test suite, the failure names the host rather than the tool, so the user learns the wrong lesson — and the vendor sets **no** deadline of its own on a host-run tool. The peer numbers bracket us: `pi-muse-subscription` runs Muse with `tool_timeout_sec` set to a week and `idleMinutes` 20, and openclaw's model-idle windows are 120 s cloud / 300 s self-hosted — applied to a *model* request with keepalive comments, which is the phase distinction we lost. `STREAM_BUDGET_MS` in the vendor's quickstart is a test harness constant, not a wire limit, so nothing on the wire would have ended the call | Pause the idle clock while `bridge.ts` has a call in flight — the `inFlight` map already exists for aborts, so this is a size check beside `watchdog.touch` — and, better, declare it: see U19. The declaration is a status signal, not protection — it is absent from the unload condition set ("zero subscribers, no active or pending run, and no pending approval or user-input prompt") and is lost on restart, resume and the next input. The first-byte clock still bounds a host that never answers |
+| U18 | Provider-backoff dead air | **Closed round 4 (D17).** `turn/modelRetryScheduled` is substantive and extends the idle clock by the host's own `retryDelayMs` plus a grace, capped by `MUSE_RETRY_CAP_MS` (E-D14 measured the kill first). Superseded: the wire already distinguishes "thinking" from "retrying"; the plugin threw that away and then killed the host for it | Count `turn/modelRetryScheduled` as substantive in `isSubstantiveProgress`, and log the attempt/delay it carries. The frame carries a required `maxAttempts` with the producer contract `attempt < nextAttempt <= maxAttempts`, so the host already bounds its own chain: the extension should stop at the last attempt rather than hold a turn that is about to fail (D24) |
 | U19 | A long bridged call, announced | **Closed round 4 (D18).** `declareExternalWait` is sent on 0→1 and `clearExternalWait` on 1→0 with the tool label; E-D15 proved the live host serves `externalWait` on `session/read`. `task/background` is deliberately not used: it backgrounds a *Muse* tool task, and under the `empty` preset Muse has none. Superseded: the wire carries exactly the two affordances this situation needs and the plugin used neither: `session/declareExternalWait({sessionId, reason})` / `session/clearExternalWait`, whose declaration is served on the session as `externalWait` so a client can show "waiting on bash", and `task/background({commandId, sessionId, taskId})` where a `toolCall`'s `itemId` **is** the task id, so a running call can be durably backgrounded and its terminal arrives as a `backgroundTerminalCompletion` item. Both are client commands; `grep` finds no use in `src/`. Declaring the wait is what makes the runtime and any client see the wait instead of silence; backgrounding is what lets a turn survive a call longer than the turn. Caveat: a declaration is live-only — lost on restart, resume, and the next user input — so it is a status signal, not durability | Call `declareExternalWait` when `inFlight.size` goes 0→1 and `clearExternalWait` at 1→0, reason from the tool names; then use `task/background` past a threshold instead of holding the turn |
 | U16 | Platform support | Unmeasured off Linux; the matrix proves the suite, not the seam | Dispatch `.github/workflows/test.yml`, then write what it showed — including the three Windows-specific unknowns in the G table. Needs the owner's GitHub session |
+| U20 | Live long-call behaviour | **Closed round 5 (D22, E-D19).** Live, through the production path: a bridged `sleep_ms` call was still running 17.6 s into a 15 s idle window and the turn had not failed. The same probe at a 4 s window showed no kill during a 20 s park either. The suspension is real on a live host, not only against a fixture | Measurement stands; the remaining live question moved to U26 |
+| U21 | The hook trust unit is the file | **Closed round 5 (D23).** The record is per handler, keyed by a hash of the handler's canonical JSON with its event and matcher, so an edited neighbour does not re-ask and a changed command cannot ride a stable key or position into trust (the second case is pinned by a test). The gate stays all-or-nothing because the host loads the whole file once the workspace is trusted: per handler is accounting, not execution. A v1 record still passes a file whose bytes still match it, and the next `--trust-hooks` writes v2; a file with no handler the plugin can parse is refused rather than trusted, which is the fail-closed side of a format this plugin does not own. E-D22 confirmed the vendor's own key is content-derived too, so the two agree | Record written by `bun run doctor --trust-hooks`, which reports how many handlers it accepted |
+| U22 | The Windows shutdown ladder | **Closed round 5 (D25a).** Node documents `SIGTERM`/`SIGKILL`/`SIGINT` as "terminate the process forcefully and abruptly", so "drain, then `SIGTERM`, then `SIGKILL`" collapses to one hard kill. The SDK owns the ladder and offers no switch for a rung, so the plugin cannot skip it; what it can do is state it: `shutdownLadder(platform)` is injected and tested for `win32`, the doctor prints the rungs this machine has, and the README says the host is ended rather than asked to stop | No code path is claimed to work on Windows that a test has run there |
+| U23 | POSIX modes on Windows | **Closed round 5 (D25b).** `fs.chmod` on Windows: "only the write permission can be changed, and the distinction among the permissions of group, owner, or others is not implemented", so a doctor that prints `0600` would be lying. `describeFilePermissions(path, platform)` reports the real mode on POSIX and `inherited ACL (Windows chmod changes only the write bit)` on `win32`, injected and tested | The ledger and trust record still ask for `0600`; the claim about it is what changed |
+| U24 | A UAC prompt on a headless spawn | **Closed round 5 (D25c).** The vendor documents a UAC prompt when the sandbox initialises; a spawn that blocks on consent surfaces 900 s later as `host_idle_timeout`, which names the wrong cause. The doctor's `platform` row says it on `win32`, the README names it under Platforms, and no test claims to have seen it — there is no Windows machine here | U16 remains the row that would observe it |
+| U25 | `task/background` on a bridged call | **Closed round 5 (E-D19).** Refused on a live host: `task/background command … rejected: invalid_target`, sent with the running `toolCall`'s `itemId`. A bridged call is not a backgroundable Muse task, so D18's "no backgrounding path" is now measured rather than inferred, and G4 has nothing to decide | Refusal recorded; no code follows |
+| U27 | A resumed declaration, warm versus cold | **Closed round 5 (E-D21).** The docs' "live-only" is precise about the cause and imprecise about the word: a warm `session/resume` against the same host keeps `externalWait`, and a cold resume after the host exits returns `null`. So the loss is the process going away, not the resume command. The README sentence now says which | One sentence |
+| U26 | The end-of-turn gate, as seen by the idle clock | The clock knows a call is in flight and a retry is scheduled; it does not know the host is finishing. Measured on a live turn: `eot_gate_ms: 8138` of silence, the host recorded `terminal: "completed"` at 36.7 s, and the plugin failed the same turn at 43.3 s with `host_idle_timeout` — 6.6 s after the host had finished. Harmless at the 180 s default (an 8 s gate is well inside it), which is why it has not bitten; it bites when a gate outlasts the window, and `turn/foregroundCompleted` says named background reminder checks hold a turn open. Whether the completion frame arrives late or the handler drops it is not separated yet — the probe logged frame counts, not times | Timestamp `turn/completed` in the probe (rides on any future paid turn), then either stop the clock on the gate's own signal or extend it by the gate |
 
 Closed in round 3, with where each landed: U5 (three-clock watchdog + resume,
 `src/watchdog.ts`), U11 (cache share stays internal, D12), U12 (allowance warning,
@@ -174,19 +190,25 @@ against `9c1dc6d` on 2026-11-22; the plan that closes them is
 
 ## Counts
 
-H 37 · D 29 · P 0 · X 2 · U 1 · (N not used: no row here is purely opencode's)
+H 39 · D 34 · P 0 · X 2 · U 2 · (N not used: no row here is purely opencode's)
 
-Sixty-eight of sixty-nine rows are closed: thirty-seven verified and exercised,
-and twenty-nine decided with a written reason. Two are now impossible by rule
-(sampling controls, and one host per spawning party) rather than chosen. One is
-open: U16, unmeasured rather than undecided, and the only row that needs the
-owner's GitHub session rather than code.
+Seventy-five of seventy-seven rows are closed: thirty-nine verified and
+exercised, and thirty-four decided with a written reason. Two are impossible by
+rule (sampling controls, and one host per spawning party) rather than chosen.
+Two are open, both unmeasured rather than undecided: U16 needs the owner's
+GitHub session, and U26 needs one timestamped frame.
 
 Round 4 closed the five rows it opened: U17, U18 and U19 (the first two were the
 only ones that failed a turn a user was entitled to) and P5 and P6 (a record
 that could not cover half its subject, and a surface rather than a message).
 The evidence is E-D13–E-D18 in `decision-evidence.md`; the plan that carried
 them is `implementation-plan.md` § 9.
+
+Round 5 (`implementation-plan.md` § 10) opened eight rows, **U20–U27**, and
+closed seven of them: U20 and U21 by measurement and implementation (H), U22,
+U23, U24, U25 and U27 by decision (D). U26 is the one it opened and could not
+close. The five questions § 10.1 answers were upgrades to existing rows rather
+than new ones: structured output (E), ACP (G), and the caveats on U17–U19.
 
 What remains unproven is field behaviour, not policy: how often a host wedges,
 how often a repo supplies hooks, and whether the other two platforms pass. The first two are now observable through the ledger and the doctor; the third is U16.

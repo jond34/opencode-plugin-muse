@@ -814,3 +814,155 @@ order, one phase at a time.
 - Stop at V7: report one line per decision (D16–D21) and per experiment
   (E-D13–E-D18), state the suite result, and ask before committing. The only
   owner gate is U16's CI dispatch, which needs a push.
+
+## 10. Round 5 — the mechanism, measured against the live thing
+
+Round 4 closed the clock, the hook gate, and the allowance toast. What it could
+not do is tell the difference between *verified* and *true*: the long-call path
+was proven against a fake host, the hook gate's unit of trust was never chosen
+so much as inherited from the file, and three Windows behaviours are named as
+unknowns with no fallback. This round is the smallest set of work that converts
+each of those into a record with a primary source behind it.
+
+State at handoff: HEAD `8e8448f`, suite 363 pass / 0 fail / 928 expect / 36
+files, `tsc --noEmit` clean, `main` 53 ahead of `origin/main`, nothing pushed.
+Coverage is `H 37 · D 29 · P 0 · X 2 · U 1`; U16 is the one open row and it
+still needs a dispatch.
+
+### 10.1 What the documentation already answers — no experiment needed
+
+These were checked against the vendor's published schema and pages on
+2026-11-22. Each one replaces an inference in round 4's record with a source.
+
+| Question | Source | Answer | What changes |
+|---|---|---|---|
+| Can `turn/start` carry a structured-output schema? | `generated/msp/methods/turn-start`: members are `commandId`, `displayText`, `ifBusy`, `input`, `reasoningEffort`, `sessionId`, `tokenBudget`, `userShell`, `workspaceRoots`; and "`turn/start.providerRequestOptions` is deliberately absent: **RULED to stay off the published schema.**" | No member exists, and the free-form escape hatch is ruled out, not merely unused | The coverage row upgrades from "no current path uses it" to "the wire has no member for it". Vercel's `outputFormat` has no counterpart here, so this stays a D with a better basis |
+| Does `declareExternalWait` protect a session from anything? | `generated/msp/methods/session-declareexternalwait`: "the end-of-turn reminder boundary parks a blocking reminder instead of re-verifying until the next input arrives… Live-only: a serve restart, unload, or resume loses the declaration" | It parks a *reminder*; it is not in the unload condition set ("zero subscribers, no active or pending run, and no pending approval or user-input prompt for the idle window") | D18's wording tightens: status and reminder suppression, not protection. The README sentence must not imply it keeps a session alive |
+| Does `muse acp` attest differently, and does ACP carry tools? | `guides/editors-acp`: "`muse acp` runs the same Muse Code host as `muse serve`, and it translates between ACP and the host"; and under what works today: "**MCP servers from your editor.** When the editor passes its MCP servers to the agent, Muse Code starts the stdio and HTTP servers for the session" | Same host, same login, same attestation; and ACP **does** now carry an MCP tool channel (`MUSE_ENABLE_SESSION_MCP` gates it) | The "ACP has no tool channel" premise in the audit is stale. The route is still not taken, but for the real reason: opencode is an ACP *agent*, not a client — `opencode.ai/docs/cli/acp` documents only the agent side, and a source-level audit of 2.0.29 records "Drive other ACP agents — Not supported… neither 2.x nor 1.x contains ACP client code". Record corrected, no code |
+| Is a retry storm already bounded by the host? | `generated/msp/notifications/turn-modelretryscheduled`: `attempt`, `nextAttempt`, `maxAttempts` (required), with the producer contract `attempt < nextAttempt <= maxAttempts` | Yes: the host bounds its own chain, and each frame carries the bound | Our extension should honour `maxAttempts` rather than extend past the last attempt. D17 gets a clause, plus a unit test |
+| Is there a vendor identity for one hook handler? | `generated/msp/types/hookcatalogentry`: `key` is "The handler key (config key or plugin hook id)", alongside `event`, `handlerKind`, `enabled` — no command, no matcher | An identity exists, but not one that changes when the command changes, and the catalog never carries the command | Trust must be keyed by *content*, never by key or position. Codex's own trust bug (`openai/codex#58011`) shows both failure modes of positional keys: false re-asks on reorder, and a silent swap when a guard's command is edited under a stable key |
+
+### 10.2 Decisions this round implements
+
+| # | Decision | Why this shape |
+|---|---|---|
+| D22 | **Live proof, short window.** One real turn, `MUSE_IDLE_TIMEOUT_MS` at 4 s, a bridged tool that parks for 8 s: the turn must survive and complete. The 180 s default is then extrapolation from a live path, not from a fake host | Proving the literal 180 s costs minutes of wall clock and the same money; proving the code path costs one turn. The claim in the README becomes "measured live at 8 s against a 4 s window" |
+| D23 | **Hook trust is per handler, keyed by content.** The record stores one hash per handler (event + matcher + command + timeout + `commandWindows`, `onFailure` included), the gate stays all-or-nothing at session open, and the refusal names the handlers that are new | The file was the unit because it was the easy unit. One edited neighbour re-asks for everything and the message cannot say what changed. Content hashing also refuses the swap a positional key would accept. The gate cannot become selective: the vendor loads the whole file once the workspace is trusted, so "per handler" means per-handler *accounting*, not per-handler execution |
+| D24 | **The extension stops at `maxAttempts`.** `noteRetry` records the chain bound and does not extend past it | The host already stops retrying; extending past its last attempt would hold a turn that is about to fail |
+| D25 | **Three Windows behaviours, named and handled.** (a) The shutdown ladder closes stdin, then kills — the `SIGTERM` rung is skipped on `win32`, because Node documents `SIGTERM`/`SIGKILL`/`SIGINT` as "terminate the process forcefully and abruptly"; (b) the doctor reports `inherited ACL` instead of `0600`, because `fs.chmod` on Windows "only the write permission can be changed"; (c) the vendor's UAC prompt is documented and the doctor notes it, because a headless spawn that blocks on consent surfaces as `host_idle_timeout` after 900 s | Each is a code path we can branch on `process.platform` and test by injection, or a sentence we can write. None of them is measurable on this machine, so none of them is claimed as tested |
+| D26 | **ACP is closed as a route**, with the corrected premise | A tool channel is no longer the reason; the reason is that opencode does not speak ACP as a client, and adding one would mean a second integration surface for the same turn |
+
+### 10.3 Experiments (approved)
+
+| Ref | Claim under test | Method | Branch if it fails |
+|---|---|---|---|
+| E-D19 | A bridged call that outlives the idle window survives on a live host, and `task/background` can target it | `zsh -lc 'bun scratch/live-long-call.ts'`: real host, `MUSE_IDLE_TIMEOUT_MS=4000`, a local MCP server exposing `sleep_ms`, one turn asking for an 8 s sleep. Record the frames; then, on a second parked call, send `task/background` with the `toolCall`'s `itemId` and record the ack or the refusal | (a) If the turn dies at 4 s, the fix is wrong and D16 reopens. (b) If `task/background` is refused, D18 is settled and no backgrounding path is built. (c) If it is accepted and a `backgroundTerminalCompletion` arrives, § 10.6 G4 decides whether to use it |
+| E-D21 | A declaration does not survive a resume | Declare on a live session, `session/resume` it, `session/read` the `externalWait` field. Free: no turn | If it survives, the README's "live-only" sentence is wrong and D18's wording changes |
+| E-D22 | `hook/list`'s `key` is stable across edits that do not touch that handler | One project file with two handlers; read the keys; insert a third above them; re-read. Free: no turn | If keys shift, the doctor labels handlers by content hash and never by vendor key |
+
+E-D19 is the only one that spends. It is one turn at the configured model with a
+short prompt; if the owner prefers not to spend, the row stays open with
+"mechanism verified against a fake host, behaviour not measured" and nothing
+else in this round depends on it.
+
+### 10.4 Phases
+
+| Phase | Work | Gate |
+|---|---|---|
+| W0 | Write § 10.1's five answers into `decision-coverage.md` (new rows and upgraded bases) and correct the two README sentences they change: the `declareExternalWait` one and the ACP premise if it appears | Docs only; suite untouched |
+| W1 | E-D19, then the branch it names. Default: no code change beyond a live-evidence note | One live turn |
+| W2 | D24: `noteRetry` honours `maxAttempts`; unit test with `attempt == maxAttempts` | Suite green |
+| W3 | D23: per-handler trust with a v1→v2 migration (an unchanged file's handlers are trusted at migration, because they are exactly what was trusted); refusal names the new handlers; doctor prints counts | Suite green, no assertion weakened |
+| W4 | D25: `win32` shutdown branch, mode reporting, doctor note, README sentence; tests inject the platform | Suite green on Linux; Windows unmeasured and said so |
+| W5 | E-D21 and E-D22, fold both results | Free probes |
+| W6 | Close the rows this round opened, restate counts, write the evidence sections, tick § 10.5 | Docs |
+| W7 | Report, then ask before committing | — |
+
+### 10.5 Phase status
+
+| Phase | Status | Evidence |
+|---|---|---|
+| W0 | done | Five § 10.1 answers written into `decision-coverage.md`; README's `declareExternalWait` and ACP sentences corrected (the ACP section now says opencode is an agent, not a client) |
+| W1 | done (2 turns) | E-D19 in `decision-evidence.md`: live suspension confirmed at 17.6 s against a 15 s window (D22); `task/background` refused `invalid_target` on a bridged call, so D18 stands and G4 is moot; the end-of-turn gate is a new row, U26 |
+| W2 | done | D24: `noteRetry(delayMs, attempt, maxAttempts)` stops extending on the last attempt; `test/watchdog.test.ts` pins attempt 1/3 extending and 3/3 not |
+| W3 | done | D23: v2 record of per-handler content hashes, v1 read-side migration, refusal names only the new handlers, doctor reports `accepted of declared`. Four new gate tests, including "a changed command cannot ride a stable position into trust" and "a file with no readable handler is not trusted" |
+| W4 | done | D25: `shutdownLadder(platform)` (the SDK owns the ladder, so the rung is documented rather than skipped), `describeFilePermissions(path, platform)`, a doctor `platform` row, and a README Platforms entry. `test/platform.test.ts`, added to `test:offline` |
+| W5 | done (free) | E-D21: warm resume keeps the declaration, cold resume returns `null` — U27. E-D22: vendor keys are content-derived and did not shift — supports D23 |
+| W6 | done | U20–U25 and U27 closed, U26 opened; counts restated to `H 39 · D 34 · P 0 · X 2 · U 2` = 77 |
+| W7 | owner gate | |
+
+Suite at the end of W6: **375 pass / 0 fail / 965 expect / 37 files**,
+`tsc --noEmit` clean. Two plan assumptions did not survive contact:
+
+- **D25(a) as written was not implementable.** The shutdown ladder lives in the
+  SDK (`child.close()`), which exposes only the drain window — no switch skips a
+  rung. So the round does not skip `SIGTERM`; it states the ladder, injects the
+  platform, and tests the mapping. Claiming a Windows behaviour change the
+  plugin cannot make would have been worse than naming it.
+- **D22 cost two turns, not one.** The 4 s window was too tight to observe a
+  completed turn at all (the host's end-of-turn gate alone was 8.1 s), so the
+  measurement was repeated at 15 s. Both runs are in `decision-evidence.md`.
+
+### 10.6 Owner calls — the product choices, with both sides
+
+Each row is a sentence the owner can accept or reject. The recommendation is
+what § 10.4 assumes. "Steelman" is the best case for the option not recommended;
+"strawman" is the weak version of it, named so it is not mistaken for the
+argument.
+
+| # | Choice | Steelman for the alternative | Strawman of it | Recommendation | Reversal cost |
+|---|---|---|---|---|---|
+| G1 | Spend one turn to prove the long-call path live | Unit evidence already covers the mechanism; the fake host speaks the real bridge, so the only unproven part is the real host's timing | "It's just a test, skip it" — leaves the README's central timeout claim resting on a fixture | **Spend it.** One short turn, and it is the difference between "verified" and "true" for the feature the round exists to fix | None: the row closes either way, one with a measurement and one with a gap |
+| G2 | Hook trust per handler (D23) | The file is the vendor's own unit; one digest is 30 lines and cannot be wrong; the annoyance is rare | "Per-handler is more precise, therefore better" — it does not make execution selective, and it costs a migration | **Per handler.** The current unit re-asks for unrelated edits and cannot name what changed; content hashing is the only safe key | Revert to the v1 record and the file digest; one function and one test file |
+| G3 | Claim Windows support? | The suite runs on all three in CI, and the vendor supports all three | "It's Node, so it works" — the three behaviours in D25 are exactly where it does not | **No claim.** "Best-effort on Windows, three named caveats, untested here" until U16 runs and someone reads the result | One README sentence |
+| G4 | Background a bridged call past a threshold (only if E-D19 accepts it) | ~~A call longer than a turn is the remaining failure mode; backgrounding is the vendor's own answer~~ | "Turn it on by default" — it changes what a turn means and where the result lands | **Moot.** E-D19 measured the refusal: `invalid_target` on a bridged call's `itemId`. There is nothing to make opt-in, so no `MUSE_TOOL_BACKGROUND_MS` is added | None — the row closed by measurement |
+| G5 | ACP as a route | ACP now carries MCP servers, so the old objection is gone | "ACP is the standard, so we should use it" — opencode would need an ACP client, which is a second integration surface | **Close it.** Reopen only if opencode gains an ACP client | A row and a sentence |
+| G6 | What to do if the vendor asks integrators to identify | Answering plainly costs nothing and buys goodwill | "Add an install id to the wire so we can be counted" — that is telemetry by another name, and D14 says no partnership | **Respond, identify as an unofficial client in prose, add nothing to the wire.** The README already says unofficial | A paragraph |
+
+Two things deliberately not on this list: the tool ceiling stays `0` by default
+(C1 stands, and E-D19 does not change it), and subagents/workflows stay off
+(C6 stands). Reopening either is a new round, not a patch.
+
+### 10.7 Out of scope (do not reopen without a new decision)
+
+Everything in § 9.7, plus: making the hook gate selective (the vendor loads the
+file whole), `muse acp` as a transport, any per-install identifier, and a Windows
+test run on this machine (there is no Windows machine here; that is U16).
+
+### 10.8 Risks carried consciously
+
+| Risk | Mitigation |
+|---|---|
+| E-D19's turn does not call the tool | The probe's prompt names the tool and its argument; a miss is recorded as a miss, not retried until it passes |
+| Per-handler trust is read as loosening the gate | The gate stays all-or-nothing; the record only remembers more precisely what was accepted, and the doctor prints counts |
+| A v1→v2 migration trusts something it should not | Migration only marks the handlers of the *current* file, which is the file the v1 digest already accepted, byte for byte |
+| The Windows branch is wrong in a way Linux cannot see | It is a branch on a documented difference, not a behaviour change; the row stays open and the README does not claim otherwise |
+| `task/background` is accepted but the completion never arrives | Backgrounding stays off by default; E-D19 records what arrived before anything is built |
+
+### 10.9 Execution prompt (paste into a fresh session)
+
+```text
+Execute Round 5 in ~/repos/opencode-plugin-muse/docs/implementation-plan.md § 10.
+Read § 10 through § 10.8 first; those files are the state, not your memory. Work W0→W7
+in order, one phase at a time.
+
+- Baseline at handoff: HEAD 8e8448f, `bun run check:offline` 363 pass / 0 fail /
+  928 expect / 36 files. Run it after every phase and keep it green. Never weaken
+  or delete an assertion. New test files go in the explicit `test:offline` list.
+- § 10.1 is already answered from primary sources: write those answers into the
+  docs in W0, do not re-derive them, and do not "fix" anything because of them.
+- E-D19 is the only experiment that spends (one turn). Run it before W1's code
+  and record command, observed frames and branch in docs/decision-evidence.md.
+  E-D21 and E-D22 are free live probes; run them in W5.
+- Muse CLI work runs under `zsh -lc`, never `bash -lc`. No `muse acp`, no push,
+  no tag, no publish, no new dependencies. One paid turn total.
+- D23's migration must be tested against a real v1 record: an unchanged file's
+  handlers become trusted, a changed one does not.
+- D25's tests inject the platform; do not add a Windows-only code path that no
+  test can reach, and do not claim Windows is tested.
+- Tick § 10.5 as phases land, close rows in docs/decision-coverage.md and restate
+  the counts, and keep README true.
+- Stop at W7: report one line per decision (D22–D26) and per experiment
+  (E-D19, E-D21, E-D22), state the suite result, list the owner calls G1–G6 with
+  what you did about each, and ask before committing. U16 still needs a push.
+```

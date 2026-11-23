@@ -107,9 +107,18 @@ percentages rather than a per-turn cost.
   turn as a timeout, asks the host to interrupt with a 2 s budget, closes the
   host, and the next turn resumes the same native session. The clock measures
   the phase it is in: a bridged tool call in flight suspends the idle clock
-  (that silence is opencode's tool, not the host) and a provider retry extends
-  it by the delay the host reports, capped at 10 minutes. A warning is logged
-  after 90 s of silence. Each budget is env-tunable and `0` disables it.
+  (that silence is opencode's tool, not the host) and is declared to the host as
+  an external wait, so a client can show what is running; a provider retry
+  extends the clock by the delay the host reports, capped at 10 minutes and
+  never past the attempt count the host itself sets. The wait declaration is a
+  status signal, not a lease: it is dropped when the host restarts and by your
+  next input (a resume that re-attaches to the same live host keeps it, measured
+  2026-11-22), and it does not keep an idle session alive. A warning is logged
+  after 90 s of silence. Each budget is env-tunable and `0` disables it. On
+  Windows the shutdown ladder has no graceful rung — Node's `SIGTERM` is a
+  forceful kill there — so the host is ended after the drain window rather than
+  asked to stop; the doctor's `platform` row prints the ladder this machine
+  actually has.
 - **Model catalog.** The catalog is a snapshot taken at startup. Muse's session
   protocol has no catalog subscription, so a model added or newly entitled in
   Muse appears only after opencode restarts; contributor variants are read from
@@ -126,6 +135,14 @@ percentages rather than a per-turn cost.
 - **Attachments.** Images only. The wire's attachment vocabulary is `"image"` in
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
+- **Platforms.** Built and tested on Linux. The offline suite is configured to
+  run on macOS and Windows as well, but that workflow has never been dispatched,
+  so Windows is best-effort with three named caveats: the shutdown ladder has no
+  graceful rung, the ledger and the hook trust record carry an inherited ACL
+  rather than `0600` (Windows `chmod` changes only the write bit), and the
+  vendor's sandbox may ask for UAC consent when it initialises — a headless spawn
+  cannot answer that, and it surfaces 900 s later as `host_idle_timeout`. The
+  doctor's `platform` row states all three for the machine it runs on.
 
 ## What a turn looks like
 
@@ -220,8 +237,12 @@ owns the agent loop and you want Muse's own tools, prompt, and approvals.
 
 Use this plugin when you want Muse's models inside opencode — opencode keeps the
 loop, the tools, the transcript, permissions, and history, and Muse supplies
-inference. The two do not share state: `muse acp` keeps Muse's tool surface, this
-plugin replaces it with opencode's.
+inference. The two do not share state: `muse acp` runs Muse's own loop and its own
+tools (plus any MCP servers the editor hands it), while this plugin replaces both
+the loop and the tools with opencode's. It is also one-directional: opencode is an
+ACP *agent*, not a client, so `muse acp` cannot be driven from inside opencode —
+reaching Muse that way would mean writing an ACP client, which is a second
+integration surface for the same turn.
 
 `muse acp` is shipped but carries no compatibility promise from the vendor, so
 treat its flags as this release's behaviour rather than a contract. No third-party

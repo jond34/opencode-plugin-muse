@@ -59,6 +59,19 @@ Work top to bottom. Each step ends by writing its result into
       recorded in `decision-evidence.md`; the suite is 363 pass / 0 fail / 928
       expect / 36 files. The commits are held for the owner's approval; U16 still
       needs a push to dispatch.
+- [x] **S11** Round 5 of `implementation-plan.md` § 10 — executed 2026-11-22.
+      W0–W6 done, W7 is the owner's gate. Suite 375 pass / 0 fail / 965 expect /
+      37 files; `tsc --noEmit` clean. Decisions D22–D25 shipped (D26 ACP closed by
+      documentation), experiments E-D19, E-D21, E-D22 recorded, seven rows closed
+      and one opened (U26: the end-of-turn gate is invisible to the idle clock).
+      Two plan assumptions corrected in § 10.5: the SDK owns the shutdown ladder,
+      so D25(a) documents rather than skips the `SIGTERM` rung, and E-D19 cost two
+      turns because a 4 s window could not observe a completed turn.
+      Original plan: Turns the round-4 leftovers into records: live long-call proof
+      (D22), per-handler hook trust (D23), the retry chain bound (D24), three
+      Windows behaviours (D25), ACP closed (D26). One paid turn (E-D19); E-D21
+      and E-D22 are free. Owner calls G1–G6 in § 10.6; the answers this round
+      already has are § 10.1 and need only writing down.
 - [x] **S9** Round 3 of `implementation-plan.md` § 8 executed 2026-11-22 (W0–W6:
       hook gate, three-clock watchdog, resume-after-kill, allowance warning,
       doctor, doc close-out). E-D9, E-D10 and E-D12 are recorded in
