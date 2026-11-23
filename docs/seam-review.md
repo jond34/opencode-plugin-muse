@@ -292,6 +292,46 @@ same consequence for a user, and the failure arm (missing or signed-out CLI
 leaves the provider with no models and one `model discovery failed` line) is in
 the README's requirements.
 
+## 13. transport EOF
+
+`Connection` exposes `closed` (`connection.d.ts:150`), resolved by the
+connection's own `#finish` on EOF, a protocol error, or a close, and the facade
+maps it to `hostExited({ kind: "transportEof" })`
+(`dist/src/facade/client.js:272,910-915`) — its comment says why: a host that
+closes stdout while still hung emits no exit on the timescale that matters, so
+without that arm every pending command stays pending and every turn wait hangs.
+
+This adapter holds the same `Connection` (`src/host.ts:202`) but subscribed only
+to `spawned.exited`, so that arm was unreachable here. Earlier text claimed the
+public surface had no transport EOF; that was wrong, and `product-gaps.md` no
+longer carries it. The surface reports the EOF, the adapter had not subscribed.
+
+## 14. why there is no ACP adaptor
+
+`muse acp` is a shipped vendor subcommand (1.4.25) speaking ACP on stdio, with
+`loadSession`, session `resume` and `list`, and prompt capabilities for image and
+embedded context. Building MSP→ACP here would reimplement the vendor's own front
+door against a surface it documents without a compatibility promise, and it would
+serve a different purpose: ACP hands the editor the whole agent, while this
+plugin puts Muse's models inside opencode's tools and history. The vendor entry
+point is the one to recommend; no third-party ACP adaptor is named or ranked
+here, because none has been measured, so no popularity claim is made either.
+
+## 15. the approval-failure tests are defence in depth
+
+The four tests in `test/approval-failures.test.ts` run against a stub host. Under
+`allowAll` — forced by the tool bridge at `src/session.ts:464`, decided as A20 in
+`docs/steady-state.md:128` — the host answers its own approvals, so no live run
+produces the three rejected-`approval/decide` kinds they cover, and they should not
+be counted as live coverage. They are kept because the mapping is cheap and the
+path is reachable in principle: a decide racing a policy resolution, a host restart
+mid-decide, or any future mode other than `allowAll`.
+
+This is the same configuration fact that removed P2.2 (restart pruning): with the
+host answering every approval, no local approval can be pending across a restart.
+It does not touch opencode's own permission prompts for opencode tools, which are
+answered by opencode's engine and are unaffected by Muse's session mode.
+
 ## What changed
 
 The first pass fixed three seams: ack reconciliation (1), real bridge

@@ -152,6 +152,26 @@ the build and bun >= 1.4.4 for the tests. Runtime dependencies are
 If the CLI is missing or signed out, model discovery fails and the provider has no
 models; the plugin logs `model discovery failed` with the reason.
 
+If you hold a Meta Model API key and pay per token, this plugin buys you nothing:
+it needs a signed-in `muse` CLI, and it adds a hop. Use the key directly in
+whichever harness you prefer.
+
+## This plugin, or `muse acp`?
+
+Muse ships its own editor entry point. `muse acp` speaks the Agent Client Protocol
+on stdio, so an ACP-capable editor can drive Muse directly: use it when the editor
+owns the agent loop and you want Muse's own tools, prompt, and approvals.
+
+Use this plugin when you want Muse's models inside opencode — opencode keeps the
+loop, the tools, the transcript, permissions, and history, and Muse supplies
+inference. The two do not share state: `muse acp` keeps Muse's tool surface, this
+plugin replaces it with opencode's.
+
+`muse acp` is shipped but carries no compatibility promise from the vendor, so
+treat its flags as this release's behaviour rather than a contract. No third-party
+ACP adaptor was ranked or measured for this comparison, so nothing here rests on
+one being more or less popular.
+
 ## Environment
 
 The plugin reads these when it starts, so a change takes effect on the next
@@ -189,7 +209,7 @@ predates patches 3 through 5 (see `docs/provenance.md`). The hash of the publish
 npm run check:offline   # typecheck plus the offline test suite
 ```
 
-`npm run check:offline` runs 290 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 299 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
