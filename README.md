@@ -5,7 +5,10 @@ already have. Muse models appear in the model picker as the `muse` provider, and
 requests go through the signed-in `muse` CLI, so no Muse credential reaches opencode
 or your config.
 
-Tested with Muse CLI 1.4.24 and opencode 2.3.2. Republished build of
+Tested with Muse CLI 1.4.24 on opencode 2.3.2, and it loads on opencode 2.4.1
+and lists `muse/*` there (measured 2026-11-23). The limit read is via the model
+record test, not the host API: `opencode api get /api/model` returns an empty
+list on 2.4.1. Republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 with five patches: [`CREDITS.md`](CREDITS.md) has the diffs, `docs/provenance.md` the
 build hash and what it does and does not prove. The first two reconcile the published
@@ -284,8 +287,11 @@ stream, not a list of paths, so a rejected file in a directory above the working
 one is reported too — the host merges every ancestor config it finds. That is the local path only. A policy delivered by
 Console is decoded on the vendor's side and unknown actions and effects are
 filtered without a diagnostic (`anomalyco/opencode#60252`), so on a managed
-machine there is no log line to check and the effect is the only evidence. The
-two halves are recorded in [`docs/policy-remote.md`](docs/policy-remote.md).
+machine there is no log line to check and the effect is the only evidence. A
+Console or managed policy may therefore apply and is not visible here: `opencode
+debug config` on this machine names local sources only, and Console outranks a
+global or project file. The two halves and the precedence order are recorded in
+[`docs/policy-remote.md`](docs/policy-remote.md).
 
 `tool.use` is the denial that names itself. Its resource is `<action>:<value>`,
 matched against every check the tool makes, so `read:*` covers every read and
