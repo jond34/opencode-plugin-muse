@@ -49,6 +49,20 @@ it keeps is in memory.
   ledger (`usage-*.jsonl` under `$XDG_STATE_HOME/opencode-muse`) so token use and
   reseed reasons stay measurable
 
+### Why `muse`, not `meta`
+
+opencode's catalog has a `meta` provider, and a plugin can register an auth hook
+for it; the competitor that does so mints an inference key and keeps it in
+opencode's auth store. This plugin cannot take that route without holding a
+credential it exists not to hold. It registers its own `muse` provider, owns the
+model list and limits, and leaves sign-in to `muse login`. The provider declares
+`canonical: "meta"`, so opencode's catalog supplies defaults where the plugin's
+table is silent; the model list stays the plugin's. The cost is UX parity:
+`/connect` does not list it, and a model switch is a picker entry rather than an
+account connection. The benefit is that the credential never reaches opencode,
+the config, or this plugin. The MSP competitor also registers `muse`, so the
+split is about the credential, not the id.
+
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a subscription
 covers requests that client makes, and `api.meta.ai` refuses requests carrying a
 subscription key from anything else (`permission_error`,
@@ -57,6 +71,22 @@ via `@muse-code/sdk`) instead of calling the model API itself. It never holds Mu
 credentials, and the API key it reports to opencode is a placeholder that is never sent
 to Muse. A denial fails the turn with Muse's own message intact and stays a protocol
 error: it is not an auth error, and logging in again does not clear it.
+
+### The subscription credential
+
+Meta's Model API Terms, §3.2, restrict the credential a Coding Harness
+Subscription connects to the coding harness: it "may not be used to access the
+Services outside the coding harness or to circumvent your subscription's usage
+limits or billing." This plugin never receives that credential. It spawns the
+signed-in `muse` CLI and speaks MSP to it over stdio, so every request is made by
+Muse Code's own process under the account's own subscription; the API key
+opencode sees is a placeholder that is never sent to Meta. The plugin does not
+extract, cache, or forward a token, and it adds no login flow of its own. That is
+the mechanism the terms describe, not a claim that Meta has endorsed this
+arrangement: Muse's subscription documentation says the credential is "for use
+with Muse Code only", and the SDK is a developer preview, so the arrangement can
+be restricted at any time. If it is, the failure is a refused turn, not a leaked
+credential.
 
 Which credential that CLI spends is not visible from inside the process: a
 subscription and a pay-as-you-go Meta Model API key look the same, and no field on
@@ -435,6 +465,12 @@ the loop and the tools with opencode's. It is also one-directional, for now:
 opencode ships the ACP *agent* side only. Six upstream requests for a client
 (#28991, #5182, #24038, #18106, #35550, #51646) are closed without shipping, and
 the PR attached to #28991 (#28994) did not land.
+
+An ACP client that drives `opencode acp` therefore reaches these models through
+opencode's provider registry, with opencode's loop, tools, transcript and
+permissions; the plugin adds no protocol surface of its own. A client that wants
+Muse's own loop uses `muse acp` or a third-party bridge, which is a different
+authority order, not a thinner version of this plugin.
 
 There is a community workaround, and it is worth knowing what it is:
 `opencode-acp-client` (`pi-is314/opencode-acp-client`, published 2026-11-21)
