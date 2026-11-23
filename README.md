@@ -515,10 +515,17 @@ and reports every config source that lists this package, and whether any of them
 is this checkout. A package entry without the checkout is a warning: the run
 loads the published build. Two entries are a warning too, because both load.
 `--offline` skips the host and this row entirely.
+`--strict` turns the config rows into a gate for a caller that ships from here:
+it exits 1 when the host refused a file (`config`), when a policy statement was
+dropped (`policies` warns), or when the config was never read — `--offline`, or
+`opencode` not on `PATH` — and 0 otherwise. Without the flag the exit code is
+unchanged, 1 only for a `fail`, because the rows about the machine and the install
+(`host` schema drift, `plugins` naming the published build) warn on a checkout
+that works. `--offline --strict` therefore exits 1: it did not look.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 363 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 415 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
