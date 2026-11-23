@@ -149,6 +149,38 @@ Patch 5's live probes used the same CLI. `config.developerPrompt` was accepted o
 reseed in all five production-shaped reps, and 2.7x / 1.9x in a tool-call workload.
 The fork path was removed; rewritten histories reseed.
 
+## Conformance audit, 2026-11-22
+
+One run, not a gate: `check:offline` does not include it and no workflow runs it.
+
+`bun test test/conformance.test.ts` against a real `muse serve` (Muse Code 1.4.25):
+1 passed, 0 failed, 3 expect calls, 11.5 s. The shared driver provides only
+`startSimpleTurn`, so the scenarios that were recorded:
+
+| Scenario | Result |
+|---|---|
+| capabilities shape | passed |
+| open session | passed |
+| simple turn | passed |
+| close | passed |
+| interrupt turn | skipped — the driver has no `startLongTurn` |
+| approval request | skipped — the driver has no `startApprovalTurn` |
+| tool bridge | skipped — no bridge was passed to the runner |
+
+The intended step was a replay of the vendor transcript corpus under
+`schema/msp/`. That corpus is not in this tree, and the published
+`@muse-code/sdk@1.4.24` ships only `dist/src` (`files` in its manifest; no
+schemas, fixtures, or transcripts). It does exist in the SDK's source repository:
+`schema/msp/transcripts/<scenario>/transcript.ndjson` under
+`meta-models/muse-code-sdk` at commit `fbce769ccb75ab971d00e01a00fe076de4c773fc`
+(HTTP 200 for `schema/msp/msp.d.ts` and for
+`goal-set-round-trip/transcript.ndjson` on 2026-11-22). The CLI exports the wire
+schema (`muse schema generate-json-schema`) and can export a user's own session
+(`muse export`), but exposes no transcript corpus. So the replay
+was not run: what ran is scaffolding for that input — the harness conformance suite
+exercises the adapter's own contract against a real host, which a replay harness
+would reuse, but it is not transcript parity and is not recorded as such.
+
 ## What this does not prove
 
 - **One reproducer.** A reproducible build is a property of verification, and
