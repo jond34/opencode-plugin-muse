@@ -77,24 +77,38 @@ percentages rather than a per-turn cost.
   plugin run, because the plugin hands Muse its own config directory, so the
   setting in your own Muse config is not read.
 - **Containment.** Muse's built-in tools, observer reminders, workflows, and
-  skill catalog are off, and its toolset is pinned to the bridge, so the model's
-  tool surface is opencode's and every call crosses opencode's permission
-  engine. That covers the model, not the workspace. The plugin grants workspace
+  skill catalog are off, and its toolset is pinned to the bridge. The asymmetry
+  is deliberate: MCP tools stay on through Muse while Muse's own tools stay off,
+  and subagents and workflows stay disabled — a smaller surface with the same
+  reach is the whole point of the bridge, and each of those three would add a
+  path that does not cross opencode's permission engine. So the model's tool
+  surface is opencode's and every call crosses opencode's engine. That covers
+  the model, not the workspace. The plugin grants workspace
   trust because the bridge does not start without it: a repo's
   `.muse/hooks.json` commands and project skills then load outside opencode's
   permissions, and its `.agents/memory/MEMORY.md` enters the prompt even in an
-  untrusted workspace. Muse runs with `allowAll` because its only client is this
-  plugin, so the permission decision belongs to opencode and is made before any
-  bridged call runs. Repo-supplied Muse hooks (`project` and `plugin` handlers)
-  are refused when a session opens: the host names every installed handler's
-  origin, and a workspace file is accepted only after its exact hash is recorded
+  untrusted workspace. Muse runs with `allowAll`, and that is structural rather
+  than a shortcut: this plugin holds no tool executor of its own, so a bridged
+  call is emitted into opencode, which decides and runs it — there is no private
+  pre-check here to bypass, and the gate is opencode's (`allowAll`'s vendor
+  justification is the same boundary: the client already holds the user's
+  ambient authority). The bridge's denial path is pinned by a test. Repo-supplied
+  Muse hooks (`project` handlers) are refused
+  when a session opens: the host names every installed handler's origin, and a
+  workspace file is accepted only after its exact hash is recorded
   (`bun run doctor --trust-hooks`). `MUSE_ALLOW_PROJECT_HOOKS=1` accepts it for
-  one run instead. Skills stay a startup warning, because they are instructions
-  rather than commands.
+  one run instead. A `plugin` handler is allowed: every install scope writes
+  into your own store, so it is code you installed and approved rather than a
+  file a checkout can plant, and the doctor prints each handler's origin.
+  Skills stay a startup warning, because they are instructions rather than
+  commands.
 - **Timeouts.** A host that stops answering is ended, not waited on: no first
   frame within 900 s, or 180 s of silence after frames have started, fails the
   turn as a timeout, asks the host to interrupt with a 2 s budget, closes the
-  host, and the next turn resumes the same native session. A warning is logged
+  host, and the next turn resumes the same native session. The clock measures
+  the phase it is in: a bridged tool call in flight suspends the idle clock
+  (that silence is opencode's tool, not the host) and a provider retry extends
+  it by the delay the host reports, capped at 10 minutes. A warning is logged
   after 90 s of silence. Each budget is env-tunable and `0` disables it.
 - **Model catalog.** The catalog is a snapshot taken at startup. Muse's session
   protocol has no catalog subscription, so a model added or newly entitled in
@@ -139,9 +153,11 @@ plugin or Muse installed. Nothing in the plugin migrates, converts, or locks
 history to Muse, and a native Muse session that is dropped costs a reseed rather
 than the conversation.
 
-On disk, the plugin writes one file: the usage ledger (`usage-*.jsonl` under
-`$XDG_STATE_HOME/opencode-muse`, mode 0600). It holds counts — tokens, model,
-reseed reason — and no prompt text, tool output, or file contents. There is no
+On disk, the plugin writes the usage ledger (`usage-*.jsonl` under
+`$XDG_STATE_HOME/opencode-muse`, mode 0600) and, at most once per allowance
+window, a notice beside it (`allowance-notice.json`) that the package's TUI part
+shows as a toast and deletes. The ledger holds counts — tokens, model, reseed
+reason — and no prompt text, tool output, or file contents. There is no
 telemetry and no metrics export: the ledger is the record, and nothing about a
 session leaves the machine except the turns themselves. Everything
 else is opencode's session jsonl, which does hold prompts and tool output under
@@ -234,8 +250,10 @@ host; none of the three is a setting you can pass.
 | `MUSE_DEBUG_CONTAINMENT` | off | `1` prints the containment report at startup |
 | `MUSE_ALLOW_PROJECT_HOOKS` | off | `1` runs the repo's own `.muse/hooks.json` handlers for this run instead of refusing them |
 | `MUSE_FIRST_BYTE_TIMEOUT_MS` | `900000` | how long a turn may go without its first frame; `0` disables |
-| `MUSE_IDLE_TIMEOUT_MS` | `180000` | silence after frames have started before the turn is failed; `0` disables |
+| `MUSE_IDLE_TIMEOUT_MS` | `180000` | silence after frames have started before the turn is failed; suspended while a bridged tool call is in flight; `0` disables |
 | `MUSE_IDLE_WARN_MS` | `90000` | silence before a warning is logged; `0` disables |
+| `MUSE_TOOL_CEILING_MS` | `0` (off) | longest a single bridged tool call may run before the host is ended; opencode owns the tool's own abort, so this is opt-in |
+| `MUSE_RETRY_CAP_MS` | `600000` | most a provider retry may extend the idle clock; `0` keeps the normal reset |
 | `MUSE_ALLOWANCE_WARN_PERCENT` | `90` | warn once per allowance window at or above this percentage; `0` disables |
 
 `NODE_EXTRA_CA_CERTS` is not read by the plugin. The host is a child process that
@@ -268,7 +286,7 @@ and no credential or identity is read. `--offline` skips the host entirely.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 348 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 363 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a

@@ -563,3 +563,254 @@ Until that happens, U16 says "matrix configured, never run".
 | Doctor leaks a secret or a home path | E-D12 redaction test; no identity fields ever read |
 | Windows kill semantics | The existing SIGTERM→SIGKILL ladder is the SDK's; E-D8 is the only evidence that will exist |
 | Scope creep into ACP, telemetry, or a USD cap | §4 still applies; nothing here touches those |
+
+---
+
+## 9. Round 4 — phase-aware deadlines, and the two records that don't reach
+
+### 9.0 State at handoff
+
+- `main` at `9c1dc6d`, 49 ahead of `origin/main`, no push, no tag. Suite
+  **348 pass / 0 fail / 890 expect / 35 files**, `tsc --noEmit` clean.
+- `docs/decision-coverage.md` is **modified and uncommitted**: the round-4 audit
+  checked the four round-3 commits against `src/` and primary sources, closed 19
+  of 20 rows, and opened five refs (U17, U18, U19, P5, P6) plus one D row (MCP
+  Tasks), with one row reclassified D→X. Inventory is now **69 rows: H 33 ·
+  D 28 · P 2 · X 2 · U 4**. That edit is this round's starting state, not a
+  stray diff; V0 commits it with the corrections it needs.
+- Everything U17/U18/P5/P6 asserts came from typings, vendor pages, and peer
+  docs. **No live host was used.** Round 4 exists to convert those claims into
+  measurements, and to fix the two that fail a turn a user was entitled to.
+
+### 9.1 The one deviation this round retires
+
+The spec says a sender should put a deadline on every request and that progress
+resets it; Claude Code computes a per-request timer as the greatest of 60 s, the
+server's own tool timeout, and `MCP_TIMEOUT`, with a separate idle window that
+progress notifications reset; openclaw resets a model-idle window on keepalives.
+This plugin runs **one 180-second silence budget across both the model phase and
+the tool phase**, and the host offers no keepalive or progress frame at all. U17,
+U18 and U19 are the three faces of that single sentence:
+
+| Face | What the clock sees | What is actually true |
+|---|---|---|
+| U17 | 180 s of no frames | A bridged `tools/call` is executing in opencode; the host is waiting on **us** |
+| U18 | 180 s of no frames | The provider is backing off; the host already told us so via `turn/modelRetryScheduled` |
+| U19 | nothing | The wire has `session/declareExternalWait` and `task/background`; neither is used |
+
+The fix is not a bigger number. It is: **the clock measures the phase it is in.**
+
+### 9.2 Decisions this round implements
+
+**D16 — split the budget by phase.** While a bridged call is in flight, the host
+idle clock is suspended, because the host is not the suspect: we owe it a
+response. The first-byte clock still bounds a host that never answers, and a
+host that dies mid-tool is caught by the existing write-failure/host-death path.
+No plugin-side tool deadline by default; `MUSE_TOOL_CEILING_MS` (default `0`,
+off) adds an optional wall clock for users who want one. The host idle clock
+resumes when the last bridged call settles.
+
+**D17 — a retry is progress.** `turn/modelRetryScheduled` counts as substantive
+and extends the idle deadline by `retryDelayMs` plus a 5 s grace, capped by
+`MUSE_RETRY_CAP_MS` (default 600 000). The event carries
+`attempt`/`nextAttempt`/`maxAttempts`/`retryDelayMs`/`errorKind`/`httpStatus`, so
+the extension is derived from the host's own durable fact, not guessed. A chain
+that never produces a frame still ends at the cap.
+
+**D18 — declare the wait, do not background the call.** On the 0→1 transition of
+bridged calls, send `session/declareExternalWait` with a reason built from the
+tool names (`bash: npm test`); on 1→0, `session/clearExternalWait`. It is
+live-only (a resume, restart, unload, or the next user input ends it), so it is a
+status signal for the host's session view and the end-of-turn reminder, never a
+durability claim. `task/background` is **not** used: it durably backgrounds a
+running *Muse* tool task, and under the `empty` preset Muse has none; a bridged
+call is an MCP request whose result this plugin must return, not a task the host
+can move to the background.
+
+**D19 — the hook gate covers `project` origin only.** `plugin` origin means a
+handler contributed by an installed Muse plugin. Install scope is not review and
+never approves a capability, but every scope installs into the user's own store —
+"Nothing is written into the repository" — and a project-scoped plugin still
+requires the user to trust the workspace and approve it. That is user-installed
+code, not a file a repo plants, which is the thing the gate exists to stop.
+`--trust-hooks` and `MUSE_ALLOW_PROJECT_HOOKS=1` keep their meaning for
+`project`. The doctor lists every origin, so an installed plugin's handlers are
+visible rather than silent.
+
+**D20 — the allowance warning gets the surface the package already has.** The
+server half cannot publish a toast (`Context.event` is subscribe-only; issue
+#50984 records that v1's `client.tui.publish` has no v2 equivalent), but a
+package's `./tui` part is loaded automatically with its server part — "One entry
+loads every part. The TUI loads the TUI parts of the plugins its server loads." —
+and it has `ui.toast.show`. So: the server half writes a small notice file beside
+the ledger, the TUI part reads it at setup, toasts once per window, and clears
+it. `console.warn` stays for headless runs.
+
+**D21 — `allowAll` stays, and the record says why.** The vendor's guidance for
+automation is `denyUnmatched`, and its justification for exposing `allowAll` is
+the spawn boundary: "the client already holds the user's ambient authority."
+This plugin is the only client, its native tools are off, and every bridged call
+is executed by opencode through opencode's permission engine — the plugin holds
+no tool executor of its own, so there is no private pre-check to bypass; the
+gate is the host's. `test/bridge-denial.test.ts` already pins the denied case.
+The asymmetry gets stated: MCP tools stay on through Muse while Muse's built-in
+tools are pinned off, and subagents/workflows are off by containment.
+
+### 9.3 Experiments (approved)
+
+Each records its result in `docs/decision-evidence.md` under the same id, with
+the command, the observed output, and the branch taken.
+
+| Ref | Question | Method | Pass looks like | Branch if it fails |
+|---|---|---|---|---|
+| E-D13 | Does the idle clock kill a healthy turn during a bridged tool call? | Fixture mode `call-tool`: after `turn/started`, POST `tools/call` to the session's MCP URL, then stay silent; the test holds the tool promise past the idle window | Against `9c1dc6d`: turn fails `host_idle_timeout` while the tool is pending (the false kill). After D16: turn completes when the tool resolves | If the fixture cannot reach the bridge, fall back to a unit test on `watchdog.setBridgePending` and record the integration gap |
+| E-D14 | Does a provider retry longer than the idle window look like a wedge? | Fixture emits `turn/modelRetryScheduled` (retryDelayMs 200) then a delta at 150 ms, idle 50 ms | Before D17: killed at 50 ms. After: survives, extension logged, delta delivered; a chain with no follow-through still ends at `MUSE_RETRY_CAP_MS` | If the host never emits the frame in practice, keep the handler but document it as unobserved |
+| E-D15 | Does the host accept a declaration, and does it show? | Scratch script against the real host: `session/start`, `declareExternalWait`, `session/read`, `clearExternalWait`, `session/leave`. No turn, no model call | `declared: true`; `session/read` shows `externalWait` with the reason; cleared after | If `externalWait` is not on the read, keep the declaration (it still parks the reminder) and say the view half is unproven |
+| E-D16 | Is a `plugin`-origin hook reachable by a repo without user action? | Vendor plugin-scope docs + fixture `hook/list` row with `handlerKind: "plugin"` | Docs say every scope installs into the user store and requires approval; gate allows the row | If a workspace path can install without approval, keep refusing and add identity trust (name + version + handler set) instead |
+| E-D17 | Can this package ship a TUI part that toasts the warning? | Build `src/tui.ts` with `Plugin.define`; unit test `setup` with a fake `{ui:{toast:{show}}, client}`; check `exports` and the parts rule | `setup` calls `ui.toast.show` once for a fresh notice and not twice; `bun run check:offline` compiles it | If the TUI part does not auto-load from a package entry, keep log-only and say so in P6 |
+| E-D18 | What actually gates a bridged call? | Read `test/bridge-denial.test.ts` and the `callTool` path in `session-registry.ts` | No executor in this plugin; a denied permission yields a tool error and no execution; the gate is opencode's | If the plugin executes anything itself, add a fail-closed check before the emit |
+
+### 9.4 Phases
+
+Work in order. `bun run check:offline` after each; baseline is 348 tests. New
+test files go into `test:offline`. No new dependencies, no spend, no push.
+
+**V0 — commit the audit and correct what is already false** *(docs only)*
+- Commit the uncommitted `decision-coverage.md` audit as its own commit.
+- Fix the two sentences it makes wrong: README's Containment bullet says
+  `project` **and** `plugin` handlers are refused until hashed, which cannot be
+  true for `plugin` (no file); and `src/hooks.ts`'s "2.3.2 has no dialog surface"
+  comment is true of the server Context and false of the package (P6).
+- Add the P5/P6 rows' "cheapest closure" once D19/D20 are decided.
+- Gate: `check:offline` unchanged at 348.
+
+**V1 — phase-aware clock** *(D16; E-D13 first)*
+- `src/bridge.ts`: expose `pending(): number` (size of the existing `inFlight`
+  map) on `ToolBridgeServer`; no new state.
+- `src/watchdog.ts`: `setBridgePending(pending: boolean)` — while true, the idle
+  clock does not fire; the first-byte clock still does; optional
+  `MUSE_TOOL_CEILING_MS` arms a separate wall clock.
+- `src/session.ts`: call it from the bridge request lifecycle (0→1, 1→0), and
+  stop the ceiling on terminal.
+- `test/fixtures/fake-msp-host.mjs`: `call-tool` mode.
+- `test/watchdog.test.ts` + `test/watchdog-resume.test.ts`: false-kill repro,
+  survival, host-death-during-tool, ceiling.
+- README: the Timeouts bullet gains the phase sentence.
+- Gate: suite grows by ~6; E-D13 recorded.
+
+**V2 — retry-aware extension** *(D17; E-D14)*
+- `src/watchdog.ts`: `extend(ms)` and the cap; `isSubstantiveProgress` includes
+  `turn/modelRetryScheduled`; `src/session.ts` reads `retryDelayMs` and logs the
+  attempt.
+- Tests: survival across a retry, cap still ends a chain.
+- Gate: +4; E-D14 recorded.
+
+**V3 — declare the wait** *(D18; E-D15)*
+- `src/session.ts`: `declareExternalWait`/`clearExternalWait` on the transition,
+  reason from tool names, failures swallowed (a status signal must never fail a
+  turn); skip when the host did not grant the method.
+- Tests: the two commands are sent once per transition, and a rejected declare
+  does not affect the turn.
+- `scratch/external-wait.ts`: the live probe (gitignored).
+- Gate: +3; E-D15 recorded.
+
+**V4 — plugin origin** *(D19; E-D16)*
+- `src/hooks.ts`: refuse `project` only; `plugin` passes; the refusal message and
+  `doctor --trust-hooks` wording say "project".
+- `scripts/doctor.ts`: print plugin-origin rows as `allowed (installed plugin)`.
+- Tests: a plugin row passes, a project row still refuses, trust still works.
+- Gate: +2; E-D16 recorded.
+
+**V5 — the TUI surface** *(D20; E-D17)*
+- `src/allowance.ts`: write `notices.json` (window `resetsAtMs`, percent, `at`)
+  next to the ledger when it warns; clear on a new window.
+- `src/tui.ts`: `Plugin.define({ id, setup })` — read the notice, toast once,
+  clear; no-op when there is nothing or the file is unreadable.
+- `package.json`: `"./tui"` export, `src` already in `files`.
+- Tests: writer, reader, one-toast-per-window, malformed file is silent.
+- README: one sentence in the allowance paragraph.
+- Gate: +4; E-D17 recorded, with the live TUI check listed as not run.
+
+**V6 — the positions, stated** *(D21)*
+- README: MCP-on/built-ins-off asymmetry, subagents/workflows off and why,
+  `allowAll`'s structural argument in one sentence.
+- Coverage: the three B rows get D status and a basis pointing at the test and
+  the vendor's spawn-boundary sentence.
+- Gate: docs only.
+
+**V7 — close out, verify, report**
+- Coverage: U17→H, U18→H, U19→H (or D if E-D15 fails its view half), P5→D,
+  P6→H; restate counts; keep U16 open.
+- `decision-evidence.md`: E-D13–E-D18 results; add the adopted sentences to
+  "Decisions taken".
+- `decision-plan.md`: tick the new S10.
+- README: test count.
+- `bun run check:offline`; report one line per decision and experiment; stop
+  before committing (the owner gate is U16's dispatch, which needs a push).
+
+### 9.5 Phase status
+
+| Phase | Status | Evidence |
+|---|---|---|
+| V0 | done, commit held | `src/hooks.ts` comment corrected; the coverage audit and every phase's docs are uncommitted pending the owner's approval (the prompt's "ask before committing" wins over § 9.4's V0 bullet) |
+| V1 | done | E-D13; `ToolBridgeServer.pending` + `onPendingChange`, `watchdog.setBridgePending`, `MUSE_TOOL_CEILING_MS`; 5 tests. The repro used a fake host posting to the real loopback bridge rather than a fixture mode: same request, less process plumbing |
+| V2 | done | E-D14; `turn/modelRetryScheduled` substantive, `noteRetry`, `MUSE_RETRY_CAP_MS`; 4 tests |
+| V3 | done | E-D15 on a live host (declared/read/cleared) plus 2 tests; `task/background` not used, as decided |
+| V4 | done | E-D16; `BLOCKING_KINDS` = `project`; doctor prints `(installed plugin)`; 2 tests (one replaced the old refusal test) |
+| V5 | done | E-D17; `src/tui.ts`, notice in `src/allowance.ts`, `./tui` export; 5 tests. The part is a plain object typed by `Plugin.Definition` because importing the TUI runtime pulls `solid-js` |
+| V6 | done | README containment bullet states the asymmetry and the structural `allowAll` argument; coverage rows cite the test and the vendor sentence |
+| V7 | done | coverage `H 37 · D 29 · P 0 · X 2 · U 1`; evidence E-D13–E-D18; suite **363 pass / 0 fail / 928 expect / 36 files** |
+
+### 9.6 Owner calls — product choices, not experiment outcomes
+
+Each is a sentence the owner can accept or reject; the recommendation is what
+the phases above assume.
+
+| # | Choice | Recommendation | What changes if you say no |
+|---|---|---|---|
+| C1 | Tool-phase deadline: none, or a wall clock? | **None by default**, `MUSE_TOOL_CEILING_MS` for those who want one. opencode owns the tool's abort; a second deadline would fail work the user can still cancel in the UI | A default ceiling (30 min?) turns a hung opencode tool into a host kill; cheaper to reason about, worse to hit |
+| C2 | Model-phase idle: keep 180 s? | **Keep.** With the tool phase split out, 180 s now covers only the model, where openclaw's cloud number is 120 s and self-hosted 300 s | 300 s is defensible if your own turns routinely think longer |
+| C3 | `plugin`-origin hooks | **Allow** (D19): user-installed, approved, never written into the repo | Keep refusing: safer against a malicious marketplace plugin, but blocks the documented path and leaves P5 open |
+| C4 | TUI toast | **Ship the `./tui` part** (D20): it auto-loads, so no new user step | Log-only: P6 stays open, and the warning reaches nobody in a TUI |
+| C5 | Retry extension cap | **600 s**, env-tunable | Unbounded: a retry storm holds the turn forever; 120 s: kills legitimate backoff |
+| C6 | Subagents and workflows | **Stay off** (containment), stated in README | Enabling them is a capability decision with its own containment review, not a patch |
+| C7 | `declareExternalWait` default | **On**, best-effort | Off via env if a host build rejects it; the clock fix does not depend on it |
+
+### 9.7 Out of scope (do not reopen)
+
+MCP Tasks as a bridge mechanism, sampling controls, one host per spawning party,
+a USD cap, the ACP shim, `task/background` for bridged calls, and any new
+dependency. §4 still applies.
+
+### 9.8 Risks carried consciously
+
+| Risk | Mitigation |
+|---|---|
+| Suspending the idle clock hides a host that wedges mid-tool | The first-byte clock and the optional ceiling still bound it; a dead host is caught on the result write |
+| The retry extension becomes a wedge-hider | Cap plus `maxAttempts` from the host's own frame; the cap is env-tunable |
+| Allowing `plugin` origin is read as loosening the gate | Doctor prints every origin; the README says the gate covers repo-supplied files |
+| A TUI part breaks users on an older opencode | It is a separate export; a load failure must not take the server half down |
+| `declareExternalWait` fails on a host build | Swallowed; the clock fix does not depend on it |
+| E-D13's fixture cannot speak MCP | Fallback unit test, and the gap is recorded rather than papered over |
+
+### 9.9 Execution prompt (paste into a fresh session)
+
+```text
+Execute Round 4 in ~/repos/opencode-plugin-muse/docs/implementation-plan.md § 9.
+Read § 9.0–9.8 first; that file is the state, not your memory. Work V0→V7 in
+order, one phase at a time.
+
+- Run `bun run check:offline` after every phase and keep it green. Baseline is
+  348 pass / 0 fail / 890 expect / 35 files. Never weaken or delete an assertion.
+  New test files must be added to the explicit `test:offline` list in package.json.
+- Run the experiment a phase names BEFORE writing its fix, record the result in
+  docs/decision-evidence.md under the same E-D id (command, observed output,
+  branch taken), then implement. If an experiment fails, take the branch column
+  in § 9.3 and record that instead of forcing the fix.
+- Muse CLI work runs under `zsh -lc`, never `bash -lc`. No `muse acp`, no
+  allowance spend, no new dependencies, no push, no tag, no publish.
+- Tick § 9.5 as phases land, update docs/decision-coverage.md statuses and
+  counts as rows close, and keep README true (it is the user-facing record).
+- Stop at V7: report one line per decision (D16–D21) and per experiment
+  (E-D13–E-D18), state the suite result, and ask before committing. The only
+  owner gate is U16's CI dispatch, which needs a push.

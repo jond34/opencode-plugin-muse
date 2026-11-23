@@ -294,6 +294,101 @@ Run 2026-11-22, `bun scripts/doctor.ts --json` twice on this tree, plus
   revokes it; both are covered by tests, and `--trust-hooks` on a workspace with
   no hooks file exits non-zero with the reason.
 
+## Round 4 — the clock measures the phase
+
+The plan is `implementation-plan.md` § 9. Each experiment was run before its fix,
+and the failure is recorded here as well as the pass.
+
+### E-D13 — a bridged call is not silence, and the idle clock said it was
+
+- Command: `bun test test/watchdog.test.ts -t "a call longer than the idle
+  window"`, run against `9c1dc6d` before D16 and again after.
+- Before: with `MUSE_IDLE_TIMEOUT_MS=60`, one `item/delta`, and a fake host that
+  posts a real `tools/call` to the loopback bridge (the tool then parks), the
+  turn produced one `turn.terminal` at 250 ms. Pinning the code in the same run
+  gave `host_idle_timeout`: the plugin ended a host that was waiting on
+  opencode's tool.
+- After: the same test passes — 250 ms of silence with a call in flight, no
+  terminal, `hostExited === false`, and releasing the tool lets the response
+  travel.
+- Also pinned: `MUSE_TOOL_CEILING_MS=40` fails the turn with "a bridged tool call
+  was still running after 40 ms"; a host that dies during a call fails as
+  `event_stream_failed`; and the unit pair shows the clock suspends and resumes
+  and that the ceiling is off by default.
+- Method: the fake host receives the real bridge URL in `session/start` and posts
+  over loopback, so the MCP request and the bridge server are real; only the Muse
+  process is simulated. No live host and no model turn, so no spend.
+- Branch: not needed — the fixture fallback was unnecessary.
+
+### E-D14 — a retry is the host backing off, not a wedge
+
+- Command: `bun test test/watchdog.test.ts -t "a retry longer than the idle
+  window"`.
+- Before: `turn/started`, then `turn/modelRetryScheduled` with `retryDelayMs:
+  200` under `MUSE_IDLE_TIMEOUT_MS=50`, then a delta at 150 ms. The turn was
+  killed at 50 ms and the delta arrived after it had already failed.
+- After: the turn survives, the delta is delivered, and `turn/completed` arrives
+  with no failure; `hostExited === false`.
+- Cap: with `MUSE_RETRY_CAP_MS=80` and a 200 ms retry, the turn still ends at
+  about 80 ms with `host_idle_timeout`, so the extension cannot hide a wedge.
+- Unit: `noteRetry(100)` under a 20 ms budget survives 60 ms of silence.
+- Branch: not needed.
+
+### E-D15 — the host accepts the declaration and serves it
+
+- Command: `zsh -lc 'bun scratch/external-wait.ts'` — a real host, a session, no
+  turn and no model call.
+- Observed: `declare: {"declared":true,"reason":"bash: npm test"}`, then
+  `read.externalWait: {"reason":"bash: npm test"}`, then
+  `clear: {"declared":false}`, then `after.externalWait: null`.
+- So the view half is proven, not just the command: a client can show what the
+  session is waiting on while the call runs.
+- Wired: 0→1 declares with the tool label (`bash: npm test`), 1→0 clears, and a
+  rejected declare is swallowed — the turn is unaffected (test).
+- Note: the declaration is live-only; the clock fix does not depend on it.
+
+### E-D16 — a plugin hook is the user's install, not the repo's
+
+- Evidence: the vendor's plugin-scope page says every install scope writes into
+  the user's own store ("Nothing is written into the repository"), install scope
+  is not review and never approves a capability, and a project-scoped plugin
+  still requires workspace trust and approval. A `plugin` row in the hook
+  catalog therefore describes code the person installed, not a file a checkout
+  can plant.
+- Result: `blockingHooks` returns only `project` rows; a plugin row passes with
+  no hooks file present; a project row in the same workspace still refuses. The
+  doctor prints `plugin/stop (installed plugin)` so the origin is visible.
+- Branch not taken: identity trust (name + version + handler set). No workspace
+  path installs a plugin without approval, so there is nothing to record.
+
+### E-D17 — the package can ship the surface
+
+- Built `src/tui.ts`: read the notice, `ui.toast.show`, delete it, poll every 5 s,
+  return a cleanup.
+- Tests: five in `test/tui-notice.test.ts` — round trip, malformed file is
+  silent, one toast per notice, a throwing toast keeps the notice, and `setup`
+  shows a pending notice and returns a cleanup.
+- Finding that changed the plan's letter: importing `@opencode/plugin/tui` at
+  runtime pulls in `solid-js`, a peer of the TUI and not a dependency here. The
+  part is therefore a plain object typed by the vendor's `Plugin.Definition`;
+  `Plugin.define` is the identity function, so behaviour is identical and no
+  dependency was added.
+- Not run: a live TUI load. The evidence is the vendor type, the export map, and
+  the unit tests; the row says so.
+- `exports` gained `./tui`, and `files` already ships `src`.
+
+### E-D18 — what actually gates a bridged call
+
+- `session-registry.ts`'s `callTool` emits a `toolCallId` into opencode and parks
+  a promise; opencode executes the tool through its own permission engine. The
+  plugin holds no executor, so there is no private pre-check to bypass.
+- `test/bridge-denial.test.ts` pins the denied case: a denied permission yields a
+  tool error and no execution.
+- The vendor's own justification for exposing `allowAll` is the spawn boundary
+  ("the client already holds the user's ambient authority"); its default-deny
+  guidance is for a client that can author rules, which this one cannot.
+- Conclusion: the gate is opencode's. README and the coverage row now say so.
+
 ## Decisions taken
 
 These were owner calls, not experiments. The owner approved every experiment and
@@ -325,6 +420,23 @@ with where it lives.
    the seam" → Timeouts. The first-byte default is inherited from the literature
    (E-D11 was deliberately not measured); the idle budget is the one the field
    norms agree on.
+
+Round 4's sentences (D16–D21) are in `implementation-plan.md` § 9.2 and in
+`README.md`; the short form:
+
+- **D16** the idle clock is suspended while a bridged call is in flight, and the
+  tool ceiling is opt-in (`MUSE_TOOL_CEILING_MS`).
+- **D17** a retry extends the idle clock by the host's `retryDelayMs` plus 5 s,
+  capped at `MUSE_RETRY_CAP_MS` (600 s).
+- **D18** the wait is declared and cleared as status; `task/background` is not
+  used, because there is no Muse-native task to move.
+- **D19** the hook gate covers `project` only; a `plugin` handler is the user's
+  install and the doctor prints every origin.
+- **D20** the allowance warning ships a `./tui` part that shows the notice and
+  removes it; the log line stays.
+- **D21** `allowAll` stays, stated as structural (no executor here) rather than
+  as a shortcut, with the MCP-on/built-ins-off asymmetry and subagents/workflows
+  off said out loud.
 
 ## What this does not settle
 

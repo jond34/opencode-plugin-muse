@@ -53,6 +53,12 @@ Work top to bottom. Each step ends by writing its result into
       rows closed in `decision-coverage.md`, six sentences now stand in
       `decision-evidence.md` § Owner calls.
 - [ ] **S8** Owner gate: report, commit only on approval, never push
+- [x] **S10** Round 4 of `implementation-plan.md` § 9 executed 2026-11-22
+      (V0–V7). Phase-aware turn deadlines (D16–D18), plugin-origin hooks (D19),
+      the allowance toast (D20), and the positions stated (D21). E-D13–E-D18 are
+      recorded in `decision-evidence.md`; the suite is 363 pass / 0 fail / 928
+      expect / 36 files. The commits are held for the owner's approval; U16 still
+      needs a push to dispatch.
 - [x] **S9** Round 3 of `implementation-plan.md` § 8 executed 2026-11-22 (W0–W6:
       hook gate, three-clock watchdog, resume-after-kill, allowance warning,
       doctor, doc close-out). E-D9, E-D10 and E-D12 are recorded in
