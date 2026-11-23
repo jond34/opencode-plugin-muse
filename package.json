@@ -16,6 +16,11 @@
       "types": "./dist/index.d.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./tui": {
+      "types": "./dist/tui.d.ts",
+      "import": "./src/tui.ts",
+      "default": "./src/tui.ts"
     }
   },
   "files": [
@@ -31,7 +36,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
-    "test:offline": "bun test test/lifecycle.test.ts test/host-requests.test.ts test/usage.test.ts test/replay.test.ts test/convert.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts test/bridge.test.ts test/view-gap.test.ts test/host-death.test.ts test/host-process.test.ts test/approval-failures.test.ts test/hook-gate.test.ts test/watchdog.test.ts test/watchdog-resume.test.ts test/allowance.test.ts test/doctor.test.ts",
+    "test:offline": "bun test test/lifecycle.test.ts test/host-requests.test.ts test/usage.test.ts test/replay.test.ts test/convert.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts test/bridge.test.ts test/view-gap.test.ts test/host-death.test.ts test/host-process.test.ts test/approval-failures.test.ts test/hook-gate.test.ts test/watchdog.test.ts test/watchdog-resume.test.ts test/allowance.test.ts test/doctor.test.ts test/tui-notice.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
     "doctor": "bun scripts/doctor.ts",

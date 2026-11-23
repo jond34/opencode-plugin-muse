@@ -8,7 +8,15 @@
  *
  * This is a warning, never a gate: a failed read is silent, and nothing here
  * can block a session from starting.
+ *
+ * The server half cannot publish a toast (the server `Context` is
+ * subscribe-only), so the message is also written as a notice beside the
+ * ledger. The package's `./tui` part loads with it, reads the notice, shows it,
+ * and removes it — see `src/tui.ts`.
  */
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { stateDirectory } from "./usage-ledger.js";
 
 /** The fields this module reads, from `UsageReadResult.usage`. */
 export interface AllowanceUsage {
@@ -86,6 +94,74 @@ export function allowanceMessage(usage: AllowanceUsage, percent: number): string
   );
 }
 
+/** A warning the TUI part can show. One file, one window, removed once shown. */
+export interface AllowanceNotice {
+  readonly atMs: number;
+  readonly usedPercent: number;
+  readonly resetsAtMs: number | null;
+  readonly message: string;
+}
+
+/** `$XDG_STATE_HOME/opencode-muse/allowance-notice.json`, beside the ledger. */
+export function allowanceNoticePath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(stateDirectory(env), "allowance-notice.json");
+}
+
+/** Write the notice. Best-effort: a read-only state directory is not an error. */
+export function writeAllowanceNotice(
+  notice: AllowanceNotice,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const path = allowanceNoticePath(env);
+  try {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const temporary = `${path}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify({ version: 1, ...notice }, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    renameSync(temporary, path);
+  } catch {
+    // The warning already reached the log; the toast is the extra channel.
+  }
+}
+
+/** The notice, or `null` when there is none or it cannot be read. */
+export function readAllowanceNotice(
+  env: NodeJS.ProcessEnv = process.env,
+): AllowanceNotice | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(allowanceNoticePath(env), "utf8"));
+  } catch {
+    return null;
+  }
+  const row = parsed as Partial<AllowanceNotice> | null;
+  if (
+    row === null ||
+    typeof row !== "object" ||
+    typeof row.message !== "string" ||
+    typeof row.atMs !== "number" ||
+    typeof row.usedPercent !== "number"
+  ) {
+    return null;
+  }
+  return {
+    atMs: row.atMs,
+    usedPercent: row.usedPercent,
+    resetsAtMs: typeof row.resetsAtMs === "number" ? row.resetsAtMs : null,
+    message: row.message,
+  };
+}
+
+/** Remove the notice. Best-effort, like the write. */
+export function clearAllowanceNotice(env: NodeJS.ProcessEnv = process.env): void {
+  try {
+    unlinkSync(allowanceNoticePath(env));
+  } catch {
+    // Already gone, or never written.
+  }
+}
+
 /** The reset stamp already warned about, so one window warns once. */
 let warnedResetAtMs: number | null = null;
 
@@ -121,5 +197,14 @@ export async function checkAllowance(
   warnedResetAtMs = key;
   const message = allowanceMessage(usage, percent);
   log(message);
+  writeAllowanceNotice(
+    {
+      atMs: Date.now(),
+      usedPercent: usage.window?.usedPercent ?? 0,
+      resetsAtMs: usage.window?.resetsAtMs ?? null,
+      message,
+    },
+    env,
+  );
   return message;
 }
