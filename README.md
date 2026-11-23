@@ -529,7 +529,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 419 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 416 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a

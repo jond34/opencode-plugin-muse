@@ -41,7 +41,13 @@ file in any ancestor directory the host walked is reported as well (E-D66).
 Those two rows are a gate by default: a `config` row, a `policies` warn, or a run
 that could not read the config exits 1, while the rows about the machine stay
 advisory (D69, D75, D82). `--no-strict` reports only; `--offline` does not look, so
-it exits 1 unless `--no-strict` is also given (D83, D84). Both rows rest on `--print-logs`, which the vendor documents as a
+it exits 1 unless `--no-strict` is also given (D83, D84).
+That is a deliberate divergence from `claude doctor`, which reads the same
+settings files, names a malformed file, and exits 0 even when the file was
+discarded; on a misspelt key it is byte-identical to a clean run, while this
+doctor names the dropped statement by `$.experimental.policies.N` and exits 1
+(E-D91). `codex doctor`, the charter the row set follows, gates the same way, on
+`Fail` only (E-D92). Both rows rest on `--print-logs`, which the vendor documents as a
 debugging aid, and on message text — there is no structured diagnostics surface
 upstream, which is what `anomalyco/opencode#60252` asks for (D73).
 A Console-delivered policy

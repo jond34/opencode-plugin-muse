@@ -61,6 +61,11 @@ argument about width, not about polarity.
 > means a declaration the user made is not in force; the tally below still fits, but
 > the reason is that property, not authorship.
 
+> Round 17 §1 adds the class this table omits: `codex doctor`, `brew doctor`,
+> `expo-doctor` and `ripr doctor` gate their required checks, Vue Doctor and
+> `claude doctor` require nothing, and the axis is which checks are required rather
+> than whether the tool exits non-zero (D88, E-D97).
+
 | Tool | Contract | Who authors the severity | Gates by default |
 |---|---|---|---|
 | `nginx -t` | non-zero on a config error | the tool | yes |

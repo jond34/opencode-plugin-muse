@@ -147,6 +147,7 @@ E-D84 measured what is installed here; E-D85/E-D86/E-D89 cite what is not.
 | alint (cited) | 0 | 1 findings **or** incomplete analysis | 2 bad config; 3 internal |
 | vize doctor (cited) | 0 | 1 blocking error | 2 analysis failed |
 | Vue Doctor (cited) | 0 | 1 gate breached | 2 usage; 3 analyzer under `--strict` |
+| ripr (cited) | 0 | 0 for `check`; 2 for `gate evaluate` blocked | 2 (input, config, analysis, output) |
 | `terraform validate` (cited) | 0 | 1 | — |
 | GitHub Actions (cited) | success | failure | failure (any non-zero) |
 
@@ -207,6 +208,11 @@ remediation that names the exact entry to add.
 branch is a trap: it reads as a policy and behaves as a modifier. The two-flag
 scheme is smaller, orthogonal, and every cell is reachable. The name also means
 "warnings fail" in three other tools.
+
+> Round 17 §5 corrects the name argument: `--strict` is split, not foreign.
+> yamllint, `poetry check` and `composer validate` use it for warnings-fail; Vue
+> Doctor uses it for "exit 3 if any analyzer fails or is skipped". The deletion
+> stands on reachability (D82, D83); the name is ambiguous (D89, E-D98).
 
 **Against deleting it.** Three rungs are self-documenting, and `--strict` is a
 familiar word; a caller who wants "offline but gated" loses a one-flag spelling.
