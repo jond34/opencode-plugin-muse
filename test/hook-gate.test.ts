@@ -8,13 +8,16 @@ import {
   forgetHookTrust,
   hookGateRefusal,
   hooksDigest,
+  hooksFileHandlers,
   hooksFilePath,
+  hooksFileTrusted,
   hooksTrusted,
   PROJECT_HOOKS_ENV,
   readHookCatalog,
   readHookRows,
   readHookTrust,
   recordHookTrust,
+  trustedHandlerHashes,
   type HookRow,
 } from "../src/hooks.js";
 import { MuseHarnessSession, type SessionHost } from "../src/session.js";
@@ -45,8 +48,19 @@ async function stateEnv(): Promise<NodeJS.ProcessEnv> {
   return { XDG_STATE_HOME: dir };
 }
 
+/**
+ * A real one-handler file, in the vendor's shape: `hooks` by event, each event a
+ * list of matcher groups, each group a list of handlers.
+ */
+const ONE_HANDLER =
+  '{"hooks":{"preToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"bun run lint"}]}]}}';
+const TWO_HANDLERS =
+  '{"hooks":{"preToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"bun run lint"},{"type":"command","command":"bun run typecheck"}]}]}}';
+const EDITED_HANDLER =
+  '{"hooks":{"preToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"bun run lint --fix"}]}]}}';
+
 /** A workspace with a hooks file, returning its root and the file's digest. */
-async function workspaceWithHooks(body = '{"hooks":{}}'): Promise<{ root: string; digest: string }> {
+async function workspaceWithHooks(body = ONE_HANDLER): Promise<{ root: string; digest: string }> {
   const root = await mkdtemp(join(tmpdir(), "muse-hook-ws-"));
   await mkdir(join(root, ".muse"), { recursive: true });
   await writeFile(hooksFilePath(root), body);
@@ -144,9 +158,22 @@ describe("hook gate", () => {
     const env = await stateEnv();
     const { root } = await workspaceWithHooks();
     const refusal = hookGateRefusal([PROJECT_ROW], root, env);
-    expect(refusal).toContain("sessionStart:/repo/.muse/hooks.json:session_start:def-abc");
+    // The file is what gets accepted, so the message names the handler by its
+    // own content (event plus command), not by a catalog key that never carries
+    // the command.
+    expect(refusal).toContain("preToolUse: bun run lint");
     expect(refusal).toContain(PROJECT_HOOKS_ENV);
     expect(refusal).toContain(hooksFilePath(root));
+  });
+
+  test("a file the plugin cannot account for is refused, and the catalog key is the fallback", async () => {
+    const env = await stateEnv();
+    // The host says it loaded a project handler, but the file declares none this
+    // module can read: fail closed rather than trust what cannot be named.
+    const { root } = await workspaceWithHooks('{"hooks":{}}');
+    const refusal = hookGateRefusal([PROJECT_ROW], root, env);
+    expect(refusal).toContain("sessionStart:/repo/.muse/hooks.json:session_start:def-abc");
+    expect(refusal).toContain("does not declare in a shape this plugin can account for");
   });
 
   test("a plugin hook is allowed with no hooks file, because the user installed it", async () => {
@@ -157,16 +184,86 @@ describe("hook gate", () => {
     expect(hookGateRefusal([PLUGIN_ROW, PROJECT_ROW], root, env)).not.toBeNull();
   });
 
-  test("an accepted file passes until its bytes change", async () => {
+  test("a v1 record accepts an unchanged file and nothing else", async () => {
     const env = await stateEnv();
     const { root, digest } = await workspaceWithHooks();
     expect(hookGateRefusal([PROJECT_ROW], root, env)).not.toBeNull();
 
+    // v1 accepted the file's bytes. An unchanged file is exactly what it
+    // accepted, so its handlers are trusted: that is the migration rule.
     recordHookTrust({ canonicalPath: root, hooksSha256: digest, acceptedAtMs: 1 }, env);
     expect(hooksTrusted(root, digest, env)).toBe(true);
     expect(hookGateRefusal([PROJECT_ROW], root, env)).toBeNull();
 
-    await writeFile(hooksFilePath(root), '{"hooks":{"Stop":[]}}');
+    await writeFile(hooksFilePath(root), EDITED_HANDLER);
+    expect(hookGateRefusal([PROJECT_ROW], root, env)).not.toBeNull();
+  });
+
+  test("an edit to one handler asks only about that handler", async () => {
+    const env = await stateEnv();
+    const { root } = await workspaceWithHooks(TWO_HANDLERS);
+    const handlers = hooksFileHandlers(hooksFilePath(root));
+    expect(handlers).toHaveLength(2);
+    recordHookTrust(
+      {
+        canonicalPath: root,
+        handlers: handlers.map((handler) => ({ sha256: handler.sha256, label: handler.label })),
+        acceptedAtMs: 1,
+      },
+      env,
+    );
+    expect(hookGateRefusal([PROJECT_ROW], root, env)).toBeNull();
+
+    // Change the second handler. The first is untouched and must stay accepted;
+    // the refusal must name the new one and not re-ask about the old one.
+    await writeFile(
+      hooksFilePath(root),
+      '{"hooks":{"preToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"bun run lint"},{"type":"command","command":"bun run typecheck --all"}]}]}}',
+    );
+    const refusal = hookGateRefusal([PROJECT_ROW], root, env);
+    expect(refusal).toContain("1 new repo-supplied hook(s)");
+    expect(refusal).toContain("bun run typecheck --all");
+    expect(refusal).not.toContain("bun run lint");
+    expect(refusal).toContain("1 other handler(s) there are already accepted");
+
+    // Accepting the edit covers both, and dropping a handler never widens trust.
+    const after = hooksFileHandlers(hooksFilePath(root));
+    recordHookTrust(
+      {
+        canonicalPath: root,
+        handlers: after.map((handler) => ({ sha256: handler.sha256, label: handler.label })),
+        acceptedAtMs: 2,
+      },
+      env,
+    );
+    expect(hookGateRefusal([PROJECT_ROW], root, env)).toBeNull();
+    expect(trustedHandlerHashes(root, env).size).toBe(2);
+  });
+
+  test("a changed command cannot ride a stable position into trust", async () => {
+    const env = await stateEnv();
+    const { root } = await workspaceWithHooks();
+    const [before] = hooksFileHandlers(hooksFilePath(root));
+    recordHookTrust(
+      { canonicalPath: root, handlers: [{ sha256: before!.sha256, label: before!.label }], acceptedAtMs: 1 },
+      env,
+    );
+    expect(hookGateRefusal([PROJECT_ROW], root, env)).toBeNull();
+
+    // Same event, same matcher, same index, different command.
+    await writeFile(hooksFilePath(root), EDITED_HANDLER);
+    const [after] = hooksFileHandlers(hooksFilePath(root));
+    expect(after!.sha256).not.toBe(before!.sha256);
+    expect(hookGateRefusal([PROJECT_ROW], root, env)).not.toBeNull();
+  });
+
+  test("a file with no readable handler is not trusted even when the record names it", async () => {
+    const env = await stateEnv();
+    const { root } = await workspaceWithHooks('{"hooks":[]}');
+    expect(hooksFileHandlers(hooksFilePath(root))).toHaveLength(0);
+    expect(hooksFileTrusted(root, env)).toBe(false);
+    recordHookTrust({ canonicalPath: root, handlers: [], acceptedAtMs: 1 }, env);
+    expect(hooksFileTrusted(root, env)).toBe(false);
     expect(hookGateRefusal([PROJECT_ROW], root, env)).not.toBeNull();
   });
 
