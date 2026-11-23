@@ -26,6 +26,16 @@ provider is hidden. Clients older than 2.2.3 ignore `plugin.use`, `mcp.use`,
 them needs 2.3.2 or newer here. Record the actual host version in every live run; do not generalize
 from a version that was not run.
 
+The drop is local-visible and remote-silent. A statement that fails validation is
+removed before `opencode debug config` prints the document, so the warning exists
+only in the server log (E-D58, E-D59: three declared printed one; a duplicate
+statement and `experimental.policies` both survive the print). The doctor's
+`policies` row compares each file's declared statements with that document's
+`info.policies` and warns when fewer will be enforced. A Console-delivered policy
+is decoded remotely, where unknown actions and effects are filtered without a
+diagnostic (`anomalyco/opencode#60252`, open) — nothing here can observe that
+path.
+
 W2 evidence for this pair: `npm run check:offline` green (197 tests at W2; the
 suite is 240 today, tsc clean),
 the four live suites green (`model-live`, `restart-live`, `fork-live`,

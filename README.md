@@ -223,6 +223,19 @@ muse/muse-spark-1.3` — the sentence a typo in the model id also produces — w
 policy. If a turn failed and the message says the model is unavailable, a policy
 is one of the reasons.
 
+A statement that fails validation is dropped, not rejected: the host writes a
+warning to the server log, applies the rest of the list, and — because nothing
+matching means the action is allowed — leaves a typo in an action or effect name
+indistinguishable from having written no policy at all. So check the log after
+editing a `deny`, and prove the deny by its effect: a turn that should have been
+stopped and was not is the signal, and a typo produces exactly the same silence.
+`bun run doctor` closes the local half of that gap — its `policies` row compares
+what each config file declares with what the host will enforce and names the file
+when the counts differ. That is the local path only. A policy delivered by
+Console is decoded on the vendor's side and unknown actions and effects are
+filtered without a diagnostic (`anomalyco/opencode#60252`), so on a managed
+machine there is no log line to check and the effect is the only evidence.
+
 `tool.use` is the denial that names itself. Its resource is `<action>:<value>`,
 matched against every check the tool makes, so `read:*` covers every read and
 `opencode_bash:*` the bridged shell:
