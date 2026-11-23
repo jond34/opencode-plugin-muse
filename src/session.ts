@@ -424,8 +424,13 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     input: CreateSessionInput,
   ): Promise<MuseHarnessSession> {
     // A bridge session is driven by opencode, whose permission evaluation is
-    // the only fence. Only `allowAll` can be honoured: nothing in this plugin
-    // answers a Muse approval, so any asking mode would park the turn.
+    // the only fence. Only `allowAll` works, and that is measured rather than
+    // assumed (E-D24, round 6): under `denyUnmatched` a bridged call reaches
+    // `tool.started` and is then refused with `deny_unmatched: no policy rule
+    // allows this action`, because Muse's saved rules are command-prefix scoped
+    // and cannot name an MCP tool. `onRequest` and `promptUnmatched` were not
+    // run (E-D25/E-D26 skipped): nothing in this plugin answers a Muse approval,
+    // so a request they raised would have no one to settle it.
     if (
       input.toolBridge !== undefined &&
       input.approvalMode !== undefined &&
@@ -434,7 +439,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       throw new HarnessError({
         code: "invalid_input",
         adapterId: ADAPTER_ID,
-        message: `approvalMode ${input.approvalMode} cannot be answered here; bridge sessions use allowAll`,
+        message: `approvalMode ${input.approvalMode} cannot be answered here; a bridged call matches no policy rule, so only allowAll lets it through`,
       });
     }
     // Starting a bridge the handshake did not grant would fail `session/start`
@@ -486,7 +491,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
 
     // A bridge session is driven by opencode, whose permission evaluation is
     // the only fence. Asking Muse as well would double-ask, and a parked Muse
-    // approval would hang a turn opencode has already decided.
+    // approval would hang a turn opencode has already decided. `denyUnmatched`
+    // is not the safe middle: it refuses every bridged call (E-D24).
     const approvalMode = input.toolBridge !== undefined ? "allowAll" : input.approvalMode;
     const startParams = () => ({
       workspaceRoot: input.cwd,

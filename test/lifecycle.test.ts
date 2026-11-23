@@ -988,7 +988,7 @@ describe("MuseHarnessSession approvals", () => {
     expect(commands.some((entry) => entry.method === "approval/decide")).toBe(false);
   });
 
-  test("a bridge session refuses an approval mode it cannot answer", async () => {
+  test("a bridge session refuses an approval mode that would refuse the bridge", async () => {
     const { host, commands } = fakeHost({}, ["sessionMcp"]);
     await expect(
       MuseHarnessSession.create(host, {
@@ -1000,7 +1000,7 @@ describe("MuseHarnessSession approvals", () => {
           callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
         },
       }),
-    ).rejects.toThrow(/cannot be answered/);
+    ).rejects.toThrow(/matches no policy rule/);
     expect(commands).toHaveLength(0);
   });
 
