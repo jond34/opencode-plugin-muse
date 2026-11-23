@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
+import { checkAllowance } from "./allowance.js";
 import { buildEffortCatalog } from "./effort.js";
 import { fingerprintCompactionOutput } from "./fingerprint.js";
 import { nativeHistoryEnabled } from "./flags.js";
@@ -221,10 +222,19 @@ export const MusePlugin = Plugin.define({
         trustWorkspace: true,
       },
     });
+    // Workspace trust is granted because the bridge requires it. Skills are
+    // instructions and stay a warning; hooks are commands, and the gate that
+    // refuses them runs where `hook/list` can be asked, at session start.
     const hazards = workspaceTrustHazards(process.cwd());
-    if (hazards.length > 0) {
+    const skills = hazards.filter((hazard) => hazard !== join(".muse", "hooks.json"));
+    if (skills.length > 0) {
       console.warn(
-        `[opencode-muse] workspace trust is granted because the bridge requires it; this repo also supplies ${hazards.join(", ")}, which Muse loads outside opencode's control (hooks are commands, skills are instructions)`,
+        `[opencode-muse] workspace trust is granted because the bridge requires it; this repo also supplies ${skills.join(", ")}, which Muse loads into the prompt outside opencode's control`,
+      );
+    }
+    if (hazards.includes(join(".muse", "hooks.json"))) {
+      console.info(
+        "[opencode-muse] this repo supplies .muse/hooks.json; a session opens only after those hooks are accepted (MUSE_ALLOW_PROJECT_HOOKS=1 for one run, or the doctor's --trust-hooks)",
       );
     }
     const store: SessionStore = {
@@ -264,6 +274,11 @@ export const MusePlugin = Plugin.define({
       if (refusal !== null) throw new Error(`MUSE_STRICT_HOST: ${refusal}`);
     }
     registry.setHostFingerprint(hostFacts?.schemaFingerprint ?? null);
+
+    // Once per run, not per turn: a warning that repeats every step is noise,
+    // and the window's reset stamp is what makes "once" meaningful. It cannot
+    // block a start, and a host that cannot answer leaves it silent.
+    void checkAllowance({ read: () => adapter.readUsage() });
 
     const providerID = Provider.ID.make(PROVIDER_ID);
 

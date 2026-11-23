@@ -66,6 +66,7 @@ function bareHost(options: {
   exited: Promise<unknown>;
   closed?: Promise<void>;
   onExit?: (reason: string) => void;
+  child?: { close?: () => Promise<unknown> };
 }): MuseHost {
   const sink: NotificationSink = {
     sessionId: "native-1",
@@ -89,7 +90,9 @@ function bareHost(options: {
     exited: options.exited,
     gone,
     resolveGone,
-    child: {},
+    // The reap arm needs a child; the default one is a no-op, so a test that
+    // does not care whether `close` was called still runs the same path.
+    child: options.child ?? { close: async () => undefined },
     sinks: new Map([[sink.sessionId, sink]]),
     closed: false,
   });
@@ -145,6 +148,51 @@ describe("a host that dies mid-session", () => {
 
     expect(reported).toEqual(["transportEof"]);
     expect(await host.gone).toBe("transportEof");
+  });
+
+  test("a transport EOF closes the process it can no longer talk to", async () => {
+    let resolveClosed = () => {};
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    let closes = 0;
+    bareHost({
+      exited: new Promise(() => {}),
+      closed,
+      child: {
+        close: async () => {
+          closes += 1;
+          return {};
+        },
+      },
+    });
+
+    resolveClosed();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(closes).toBe(1);
+  });
+
+  test("a real exit does not close a process that already ended", async () => {
+    let resolveExit = (_value: unknown) => {};
+    const exited = new Promise((resolve) => {
+      resolveExit = resolve;
+    });
+    let closes = 0;
+    bareHost({
+      exited,
+      child: {
+        close: async () => {
+          closes += 1;
+          return {};
+        },
+      },
+    });
+
+    resolveExit({});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(closes).toBe(0);
   });
 
   test("a later real exit does not report the death twice", async () => {

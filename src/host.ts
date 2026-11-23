@@ -170,6 +170,12 @@ export interface MuseHostOptions {
   readonly clientName?: string;
   readonly clientVersion?: string;
   readonly onStderr?: (chunk: string) => void;
+  /**
+   * How long the shutdown ladder drains stdin before SIGTERM. Tests set it to
+   * `0`: a fixture is not going to drain anything, and the default 30 s budget
+   * would outlast the test.
+   */
+  readonly shutdownTimeoutMs?: number;
 }
 
 /**
@@ -226,6 +232,9 @@ export class MuseHost {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: options.env }),
       ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
+      ...(options.shutdownTimeoutMs === undefined
+        ? {}
+        : { shutdownTimeoutMs: options.shutdownTimeoutMs }),
     });
 
     let spawned;
@@ -365,6 +374,13 @@ export class MuseHost {
     this.resolveGone(reason);
     // Copy: a sink may unregister itself while this loop runs.
     for (const sink of [...this.sinks.values()]) sink.handleHostExit?.(reason);
+    // A transport EOF can leave the process running with no reader left to hear
+    // it. The SDK owns that process, so give it the shutdown it will never get;
+    // the `exited` arm needs nothing, because the child is already gone. Not
+    // `kill()`: `close()` is stdin EOF, the drain window, then SIGTERM→SIGKILL,
+    // and it is idempotent with the intentional-shutdown path, which sets
+    // `closed` first and never reaches this line.
+    if (reason === "transportEof") void this.child.close().catch(() => undefined);
   }
 
   registerSink(sink: NotificationSink): void {
@@ -379,5 +395,11 @@ export class MuseHost {
     if (this.closed) return;
     this.closed = true;
     await this.connection.close();
+    // A closed host serves nothing, which is what `gone` promises. The adapter
+    // caches hosts and drops them on this signal, so without it a host ended by
+    // the watchdog would be handed to the next open, already dead. Sinks are
+    // not notified: an intentional close is not a crash, and the session that
+    // asked for it has already retired its turn.
+    this.resolveGone("exited");
   }
 }

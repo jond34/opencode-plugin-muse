@@ -20,6 +20,13 @@ import { MspError } from "@muse-code/sdk";
 import type { HostDeathReason, MuseNotification, NotificationSink } from "./host.js";
 import { startToolBridgeServer, normalizeToolName, BRIDGE_MCP_SERVER_NAME, type ToolBridgeServer } from "./bridge.js";
 import { MUSE_CAPABILITIES } from "./capabilities.js";
+import { hookGateRefusal, readHookCatalog } from "./hooks.js";
+import {
+  createTurnWatchdog,
+  isSubstantiveProgress,
+  watchdogConfigFromEnv,
+  type TurnWatchdog,
+} from "./watchdog.js";
 import {
   parseToolArgs,
   toFailure,
@@ -206,7 +213,15 @@ export interface SessionHost {
   grantedCapabilities?(): readonly string[];
   /** Override the ack deadline; tests set it low so a hang is cheap. */
   readonly ackDeadlineMs?: number;
+  /**
+   * End the host process. The watchdog's last rung, and optional because a
+   * replay host or test double may not own a process.
+   */
+  close?(): Promise<void>;
 }
+
+/** How long `turn/interrupt` gets on a host that may already be wedged. */
+const WATCHDOG_INTERRUPT_BUDGET_MS = 2_000;
 
 /**
  * How long `turn/start` may go unanswered before the admission is unknown.
@@ -362,6 +377,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private closed = false;
   /** Set once the host died; a later close must not ask it to leave. */
   private hostGone = false;
+  /** The clocks for the running turn, and whose turn they belong to. */
+  private watchdog: TurnWatchdog | null = null;
+  private watchdogTurnId: string | null = null;
   private sessionInfo: HarnessSessionInfo;
   /**
    * How this session's native id was obtained. A resume that fell back to a
@@ -507,6 +525,28 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       typeof session?.modelId === "string" ? session.modelId : input.model ?? null;
     const createdAt =
       typeof session?.createdAt === "string" ? session.createdAt : now();
+
+    // The host reports every installed hook with its origin. A `project` or
+    // `plugin` row is a command Muse runs outside opencode's permissions, so a
+    // workspace that supplies one is refused until that exact file is accepted.
+    // The check sits here because `hook/list` is per-session; it is still
+    // before any turn, and a refusal leaves no session behind.
+    const hookRefusal = hookGateRefusal(await readHookCatalog(host, nativeSessionId), input.cwd);
+    if (hookRefusal !== null) {
+      await host.connection
+        .command(
+          "session/leave",
+          { sessionId: nativeSessionId, stop: true },
+          { commandId: host.connection.mintCommandId() },
+        )
+        .catch(() => undefined);
+      await bridgeServer?.close().catch(() => undefined);
+      throw new HarnessError({
+        code: "containment_breach",
+        adapterId: ADAPTER_ID,
+        message: hookRefusal,
+      });
+    }
 
     const created = new MuseHarnessSession(
       host,
@@ -825,7 +865,99 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       nativeRef: nativeRef(nativeTurnId, this.capabilities.identity.nativeTurnIds),
     };
     this.turns.set(input.turnId, active);
+    // The clocks start once the turn is admitted: before that, `turn/start`'s
+    // own ack deadline is the bound, and a turn the host never accepted has no
+    // stream to protect.
+    this.armWatchdog(input.turnId);
     return active.turn;
+  }
+
+  /** Start the three clocks for this turn, replacing any previous ones. */
+  private armWatchdog(turnId: string): void {
+    this.stopWatchdog();
+    const config = watchdogConfigFromEnv();
+    if (config.firstByteMs === 0 && config.idleMs === 0) return;
+    this.watchdogTurnId = turnId;
+    this.watchdog = createTurnWatchdog({
+      ...config,
+      onWarn: (silentMs) =>
+        console.warn(
+          `[opencode-muse] no frame for ${silentMs} ms; the turn is still waiting on the host`,
+        ),
+      onExpire: (reason) => this.onWatchdogExpire(turnId, reason, config),
+    });
+  }
+
+  private stopWatchdog(): void {
+    this.watchdog?.stop();
+    this.watchdog = null;
+    this.watchdogTurnId = null;
+  }
+
+  /**
+   * A budget expired. Fail the turn as a timeout, then end the host.
+   *
+   * The order is the point: the terminal must name the timeout, not the host
+   * exit the timeout caused. `turn/interrupt` gets a short budget first because
+   * a host that is merely slow can still honour it; one that is wedged will
+   * not, and `close()` is the rung that always works (E-D2).
+   */
+  private onWatchdogExpire(
+    turnId: string,
+    reason: "first_byte" | "idle",
+    config: { firstByteMs: number; idleMs: number },
+  ): void {
+    this.watchdog = null;
+    this.watchdogTurnId = null;
+    const budget = reason === "first_byte" ? config.firstByteMs : config.idleMs;
+    const active = this.turns.get(turnId);
+    // An admitted turn whose `turn/started` never arrived is still a turn
+    // opencode is waiting on, so it must get its terminal rather than be
+    // retired silently as a reservation that never reached anyone.
+    if (active !== undefined && !active.terminal && active.turn.status === "pending") {
+      active.turn = { ...active.turn, status: "running" };
+    }
+    const failure = new HarnessError({
+      code: "host_idle_timeout",
+      adapterId: ADAPTER_ID,
+      retryable: true,
+      message:
+        reason === "first_byte"
+          ? `Muse sent no frame within ${budget} ms; the host was ended and the turn failed`
+          : `Muse sent no frame for ${budget} ms after starting; the host was ended and the turn failed`,
+    });
+    this.retireTurn(turnId, failure);
+    void this.endWedgedHost(this.nativeTurnId(turnId) ?? turnId);
+  }
+
+  /** The abort ladder: interrupt with a budget, then close, then report gone. */
+  private async endWedgedHost(nativeTurnId: string): Promise<void> {
+    try {
+      await Promise.race([
+        this.host.connection.command("turn/interrupt", {
+          sessionId: this.nativeId,
+          turnId: nativeTurnId,
+        }),
+        new Promise<void>((_, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("interrupt budget expired")),
+            WATCHDOG_INTERRUPT_BUDGET_MS,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    } catch {
+      // A wedged host answers nothing; that is the case this ladder is for.
+    }
+    try {
+      await this.host.close?.();
+    } catch {
+      // Closing is best-effort; the turn is already retired.
+    }
+    // The session cannot serve another turn on a closed host. Marking it gone
+    // is what makes the registry reopen it, and the stored native id is what
+    // that reopen resumes.
+    this.handleHostExit("exited");
   }
 
   /**
@@ -1097,6 +1229,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   handleHostExit(reason: HostDeathReason = "exited"): void {
     if (this.closed || this.hostGone) return;
     this.hostGone = true;
+    this.stopWatchdog();
     // A transport EOF may leave the process alive, so the failure says what was
     // observed instead of claiming an exit, and a retry can reach a new host.
     const transportEof = reason === "transportEof";
@@ -1118,6 +1251,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     if (this.closing) return this.closing;
     this.closing = (async () => {
       if (this.closed) return;
+      this.stopWatchdog();
       // Settle anything still open so the stream never ends with a hung item.
       for (const active of this.turns.values()) {
         if (!active.terminal) this.settleTurnItems(active);
@@ -1160,6 +1294,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
 
   handleNotification(notification: MuseNotification): void {
     if (this.closed) return;
+    // Arrival is what the clocks measure. Only a substantive frame counts, so
+    // keepalives and usage echoes cannot make a wedged turn look alive.
+    this.watchdog?.touch(isSubstantiveProgress(notification.method));
     // Splice-fill: a page may only be replayed in view order, so live frames
     // wait for the fill to finish rather than overtaking it. A second gap is
     // queued by `onViewGap` instead, since it starts its own fill.
@@ -1341,6 +1478,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     const active = this.turns.get(hostTurnId);
     if (!active || active.terminal) return;
 
+    this.stopWatchdog();
     this.settleTurnItems(active);
     // Absent reason reads as failure: a turn is only reported successful when
     // the host says so.

@@ -139,7 +139,7 @@ export interface UsageSummary {
 }
 
 /** `$XDG_STATE_HOME/opencode-muse`, or the home fallback. */
-function ledgerDirectory(env: NodeJS.ProcessEnv = process.env): string {
+export function stateDirectory(env: NodeJS.ProcessEnv = process.env): string {
   const state = env.XDG_STATE_HOME?.trim();
   const base = state !== undefined && state.length > 0 ? state : join(homedir(), ".local", "state");
   return join(base, "opencode-muse");
@@ -147,7 +147,7 @@ function ledgerDirectory(env: NodeJS.ProcessEnv = process.env): string {
 
 /** `usage-YYYY-MM-DD.jsonl` inside the ledger directory. */
 export function ledgerPath(date: Date = new Date(), env: NodeJS.ProcessEnv = process.env): string {
-  return join(ledgerDirectory(env), `usage-${date.toISOString().slice(0, 10)}.jsonl`);
+  return join(stateDirectory(env), `usage-${date.toISOString().slice(0, 10)}.jsonl`);
 }
 
 /**
@@ -162,7 +162,7 @@ export async function appendLedgerRow(
   // the reseed rate for the real sessions in the same file.
   if (env.NODE_ENV === "test") return;
   try {
-    await mkdir(ledgerDirectory(env), { recursive: true, mode: 0o700 });
+    await mkdir(stateDirectory(env), { recursive: true, mode: 0o700 });
     const at = new Date(String((row as { ts?: unknown }).ts ?? ""));
     const file = ledgerPath(Number.isNaN(at.getTime()) ? new Date() : at, env);
     await appendFile(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });

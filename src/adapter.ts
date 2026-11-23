@@ -59,6 +59,15 @@ export class MuseHarnessAdapter implements LanguageAdapter {
     return hostFactsFrom(host.initializeResult, host.fingerprintWarning);
   }
 
+  /**
+   * The account's last-observed allowance window. No model call, no spend; the
+   * host answers from the observation it already holds.
+   */
+  async readUsage(): Promise<unknown> {
+    const host = await this.ensureHost();
+    return host.connection.request("usage/read", {});
+  }
+
   async openSession(input: LanguageOpenSessionInput): Promise<LanguageSession> {
     const host = await this.ensureHost();
     const createInput: CreateSessionInput = {
