@@ -47,6 +47,7 @@ describe("watchdog clocks", () => {
       "approval/requested",
       "userInput/requested",
       "turn/modelRetryScheduled",
+      "turn/foregroundCompleted",
     ]) {
       expect(isSubstantiveProgress(method)).toBe(true);
     }
@@ -529,6 +530,40 @@ describe("provider retries", () => {
     } as never);
     await sleep(30);
     const terminal = events.find((event) => event.type === "turn.terminal");
+    expect(terminal && "failure" in terminal ? terminal.failure : "none").toBeNull();
+    expect(session.hostExited).toBe(false);
+    await session.close();
+  }, 10_000);
+
+  test("the end-of-turn gate is progress, not silence", async () => {
+    process.env.MUSE_IDLE_TIMEOUT_MS = "400";
+    process.env.MUSE_FIRST_BYTE_TIMEOUT_MS = "1000";
+    process.env.MUSE_IDLE_WARN_MS = "0";
+    const root = await mkdtemp(join(tmpdir(), "muse-eot-"));
+    const { host } = wedgedHost();
+    const session = await MuseHarnessSession.create(host, { sessionId: "oc", cwd: root });
+    const events = await collect(session);
+    await session.startTurn({ turnId: "t1", message: { content: [{ type: "text", text: "hi" }] } });
+    session.handleNotification({
+      method: "turn/started",
+      params: { sessionId: "native-1", turnId: "native-turn-1" },
+    } as never);
+    await sleep(250);
+    // Foreground work is done; Muse's end-of-turn reminder gate is running and
+    // will be silent for longer than the window that was already ticking.
+    session.handleNotification({
+      method: "turn/foregroundCompleted",
+      params: { sessionId: "native-1", turnId: "native-turn-1" },
+    } as never);
+    await sleep(250);
+    expect(events.find((event) => event.type === "turn.terminal")).toBeUndefined();
+    session.handleNotification({
+      method: "turn/completed",
+      params: { sessionId: "native-1", turnId: "native-turn-1", terminal: "completed" },
+    } as never);
+    await sleep(30);
+    const terminal = events.find((event) => event.type === "turn.terminal");
+    expect(terminal?.turn.status).toBe("completed");
     expect(terminal && "failure" in terminal ? terminal.failure : "none").toBeNull();
     expect(session.hostExited).toBe(false);
     await session.close();

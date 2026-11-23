@@ -83,6 +83,12 @@ export function watchdogConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Wat
 export function isSubstantiveProgress(method: string): boolean {
   return (
     method === "turn/started" ||
+    // The host's own "foreground work is done, named background reminders hold
+    // the turn open" signal. It is explicitly non-terminal, so the silence that
+    // follows it is the host working, not a wedge; counting it gives the
+    // end-of-turn gate a fresh idle window instead of letting the gate outlast
+    // a short one and fail a turn the host is about to complete (E-D32).
+    method === "turn/foregroundCompleted" ||
     method === "turn/modelRetryScheduled" ||
     method.startsWith("item/") ||
     method.startsWith("approval/") ||
