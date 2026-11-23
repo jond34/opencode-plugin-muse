@@ -10,7 +10,14 @@ import {
   hooksFilePath,
   hooksFileTrusted,
 } from "../src/hooks.js";
-import { parseJsonc, pluginRow, policyRow, postureCheck } from "../scripts/doctor.js";
+import {
+  configDiagnostics,
+  pluginRow,
+  policyRow,
+  postureCheck,
+  readLogDelta,
+  type ConfigLog,
+} from "../scripts/doctor.js";
 
 /**
  * E-D12: is the doctor's output stable and secret-free?
@@ -262,6 +269,16 @@ describe("the plugins row", () => {
     expect(row.status).toBe("skipped");
   });
 
+  test("a rejected file is named instead of claiming there is no entry", () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const rejected = "/tmp/opencode/opencode.jsonc";
+    const row = pluginRow([config("/tmp/opencode/opencode.json", ["other"])], root, PKG, [rejected]);
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain(rejected);
+    expect(row.detail).not.toContain("will not load");
+    expect(row.remediation).toContain("rejected");
+  });
+
   test("offline reports the row as skipped without spawning anything", () => {
     const { root, state } = workspace();
     const { code, out } = run(["--json", "--offline"], root, state);
@@ -272,91 +289,110 @@ describe("the plugins row", () => {
 });
 
 /**
- * D55: a statement that fails validation is dropped before `debug config` prints
- * the document (E-D58, E-D59), so the row compares the file with the document.
- * These fixtures are the three E-D59 shapes plus the two ways the row stays
- * quiet. The action enum is never consulted, which is the point.
+ * D59: the host's own diagnostic is the answer, and `ok` needs the log to have
+ * named a file. E-D62 measured the delta; E-D64 measured a rejected file, which
+ * is absent from the documents, so these fixtures feed the row the log facts it
+ * would have read rather than a copy of the file.
  */
 describe("the policies row", () => {
   const document = (path: string, policies: unknown) => ({ type: "document", path, info: { policies } });
-  const read = (files: Record<string, string>) => (path: string) => files[path];
+  const log = (
+    diagnostics: Array<{ source: string; path: string; action: string }> = [],
+    overrides: Partial<ConfigLog> = {},
+  ): ConfigLog => ({ reason: null, live: true, diagnostics, ...overrides });
 
-  test("a statement the host dropped is named, with its source", () => {
+  test("a statement the host dropped is named, with its source and pointer", () => {
     const path = "/tmp/opencode/opencode.jsonc";
-    const file = `{
-      // one valid, one misspelled action
-      "policies": [
-        { "action": "tool.use", "resource": "read:*", "effect": "deny" },
-        { "action": "provider.ues", "resource": "muse", "effect": "deny" }
-      ]
-    }`;
-    const row = policyRow([document(path, [{ action: "tool.use" }])], read({ [path]: file }));
+    const row = policyRow(
+      [document(path, [{ action: "tool.use" }])],
+      log([{ source: path, path: "$.policies.1", action: "skipped malformed recognized value" }]),
+    );
     expect(row.status).toBe("warn");
     expect(row.detail).toContain(path);
-    expect(row.detail).toContain("2 declared, 1 enforced");
+    expect(row.detail).toContain("$.policies.1");
+    expect(row.detail).toContain("skipped malformed recognized value");
     expect(row.remediation).toContain("server log");
     expect(row.remediation).toContain("nothing matching means the action is allowed");
   });
 
-  test("experimental.policies counts, because the host merges it", () => {
+  test("a drop under experimental.policies keeps its own pointer", () => {
     const path = "/tmp/opencode/opencode.jsonc";
-    const file = `{
-      "policies": [{ "action": "tool.use", "resource": "read:*", "effect": "deny" }],
-      "experimental": { "policies": [{ "action": "tool.use", "resource": "write:*", "effect": "deny" }] },
-    }`;
-    const row = policyRow([document(path, [{}, {}])], read({ [path]: file }));
-    expect(row.status).toBe("ok");
-    expect(row.detail).toContain("2 statement(s) from 1 source(s)");
+    const row = policyRow(
+      [document(path, [{}])],
+      log([{ source: path, path: "$.experimental.policies.0", action: "skipped malformed recognized value" }]),
+    );
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain("$.experimental.policies.0");
   });
 
-  test("each source is compared with its own document, not with the merged list", () => {
+  test("a drop is attributed to its own file, not to the other source", () => {
     const global = "/tmp/opencode/opencode.jsonc";
     const project = "/tmp/project/opencode.jsonc";
     const row = policyRow(
       [document(global, [{}]), document(project, [{}])],
-      read({ [global]: '{"policies":[{"action":"tool.use"}]}', [project]: '{"policies":[{"action":"tool.use"}]}' }),
+      log([{ source: project, path: "$.policies.0", action: "skipped malformed recognized value" }]),
     );
-    expect(row.status).toBe("ok");
-    expect(row.detail).toContain("2 statement(s) from 2 source(s)");
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain(project);
+    expect(row.detail).not.toContain(global);
   });
 
-  test("a file the doctor cannot read is skipped, not guessed", () => {
-    const row = policyRow([document("/tmp/opencode/opencode.jsonc", [{}])], () => undefined);
+  test("a rejected file is deferred to the config row, and never reads as ok", () => {
+    const valid = "/tmp/opencode/opencode.json";
+    const rejected = "/tmp/opencode/opencode.jsonc";
+    const row = policyRow(
+      [document(valid, [{}])],
+      log([{ source: rejected, path: "$", action: "rejected malformed JSON or JSONC document" }]),
+    );
     expect(row.status).toBe("skipped");
-    expect(row.detail).toContain("no readable config source");
+    expect(row.detail).toContain(rejected);
+    expect(row.detail).toContain("config row");
+  });
+
+  test("a log that named no config source is skipped, not ok", () => {
+    const row = policyRow([document("/tmp/opencode/opencode.json", [{}])], log([], { live: false }));
+    expect(row.status).toBe("skipped");
+    expect(row.detail).toContain("named no config source");
+  });
+
+  test("a log that could not be read is skipped, with its reason", () => {
+    const row = policyRow(
+      [document("/tmp/opencode/opencode.json", [{}])],
+      log([], { reason: "no log at ~/.local/share/opencode/log/opencode.log", live: false }),
+    );
+    expect(row.status).toBe("skipped");
+    expect(row.detail).toContain("not read");
+    expect(row.detail).toContain("no log at");
+  });
+
+  test("a live log with no diagnostic is ok, and counts what the host enforces", () => {
+    const row = policyRow(
+      [document("/tmp/opencode/opencode.jsonc", [{}, {}])],
+      log(),
+    );
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("2 statement(s) from 1 source(s)");
+    expect(row.detail).toContain("no drop");
   });
 
   test("a config that declares no policies is skipped, not ok", () => {
-    const path = "/tmp/opencode/opencode.json";
-    const row = policyRow([document(path, null)], read({ [path]: "{}" }));
+    const row = policyRow([document("/tmp/opencode/opencode.json", null)], log());
     expect(row.status).toBe("skipped");
   });
 
   test("a CLI that does not answer is skipped, not guessed", () => {
-    expect(policyRow(undefined, () => undefined).status).toBe("skipped");
+    expect(policyRow(undefined, log()).status).toBe("skipped");
   });
 
   test("a path under the home directory is folded", () => {
     const path = join(homedir(), "cfg", "opencode.jsonc");
     const row = policyRow(
       [document(path, [{}])],
-      read({ [path]: '{"policies":[{"action":"tool.use"},{"action":"tool.ues"}]}' }),
+      log([{ source: path, path: "$.policies.1", action: "skipped malformed recognized value" }]),
     );
     expect(row.status).toBe("warn");
     expect(row.detail).not.toContain(homedir());
     expect(row.detail).toContain("~/cfg/opencode.jsonc");
-  });
-
-  test("the JSONC reader keeps a // inside a string and drops comments and trailing commas", () => {
-    const parsed = parseJsonc(`{
-      // comment
-      "policies": [{ "action": "tool.use", "resource": "https://example.com/a//b", "effect": "deny" },],
-      /* block */
-      "model": "muse/muse-spark-1.3",
-    }`) as { policies: Array<{ resource: string }>; model: string };
-    expect(parsed.policies).toHaveLength(1);
-    expect(parsed.policies[0]?.resource).toBe("https://example.com/a//b");
-    expect(parsed.model).toBe("muse/muse-spark-1.3");
   });
 
   test("offline reports the row as skipped without spawning anything", () => {
@@ -364,5 +400,71 @@ describe("the policies row", () => {
     const { code, out } = run(["--json", "--offline"], root, state);
     expect(code).toBe(0);
     expect(parse(out).checks.find((check) => check.id === "policies")?.status).toBe("skipped");
+  });
+});
+
+/**
+ * E-D62: the delta is only a drop test when it is filtered and when something in
+ * it proves the run was logged at all.
+ */
+describe("the config log", () => {
+  // The shapes are copied from a real delta: a clean run names the config
+  // directory in `path=`, and only a diagnostic names the file, in `source=`.
+  const watcher = (dir: string) =>
+    `timestamp=2026-11-23T10:00:00.000Z level=INFO run=e8222caa message="watcher subscribe" path=${dir} type=directory ignores=6 role=server`;
+  const drop = (source: string, pointer: string) =>
+    `timestamp=2026-11-23T10:00:01.000Z level=WARN run=e8222caa message="configuration normalization diagnostic" source=${source} path=${pointer} kind=invalid action="skipped malformed recognized value" role=server`;
+
+  test("a clean run's watcher line is liveness, not a drop", () => {
+    const source = "/tmp/opencode/opencode.jsonc";
+    const { live, diagnostics } = configDiagnostics(watcher("/tmp/opencode"), [source]);
+    expect(live).toBe(true);
+    expect(diagnostics).toHaveLength(0);
+  });
+
+  test("a watcher line for another directory is not liveness", () => {
+    const { live } = configDiagnostics(watcher("/tmp/other"), ["/tmp/opencode/opencode.jsonc"]);
+    expect(live).toBe(false);
+  });
+
+  test("a diagnostic for another process's config is not ours", () => {
+    const ours = "/tmp/opencode/opencode.jsonc";
+    const theirs = "/tmp/other/opencode.jsonc";
+    const { live, diagnostics } = configDiagnostics(
+      `${watcher("/tmp/opencode")}\n${drop(theirs, "$.policies.0")}`,
+      [ours],
+    );
+    expect(live).toBe(true);
+    expect(diagnostics).toHaveLength(0);
+  });
+
+  test("a quoted source with a space, and the pointer, are parsed", () => {
+    const source = "/tmp/r12 space/opencode/opencode.jsonc";
+    const { diagnostics } = configDiagnostics(drop(`"${source}"`, "$.policies.0"), [source]);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.source).toBe(source);
+    expect(diagnostics[0]?.path).toBe("$.policies.0");
+    expect(diagnostics[0]?.action).toBe("skipped malformed recognized value");
+  });
+
+  test("a log that names no candidate is not live", () => {
+    const { live } = configDiagnostics(drop("/tmp/other/opencode.json", "$"), ["/tmp/opencode/opencode.json"]);
+    expect(live).toBe(false);
+  });
+
+  test("a shrunken log is reported, not read as an empty delta", () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-log-"));
+    const file = join(dir, "opencode.log");
+    writeFileSync(file, "older\n");
+    expect(readLogDelta(file, 4096)).toEqual({ reason: "the log was truncated during the run" });
+    expect(readLogDelta(join(dir, "absent.log"), 0)).toHaveProperty("reason");
+  });
+
+  test("only the bytes after the offset are read", () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-log-"));
+    const file = join(dir, "opencode.log");
+    writeFileSync(file, "before\nafter\n");
+    const delta = readLogDelta(file, 7);
+    expect(delta).toEqual({ text: "after\n" });
   });
 });
