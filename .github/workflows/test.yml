@@ -15,9 +15,11 @@ on:
         type: boolean
         default: false
   # Branch-only: `workflow_dispatch` needs the file on the default branch, and
-  # this file is not there yet. Drop this trigger when the round lands.
+  # this file is not there yet, so a run is selected by branch name instead.
+  # `ci/seam` is the full matrix, `ci/real` is E16a/E16c alone, `ci/mac` is the
+  # macOS label retry. Drop this trigger when the round lands.
   push:
-    branches: [ci/seam]
+    branches: [ci/seam, ci/real, ci/mac]
 
 permissions:
   contents: read
@@ -29,13 +31,16 @@ jobs:
   # the gate.
   offline:
     name: offline (${{ matrix.os }})
+    # `ci/real` is the installer job and nothing else: the matrix would only
+    # add the same crowd of minutes to the same run.
+    if: ${{ !contains(github.ref, 'ci/real') }}
     strategy:
       fail-fast: false
       matrix:
         # E17 needs one macOS label, and `macos-latest` is now macOS 26 (arm64):
         # the cancelled round-22 cell was an arm64 acquisition failure, so the
         # retry names `macos-15` explicitly.
-        os: ${{ (github.event_name == 'workflow_dispatch' && inputs.macos_only) && fromJSON('["macos-15"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        os: ${{ (contains(github.ref, 'ci/mac') || (github.event_name == 'workflow_dispatch' && inputs.macos_only)) && fromJSON('["macos-15"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       # Pinned by commit SHA for the same reason as the publish job: a
@@ -61,6 +66,7 @@ jobs:
   # support claim: no `muse serve` runs.
   seam-windows:
     name: seam-windows (spawn contract, stub binary)
+    if: ${{ !contains(github.ref, 'ci/real') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -87,7 +93,7 @@ jobs:
   # route and its absence is not a gap in this measurement.
   real-windows:
     name: real-windows (installer + serve lifecycle)
-    if: github.event_name == 'workflow_dispatch' && inputs.real_windows
+    if: ${{ contains(github.ref, 'ci/real') || (github.event_name == 'workflow_dispatch' && inputs.real_windows) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

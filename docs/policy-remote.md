@@ -39,6 +39,25 @@ That is why the local half can be complete and the plane still be unknown: ranks
 change what the same user's `opencode.json` says, and nothing in the file tree
 shows it.
 
+## What the Console delivers
+
+A Console account starts with a **Personal** workspace, and its owner is its only
+member (E-R22-05); `/connect` binds a machine to that workspace. The workspace is
+not a separate policy engine: the vendor states that it compiles the workspace's
+Providers and Tools policies into ordinary `policies` statements inside the
+workspace configuration, ranked just below managed preferences (E-R22-07). That
+is the one place a Console policy might become visible to this plugin — as a
+source in `debug config` rather than a remote decision. A denial that comes from
+it names the workspace (`Blocked by Acme's policy`), where a local statement does
+not.
+
+| Event | Effect on the host |
+|---|---|
+| Policy added or changed | Applies on the next fetch, about once a minute |
+| Another workspace connected | The new workspace's statements replace the old set |
+| Disconnected | The workspace's statements are cleared |
+| Console outage | The last fetched statements stay in effect |
+
 ## Remote: unobservable
 
 A policy delivered by Console is decoded on the vendor's side. Console changes
@@ -53,6 +72,18 @@ that command is not recognized on 2.4.1. On this machine `opencode debug config
 **no Console source**, even though `opencode auth list` shows Console credentials
 stored; its `info.policies` carries the local statements only (E-R21-05). So the
 doctor can read what a file says, and cannot attribute anything to the Console.
+
+There is no API to ask instead. On 2.4.1 `/api/policies`,
+`/api/policies/current`, `/api/experimental/policies` and `/api/config/policies`
+all 404; `/api/integration` exists but returns an empty list when no workspace is
+connected, and `/api/policies/current` appears in the binary only as a string
+(E-R22-08).
+
+Round 22 could not test the connected case: no workspace was connected on this
+machine, so `debug config` had nothing to show. E13 is unmeasured, not failed.
+The before/after read is written out in `docs/round-22-plan.md`; it needs ten
+minutes and a Console session, and until it runs the honest statement is that the
+compile is documented by the vendor and not observed here.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
 source and a stated precedence, and `chrome://policy` can reload and show it.
@@ -69,10 +100,17 @@ configured", and the attempt itself spends a turn or touches the workspace. The
 effect is the only evidence, and it is the same evidence a typo produces. That is
 not a diagnostic; it is a guess with a bill.
 
+The one thing that would narrow this is E14, and round 22 did not run it: there
+was no connected workspace to deny anything, and the probe spends a turn. If a
+Console denial does name its workspace, the effect becomes attributable — still
+not a diagnostic, still not something to probe by default, but no longer
+indistinguishable from a typo. Until then the rule stands as written.
+
 ## Condition that changes this record
 
 A queryable policy surface in the host, a `debug config` source the doctor can
 name for a Console-delivered statement, or #60252 shipping with a strict
-validation or reject diagnostic. Until then the status is: local H, remote
-unobservable, no probe, and the docs say a Console or managed policy may apply
-and is not visible here.
+validation or reject diagnostic. The cheapest of those is E13 against a connected
+workspace: one policy, one minute, two reads. Until then the status is: local H,
+remote unobservable, no probe, and the docs say a Console or managed policy may
+apply and is not visible here.

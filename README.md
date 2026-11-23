@@ -226,11 +226,17 @@ percentages rather than a per-turn cost.
 - **Attachments.** Images only. The wire's attachment vocabulary is `"image"` in
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
-- **Platforms.** Built and tested on Linux. The offline suite is configured to
-  run on macOS and Windows as well, but that workflow has never been dispatched —
-  it exists only on a local branch ahead of the default one, so a dispatch is a
-  404 until this tree is pushed — and Windows is best-effort with three named
-  caveats: the shutdown ladder has no
+- **Platforms.** Built and tested on Linux. The offline suite has been
+  dispatched once (2026-11-23): Ubuntu passed, Windows failed on path and
+  home-directory fixtures, and macOS never got a runner. On Windows the plugin
+  does not spawn the `muse` on PATH, because that is a `muse.cmd` shim and Node
+  refuses to spawn one without a shell (`EINVAL`; the bare name is `ENOENT`). It
+  spawns the native `muse-bin-<version>.exe` the installer writes beside the shim
+  and names in `.muse-version`, falling back to the newest such binary; `MUSE_BIN`
+  still overrides, and a failure names the setting and the file it looked for.
+  That resolution is checked on a real Windows runner against a stub binary — no
+  real Windows host has run the plugin — and Windows is best-effort with three
+  named caveats: the shutdown ladder has no
   graceful rung, the ledger and the hook trust record carry an inherited ACL
   rather than `0600` (Windows `chmod` changes only the write bit), and the
   vendor's sandbox may ask for UAC consent when it initialises — a headless spawn
@@ -585,7 +591,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 418 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 439 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
