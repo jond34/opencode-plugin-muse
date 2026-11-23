@@ -10,7 +10,7 @@ import {
   hooksFilePath,
   hooksFileTrusted,
 } from "../src/hooks.js";
-import { postureCheck } from "../scripts/doctor.js";
+import { pluginRow, postureCheck } from "../scripts/doctor.js";
 
 /**
  * E-D12: is the doctor's output stable and secret-free?
@@ -209,5 +209,64 @@ describe("doctor trust flags", () => {
     const row = parse(out).checks.find((check) => check.id === "hooks-trust");
     expect(row?.status).toBe("fail");
     expect(row?.detail).toContain("no hooks file");
+  });
+});
+
+describe("the plugins row", () => {
+  const PKG = "@jonathand34/opencode-plugin-muse";
+  const config = (path: string, plugins: string[]) => ({ type: "document", path, info: { plugins } });
+
+  test("a config that lists only the package warns that this checkout is not listed", () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const row = pluginRow([config("/tmp/opencode/opencode.json", [PKG])], root, PKG);
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain("published build");
+    expect(row.remediation).toContain(root);
+  });
+
+  test("a local entry that resolves to this checkout is ok", () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const row = pluginRow([config("/tmp/opencode/opencode.json", [root])], root, PKG);
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("this checkout");
+  });
+
+  test("a relative entry resolves from the file that carries it", () => {
+    const parent = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const root = join(parent, "plugin");
+    mkdirSync(root);
+    const row = pluginRow([config(join(parent, "opencode.json"), ["./plugin"])], root, PKG);
+    expect(row.status).toBe("ok");
+  });
+
+  test("both a package and the checkout warn about two copies", () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const row = pluginRow(
+      [config("/tmp/opencode/opencode.json", [PKG]), config("/tmp/project/opencode.json", [root])],
+      root,
+      PKG,
+    );
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain("two copies");
+  });
+
+  test("no entry at all warns that the plugin will not load", () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-checkout-"));
+    const row = pluginRow([config("/tmp/opencode/opencode.json", ["some-other-plugin"])], root, PKG);
+    expect(row.status).toBe("warn");
+    expect(row.detail).toContain("will not load");
+  });
+
+  test("a CLI that does not answer is skipped, not guessed", () => {
+    const row = pluginRow(undefined, "/tmp", PKG);
+    expect(row.status).toBe("skipped");
+  });
+
+  test("offline reports the row as skipped without spawning anything", () => {
+    const { root, state } = workspace();
+    const { code, out } = run(["--json", "--offline"], root, state);
+    expect(code).toBe(0);
+    const row = parse(out).checks.find((check) => check.id === "plugins");
+    expect(row?.status).toBe("skipped");
   });
 });

@@ -3,17 +3,21 @@
  *
  * The rules are the ones `codex doctor` and `claude doctor` follow: read-mostly,
  * one row per check with a remediation line, `--json` for a report, and nothing
- * executed that was merely found on `PATH`. The only writes are the two explicit
- * trust flags, and the only host interaction is a handshake plus a session that
- * is immediately left — no turn, no allowance, no model call.
+ * executed that was merely found on `PATH` — with two named exceptions, the
+ * host CLIs this plugin is built for: `muse` for the host probe and `opencode`
+ * for the plugin entries, which no other surface answers. The only writes are
+ * the two explicit trust flags, and the only host interaction is a handshake
+ * plus a session that is immediately left — no turn, no allowance, no model
+ * call.
  *
  * Redaction is a hard rule: no credential, no identity, and no absolute home
  * path reaches the output. `museHome` and the workspace are printed with the
  * home prefix folded to `~`.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { checkAllowance, parseAllowance } from "../src/allowance.js";
 import {
   canonicalRoot,
@@ -94,6 +98,118 @@ function versions(): Check {
     status: "ok",
     detail: `plugin ${pkg.version ?? packageVersion()}, sdk pin ${pkg.dependencies?.["@muse-code/sdk"] ?? "unknown"}, bun ${process.versions.bun ?? "n/a"}, node ${process.versions.node}`,
   };
+}
+
+interface ConfigSource {
+  readonly type?: unknown;
+  readonly path?: unknown;
+  readonly info?: { readonly plugins?: unknown } | null;
+}
+
+function safeReal(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/** The name this package is installed under, read from its own manifest. */
+function packageName(): string {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as {
+    name?: string;
+  };
+  return pkg.name ?? "";
+}
+
+/**
+ * Every `plugins` entry that names this package, and whether any is this checkout.
+ *
+ * OpenCode loads every entry it finds, so the question a run cannot answer from
+ * inside itself is only *which copy*. `opencode debug config` lists each source
+ * with its own array, and a relative entry resolves from the file that carries
+ * it — the rule the vendor documents. Resolution of ids is left to opencode;
+ * this row names the sources and the match, and never re-derives precedence.
+ */
+export function pluginRow(documents: unknown, root: string, pkgName: string): Check {
+  if (!Array.isArray(documents)) {
+    return {
+      id: "plugins",
+      status: "skipped",
+      detail: "`opencode debug config` did not answer; plugin entries unknown",
+      remediation: "run `opencode debug config` directly to see why",
+    };
+  }
+  const entries: Array<{ source: string; entry: string }> = [];
+  for (const document of documents) {
+    const doc = document as ConfigSource | null;
+    const plugins = doc?.info?.plugins;
+    if (!Array.isArray(plugins)) continue;
+    const source =
+      typeof doc?.path === "string" ? doc.path : typeof doc?.type === "string" ? doc.type : "config";
+    for (const entry of plugins) {
+      if (typeof entry === "string") entries.push({ source, entry });
+    }
+  }
+  const isPackage = (entry: string): boolean => !/^[./~]/.test(entry);
+  const resolveEntry = (source: string, entry: string): string => {
+    const expanded = entry.startsWith("~") ? join(homedir(), entry.slice(1)) : entry;
+    return isAbsolute(expanded) ? expanded : resolve(dirname(source), expanded);
+  };
+  const rootReal = safeReal(root);
+  const matches = entries.filter(({ source, entry }) =>
+    isPackage(entry)
+      ? entry === pkgName || entry.startsWith(`${pkgName}@`)
+      : safeReal(resolveEntry(source, entry)) === rootReal,
+  );
+  const sourcesOf = (packageEntries: boolean): string =>
+    [...new Set(matches.filter((match) => isPackage(match.entry) === packageEntries).map((match) => redact(match.source)))].join(", ");
+
+  if (matches.length === 0) {
+    return {
+      id: "plugins",
+      status: "warn",
+      detail: `no plugins entry names ${pkgName} in any config source; the plugin will not load`,
+      remediation: `add this directory to the config the run will use: "plugins": ["${redact(root)}"]`,
+    };
+  }
+  const checkout = sourcesOf(false);
+  const published = sourcesOf(true);
+  if (checkout.length > 0 && published.length > 0) {
+    return {
+      id: "plugins",
+      status: "warn",
+      detail:
+        published === checkout
+          ? `two copies load from ${published}: ${pkgName} and this checkout`
+          : `two copies load: ${pkgName} from ${published}, and this checkout from ${checkout}`,
+      remediation: "keep one entry; a package entry and a local directory both load, and only one copy is what you tested",
+    };
+  }
+  if (checkout.length > 0) {
+    return { id: "plugins", status: "ok", detail: `this checkout, from ${checkout}` };
+  }
+  return {
+    id: "plugins",
+    status: "warn",
+    detail: `${pkgName} from ${published}; this checkout is not listed, so a run from here loads the published build`,
+    remediation: `list this directory instead ("${redact(root)}"), or run with a config that lists it`,
+  };
+}
+
+/** `opencode debug config`, or undefined when the CLI is absent or refuses. */
+function opencodeConfig(): unknown {
+  const result = spawnSync("opencode", ["--standalone", "debug", "config"], {
+    encoding: "utf8",
+    timeout: 20_000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error !== undefined || result.status !== 0) return undefined;
+  try {
+    return JSON.parse(result.stdout) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -301,6 +417,16 @@ async function main(): Promise<number> {
   const root = process.cwd();
   const report: Report = { asOf: new Date().toISOString(), checks: [], hooks: null };
   report.checks.push(versions(), platform(), containment(env));
+
+  if (options.offline) {
+    report.checks.push({
+      id: "plugins",
+      status: "skipped",
+      detail: "--offline: opencode's config was not read",
+    });
+  } else {
+    report.checks.push(pluginRow(opencodeConfig(), join(import.meta.dir, ".."), packageName()));
+  }
 
   const trust = trustState(env, root);
 
