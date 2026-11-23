@@ -5,6 +5,10 @@ name: test
 # honest claim stays "tested on Linux, unmeasured elsewhere".
 on:
   workflow_dispatch:
+  # Branch-only: `workflow_dispatch` needs the file on the default branch, and
+  # this file is not there yet. Drop this trigger when the round lands.
+  push:
+    branches: [ci/seam]
 
 permissions:
   contents: read
