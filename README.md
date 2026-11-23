@@ -56,8 +56,11 @@ for it; the competitor that does so mints an inference key and keeps it in
 opencode's auth store. This plugin cannot take that route without holding a
 credential it exists not to hold. It registers its own `muse` provider, owns the
 model list and limits, and leaves sign-in to `muse login`. The provider declares
-`canonical: "meta"`, so opencode's catalog supplies defaults where the plugin's
-table is silent; the model list stays the plugin's. The cost is UX parity:
+`canonical: "meta"` for the model's catalog identity and the picker icon; as of
+opencode 2.3.2, `canonical` inheritance applies in the config-provider path, which reads
+`providers` entries from config documents, not providers added by a plugin
+transform. So the plugin supplies each model's limits itself, and the model list
+stays the plugin's. The cost is UX parity:
 `/connect` does not list it, and a model switch is a picker entry rather than an
 account connection. The benefit is that the credential never reaches opencode,
 the config, or this plugin. The MSP competitor also registers `muse`, so the
@@ -85,8 +88,10 @@ extract, cache, or forward a token, and it adds no login flow of its own. That i
 the mechanism the terms describe, not a claim that Meta has endorsed this
 arrangement: Muse's subscription documentation says the credential is "for use
 with Muse Code only", and the SDK is a developer preview, so the arrangement can
-be restricted at any time. If it is, the failure is a refused turn, not a leaked
-credential.
+be restricted at any time. The terms restrict the credential, not the client:
+the credential is used by Muse Code, which is the coding harness, and
+`muse serve` is its documented headless surface. If Meta restricts the
+arrangement, the failure is a refused turn, not a leaked credential.
 
 Which credential that CLI spends is not visible from inside the process: a
 subscription and a pay-as-you-go Meta Model API key look the same, and no field on
@@ -203,9 +208,16 @@ percentages rather than a per-turn cost.
   stdio, so there is no shared host, no remote host, and no socket to one. That
   per-user stdio channel is also why the vendor's attestation model holds: the
   host is the signed-in CLI of the person using it.
-- **Accounts.** One signed-in identity per host. Switching accounts means
-  `muse logout` and a fresh login before opencode restarts; the plugin has no
-  account switch and never sees the credential.
+- **Accounts.** One signed-in identity per host. `muse login` stores one
+  credential and `muse logout` clears it, so a second account is a second CLI
+  login, not a second account inside the same host. MSP makes that structural:
+  the client spawns its own `muse serve`, and a host must not accept a connection
+  from a party that did not spawn it. The tools that do support multiple accounts
+  leave MSP to do it: `magpie-muse-auth` mints an API key per account and calls
+  the Responses API directly, and `magpie-muse-web` imports the `muse.ai` web
+  session's cookies into a reverse-engineered wrapper. Both hold the credential
+  outside the CLI; this plugin does not. Switching is therefore `muse logout`,
+  a fresh login, and an opencode restart; the plugin never sees the credential.
 - **Network.** A turn needs a live host, which needs the vendor. There is no
   offline or air-gapped path, and no local inference fallback.
 - **Attachments.** Images only. The wire's attachment vocabulary is `"image"` in
@@ -220,7 +232,8 @@ percentages rather than a per-turn cost.
   rather than `0600` (Windows `chmod` changes only the write bit), and the
   vendor's sandbox may ask for UAC consent when it initialises — a headless spawn
   cannot answer that, and it surfaces 900 s later as `host_idle_timeout`. The
-  doctor's `platform` row states all three for the machine it runs on.
+  doctor's `platform` row states all three for the machine it runs on; the
+  capability table is [`docs/platform-support.md`](docs/platform-support.md).
 
 ### A hard stop, if you want one
 
@@ -271,7 +284,8 @@ stream, not a list of paths, so a rejected file in a directory above the working
 one is reported too — the host merges every ancestor config it finds. That is the local path only. A policy delivered by
 Console is decoded on the vendor's side and unknown actions and effects are
 filtered without a diagnostic (`anomalyco/opencode#60252`), so on a managed
-machine there is no log line to check and the effect is the only evidence.
+machine there is no log line to check and the effect is the only evidence. The
+two halves are recorded in [`docs/policy-remote.md`](docs/policy-remote.md).
 
 `tool.use` is the denial that names itself. Its resource is `<action>:<value>`,
 matched against every check the tool makes, so `read:*` covers every read and
@@ -565,7 +579,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 417 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 418 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a
