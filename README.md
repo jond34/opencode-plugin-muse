@@ -99,10 +99,23 @@ percentages rather than a per-turn cost.
   is measured, not assumed: `denyUnmatched` refuses every bridged call
   (`deny_unmatched: no policy rule allows this action`), because Muse's saved
   rules are command-prefix scoped and cannot name an MCP tool. Approval is
-  not the only layer: Muse's OS sandbox is independent of it and is never
-  disabled here, though it is inert while the toolset has no shell tool. A
-  managed policy plane, when one is present, can narrow the posture above the
-  plugin's sight. Repo-supplied
+  not the only layer, but the layers are not stacked here. The stack is one gate
+  and one allowlist. Every bridged call is emitted into opencode, which decides
+  and runs it, so the gate is opencode's permission rules; the allowlist is
+  `mcp__opencode__*`, which limits what Muse may ask for, not what the granted
+  tools do. There is no isolation behind that gate. opencode ships no OS sandbox
+  — its own documentation says `shell` "runs with the host user's filesystem,
+  process, and network authority" — and every agent starts from a base policy
+  that allows everything except `.env` reads. Muse's sandbox cannot cover a
+  bridged call for the same reason it does not cover opencode's own tools: the
+  call executes in opencode's process, and the pinned toolset has no shell tool
+  for Muse to fence. A managed Muse plane is not a layer either: on 1.4.25 the
+  `policy` plane admits no member, the `defaults` plane's four members all
+  report `user_overridable=true`, and this plugin's private `settings.json` is a
+  user file. So the promise is visibility and vetoability, not containment:
+  every call crosses opencode's transcript and its rules. The one hard stop that
+  survives `--auto`, or an agent whose rules allow everything, is a configured
+  `deny` — saved approvals never override one. Repo-supplied
   Muse hooks (`project` handlers) are refused
   when a session opens: the host names every installed handler's origin, and a
   workspace file is accepted only after its exact hash is recorded
@@ -146,13 +159,47 @@ percentages rather than a per-turn cost.
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
 - **Platforms.** Built and tested on Linux. The offline suite is configured to
-  run on macOS and Windows as well, but that workflow has never been dispatched,
-  so Windows is best-effort with three named caveats: the shutdown ladder has no
+  run on macOS and Windows as well, but that workflow has never been dispatched —
+  it exists only on a local branch ahead of the default one, so a dispatch is a
+  404 until this tree is pushed — and Windows is best-effort with three named
+  caveats: the shutdown ladder has no
   graceful rung, the ledger and the hook trust record carry an inherited ACL
   rather than `0600` (Windows `chmod` changes only the write bit), and the
   vendor's sandbox may ask for UAC consent when it initialises — a headless spawn
   cannot answer that, and it surfaces 900 s later as `host_idle_timeout`. The
   doctor's `platform` row states all three for the machine it runs on.
+
+### A hard stop, if you want one
+
+opencode's base policy allows everything but `.env` reads, so a fresh install
+stops nothing a bridged call might do. A `deny` rule does, and it is the only
+thing that survives `--auto`. In opencode's V2 vocabulary an MCP tool's action is
+`<server>_<tool>`, and the bridge's server is named `opencode`, so the bridged
+shell is `opencode_bash` — not `shell`, which is opencode's own tool. Rules are
+ordered and the last match wins:
+
+```jsonc
+// opencode.jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permissions": [
+    { "action": "opencode_bash", "resource": "*", "effect": "deny" }
+  ]
+}
+```
+
+That blocks the bridged shell at opencode's gate and leaves opencode's own tools
+alone. The same rule with `opencode_edit` or `opencode_read` denies those too;
+all three together leave Muse with no tools, which is a coherent posture but not
+a useful default. A narrower `resource` names a path or a command prefix, and
+`ask` in place of `deny` gives you a prompt instead of a block.
+
+Muse's permission profile is the other half, and it is yours, not the plugin's:
+the plugin pins none, so a session runs whatever your default is. `Unrestricted`
+records `approval: allowAll, filesystem: unrestricted, network: enabled`
+(measured on 1.4.25). The plugin never passes `--disable-sandbox` — under the
+pinned toolset Muse owns no shell tool for its sandbox to fence — and it does not
+turn a profile back on either.
 
 ## What a turn looks like
 
@@ -249,15 +296,28 @@ Use this plugin when you want Muse's models inside opencode — opencode keeps t
 loop, the tools, the transcript, permissions, and history, and Muse supplies
 inference. The two do not share state: `muse acp` runs Muse's own loop and its own
 tools (plus any MCP servers the editor hands it), while this plugin replaces both
-the loop and the tools with opencode's. It is also one-directional: opencode is an
-ACP *agent*, not a client, so `muse acp` cannot be driven from inside opencode —
-reaching Muse that way would mean writing an ACP client, which is a second
-integration surface for the same turn.
+the loop and the tools with opencode's. It is also one-directional, for now:
+opencode ships the ACP *agent* side only. Six upstream requests for a client
+(#28991, #5182, #24038, #18106, #35550, #51646) are closed without shipping, and
+the PR attached to #28991 (#28994) did not land.
+
+There is a community workaround, and it is worth knowing what it is:
+`opencode-acp-client` (`pi-is314/opencode-acp-client`, published 2026-11-21)
+drives opencode v2's TUI against any ACP agent. Its own README states the shape —
+`TUI ──HTTP+SSE──▶ shim ──ACP stdio──▶ agent` — which means the shim replaces
+opencode's engine rather than borrowing it: opencode's tools, permission rules and
+transcript are not in the loop. (The TUI can still show the agent's own
+permission prompts, because the shim maps them; there are no opencode rules
+behind them, and it is not an MCP host, so opencode's tools cannot be handed to
+the agent at all.) So it is `muse acp` wearing opencode's look,
+Muse's loop and Muse's gate throughout, not a thinner version of this plugin. It
+would become a peer route only if opencode grew an ACP client *inside* its engine
+that registered its own tools as an MCP server to the agent.
 
 `muse acp` is shipped but carries no compatibility promise from the vendor, so
-treat its flags as this release's behaviour rather than a contract. No third-party
-ACP adaptor was ranked or measured for this comparison, so nothing here rests on
-one being more or less popular.
+treat its flags as this release's behaviour rather than a contract. The shim above
+is named from its own documentation; it was not installed or measured for this
+comparison, and nothing here rests on its popularity.
 
 ## Environment
 
