@@ -17,6 +17,7 @@ import {
   allImages,
   latestUserTurn,
   toolResultsByCallId,
+  trailingInstruction,
   type ToolResult,
 } from "./prompt.js";
 import {
@@ -270,8 +271,12 @@ export class MuseLanguageModel implements LanguageModelV3 {
     if (wasFresh) {
       // A resumed session already holds the conversation Muse has seen, so
       // seed the diff just before the new user message.
-      const lastIsUser = options.prompt.length > 0 && options.prompt[options.prompt.length - 1]?.role === "user";
-      live.promptLength = Math.max(0, options.prompt.length - (lastIsUser ? 1 : 0));
+      const last = options.prompt[options.prompt.length - 1];
+      // The newest message is what this step delivers: a user turn, or the
+      // instruction OpenCode appends at the step cap. Seeding past either one
+      // would leave the step with nothing to send.
+      const deliverable = last?.role === "user" || trailingInstruction(options.prompt) !== undefined;
+      live.promptLength = Math.max(0, options.prompt.length - (deliverable ? 1 : 0));
       live.markSeen();
     }
     // The digest is the first message of the native window, so it must not be
@@ -323,7 +328,7 @@ export class MuseLanguageModel implements LanguageModelV3 {
     // Send-to-ack for a fresh turn, left unset by a steer. This is the wait the
     // ack deadline competes with, so it includes a replayed admission.
     let admitMs: number | undefined;
-    const turn = latestUserTurn(fresh);
+    const turn = latestUserTurn(fresh) ?? trailingInstruction(fresh);
     if (turn) {
       const running = live.hasActiveTurn ? live.activeTurnId : null;
       if (running !== null) {

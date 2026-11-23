@@ -1259,6 +1259,46 @@ describe("empty bridge preflight", () => {
   });
 });
 
+describe("the step cap", () => {
+  test("a trailing assistant instruction starts a turn instead of returning nothing", async () => {
+    const { host, commands } = fakeHost({ "turn/start": { turnId: "native-turn" } });
+    const session = MuseHarnessSession.fromNativeSession(
+      host,
+      { sessionId: "oc", cwd: "/tmp" },
+      "native",
+    );
+    const adapter = {
+      listModels: async () => [],
+      openSession: async () => session,
+    } as unknown as MuseHarnessAdapter;
+    const registry = new MuseSessionRegistry(adapter);
+    registry.setPromptDelivery("pass");
+    const model = new MuseLanguageModel("muse-spark-1.3", {}, registry, "muse");
+    const request = {
+      prompt: [
+        { role: "system", content: "sys" },
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "CRITICAL - MAXIMUM STEPS REACHED. Respond with text only." }],
+        },
+      ],
+      tools: [BRIDGE_TOOL],
+      headers: {
+        [HEADERS.kind]: "primary",
+        [HEADERS.session]: "oc",
+        [HEADERS.directory]: "/tmp",
+      },
+    } as unknown as LanguageModelV3CallOptions;
+
+    const stream = await model.doStream(request);
+    const start = commands.find((entry) => entry.method === "turn/start");
+    expect(start).toBeDefined();
+    expect(JSON.stringify(start?.params)).toContain("MAXIMUM STEPS REACHED");
+    await stream.stream.cancel();
+  });
+});
+
 describe("transcript reconciliation", () => {
   test("a compaction digest recycles the native session and reseeds", async () => {
     const opened: Array<Record<string, unknown>> = [];

@@ -62,6 +62,21 @@ export function latestUserTurn(prompt: LanguageModelV3Prompt): UserTurn | undefi
   return undefined;
 }
 
+/**
+ * The trailing message when it carries an instruction instead of a user turn.
+ *
+ * OpenCode's step cap keeps the tool list and appends an assistant message
+ * telling the model to answer in text. Muse starts a turn from a message, so
+ * that instruction is delivered as the turn body; without it the final step of
+ * a capped turn would start no turn at all and return nothing.
+ */
+export function trailingInstruction(prompt: LanguageModelV3Prompt): UserTurn | undefined {
+  const last = prompt[prompt.length - 1];
+  if (last === undefined || last.role !== "assistant") return undefined;
+  const text = textOfContent(last.content);
+  return text.length > 0 ? { text, images: [] } : undefined;
+}
+
 /** Image attachments across every user message, in order. */
 export function allImages(prompt: LanguageModelV3Prompt): ImageAttachment[] {
   const images: ImageAttachment[] = [];
