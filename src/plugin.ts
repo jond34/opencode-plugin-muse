@@ -24,7 +24,7 @@ import {
   strictHostRequested,
   type HostFacts,
 } from "./host-facts.js";
-import { CONTRIBUTOR_SUFFIX, contributorModeFromEnv } from "./host.js";
+import { CONTRIBUTOR_SUFFIX, contributorModeFromEnv, museBinFailure, resolveMuseBinFromProcess } from "./host.js";
 import {
   AGENT_OPTION,
   HEADERS,
@@ -179,7 +179,16 @@ export const MusePlugin = Plugin.define({
     // it, Muse's built-in tools and any MCP servers in the user's Muse config
     // answer inside Muse's own loop, bypassing OpenCode's permissions and
     // history.
-    const museBin = process.env.MUSE_BIN ?? "muse";
+    // On Windows the `muse` on PATH is a `.cmd` shim that Node refuses to
+    // spawn, so resolve the native binary the installer put beside it first.
+    // A failure here names MUSE_BIN and the file it looked for; Node's own
+    // `EINVAL` names none of that.
+    const resolvedMuse = resolveMuseBinFromProcess();
+    const museBinFailureReason = museBinFailure(resolvedMuse);
+    if (museBinFailureReason !== undefined) {
+      throw new Error(`[opencode-muse] ${museBinFailureReason}`);
+    }
+    const museBin = resolvedMuse.command;
     let hostConfig: HostConfigPaths | undefined;
     try {
       hostConfig = await writeMuseHostConfig({ museBin });

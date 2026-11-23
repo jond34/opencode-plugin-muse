@@ -1,5 +1,6 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import {
   MspError,
   spawnMspConnection,
@@ -200,6 +201,185 @@ export function shutdownLadder(platform: NodeJS.Platform = process.platform): re
   return platform === "win32"
     ? ["stdin-eof", "drain", "hard-kill"]
     : ["stdin-eof", "drain", "sigterm", "sigkill"];
+}
+
+/** Shims the Windows installer leaves on PATH; none of them is spawnable. */
+const SHIM_NAMES = ["muse.cmd", "muse.bat", "muse.ps1"] as const;
+const NATIVE_NAME = "muse.exe";
+const BIN_PREFIX = "muse-bin-";
+const VERSION_FILE = ".muse-version";
+const BIN_PATTERN = /^muse-bin-.+\.exe$/i;
+/** The launcher names the binary after this pointer; reject anything path-like. */
+const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+
+/** The filesystem facts the resolver needs, injected so a test can hold them. */
+export interface MuseBinInput {
+  readonly platform: NodeJS.Platform;
+  readonly env: NodeJS.ProcessEnv;
+  readonly pathEntries: readonly string[];
+  /** Contents of `.muse-version`, or undefined when it cannot be read. */
+  readonly readFile: (path: string) => string | undefined;
+  readonly readdir: (path: string) => readonly string[] | undefined;
+  readonly statMtime: (path: string) => number | undefined;
+}
+
+/** Which rule produced the command, so a bug report can say so. */
+export type MuseBinSource = "env" | "path-exe" | "version-file" | "newest" | "fallback";
+
+export interface MuseBin {
+  readonly command: string;
+  readonly source: MuseBinSource;
+  /** The PATH entry that held the shim, when the resolver looked at one. */
+  readonly shimDir?: string;
+  /** The version `.muse-version` named, when it was readable. */
+  readonly version?: string;
+}
+
+function lower(value: string): string {
+  return value.toLowerCase();
+}
+
+/** Windows environment variables are case-insensitive; a test's are not. */
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((candidate) => lower(candidate) === lower(name));
+  return key === undefined ? undefined : env[key];
+}
+
+function listingHas(entries: readonly string[], name: string): boolean {
+  const wanted = lower(name);
+  return entries.some((entry) => lower(entry) === wanted);
+}
+
+/** Split PATH the way the platform does, dropping empty entries. */
+export function pathEntriesFrom(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+  const raw = envValue(env, "PATH") ?? "";
+  return raw.split(platform === "win32" ? ";" : ":").filter((entry) => entry.length > 0);
+}
+
+/**
+ * Find a spawnable `muse` on Windows.
+ *
+ * Node refuses to spawn a `.cmd` or `.bat` without a shell — the fix for
+ * CVE-2024-27980 — so the `muse` a normal Windows install puts on PATH, the
+ * vendor's `muse.cmd` shim, cannot be spawned. The installer writes a native
+ * `muse-bin-<version>.exe` beside the shim and points `.muse-version` at the
+ * active one, so this reads that pointer rather than guessing, and only falls
+ * back to the newest binary when the pointer is missing or stale.
+ *
+ * On POSIX the answer is `muse`, as it always was: a launcher script there is
+ * executable, so there is nothing to resolve.
+ */
+export function resolveMuseBin(input: MuseBinInput): MuseBin {
+  const configured = envValue(input.env, "MUSE_BIN");
+  if (configured !== undefined && configured.trim().length > 0) {
+    return { command: configured, source: "env" };
+  }
+  if (input.platform !== "win32") {
+    return { command: "muse", source: "fallback" };
+  }
+
+  const listing = (dir: string): readonly string[] => input.readdir(dir) ?? [];
+  // A native `muse.exe` on PATH needs no resolution and wins over any shim.
+  for (const dir of input.pathEntries) {
+    if (listingHas(listing(dir), NATIVE_NAME)) {
+      return { command: win32.join(dir, NATIVE_NAME), source: "path-exe" };
+    }
+  }
+
+  const shimDir = input.pathEntries.find((dir) =>
+    SHIM_NAMES.some((name) => listingHas(listing(dir), name)),
+  );
+  if (shimDir === undefined) {
+    return { command: "muse", source: "fallback" };
+  }
+
+  const version = (input.readFile(win32.join(shimDir, VERSION_FILE)) ?? "").trim();
+  const named = VERSION_PATTERN.test(version) ? `${BIN_PREFIX}${version}.exe` : undefined;
+  if (named !== undefined && listingHas(listing(shimDir), named)) {
+    return { command: win32.join(shimDir, named), source: "version-file", shimDir, version };
+  }
+
+  let newest: { name: string; mtime: number } | undefined;
+  for (const name of listing(shimDir)) {
+    if (!BIN_PATTERN.test(name)) continue;
+    const mtime = input.statMtime(win32.join(shimDir, name));
+    if (mtime === undefined) continue;
+    // Ties go to the lower name so the choice is stable across listings.
+    if (newest === undefined || mtime > newest.mtime || (mtime === newest.mtime && name < newest.name)) {
+      newest = { name, mtime };
+    }
+  }
+  if (newest !== undefined) {
+    return {
+      command: win32.join(shimDir, newest.name),
+      source: "newest",
+      shimDir,
+      ...(version.length === 0 ? {} : { version }),
+    };
+  }
+  return {
+    command: "muse",
+    source: "fallback",
+    shimDir,
+    ...(version.length === 0 ? {} : { version }),
+  };
+}
+
+/**
+ * The failure a Windows fallback should produce instead of Node's bare `EINVAL`.
+ *
+ * A bare `EINVAL` from `spawn` names nothing: not the setting that would fix
+ * it, not the file that should have been there, not the directory that was
+ * searched. This returns the message for that case and undefined otherwise.
+ */
+export function museBinFailure(
+  bin: MuseBin,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform !== "win32" || bin.source !== "fallback") return undefined;
+  const expected = bin.version === undefined ? "muse-bin-<version>.exe" : `muse-bin-${bin.version}.exe`;
+  const searched = bin.shimDir ?? "no directory on PATH (no muse.cmd, muse.bat or muse.ps1 was found)";
+  return (
+    "Windows cannot spawn the muse.cmd shim without a shell (EINVAL). " +
+    `Set MUSE_BIN to a Muse executable, or install Muse so that ${expected} sits in ${searched}.`
+  );
+}
+
+/** The resolver's inputs from this process, for the one call at host start. */
+export function resolveMuseBinFromProcess(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): MuseBin {
+  return resolveMuseBin({
+    platform,
+    env,
+    pathEntries: pathEntriesFrom(env, platform),
+    readFile: (path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+    readdir: (path) => {
+      try {
+        return readdirSync(path);
+      } catch {
+        return undefined;
+      }
+    },
+    statMtime: (path) => {
+      try {
+        return statSync(path).mtimeMs;
+      } catch {
+        return undefined;
+      }
+    },
+  });
 }
 
 /**
