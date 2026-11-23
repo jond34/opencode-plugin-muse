@@ -1367,3 +1367,100 @@ summary.
 - **D52/D53 — recorded, not measured.** Muse's plane ships without a local
   vocabulary, and Console policy arrives through a builtin that ignores
   removals; neither can be exercised here.
+
+## Round 11 — the clause, the count, and two recorded planes
+
+**Why this round.** Round 10's review found one defect worth changing and two
+items still unclear. The defect is documentation: the README recommends
+`policies` as the hard stop that outranks `--auto` and saved approvals, and
+prints the block a careful user copies, without saying the mechanism fails open.
+The two unclear items are a reload count nobody explained and two policy planes
+nobody had separated. Nothing structural was in scope, and no paid turn was
+planned.
+
+### S0 — the drop, confirmed on the installed build
+
+`opencode v2.3.2`; `opencode debug --help` lists four subcommands (`agents`,
+`config`, `heap-dump`, `paths`) and there is no policy or validate mode. So
+there is no surface that reports a validation result — the only way to see a
+drop is to compare the file with the document `debug config` prints.
+
+### E-D58 / E-D59 — declared versus printed is a faithful count
+
+Five fixtures, each in a throwaway `XDG_CONFIG_HOME` with `auth.json` copied in:
+
+| Fixture | Declared | Printed | What it shows |
+|---|---|---|---|
+| three statements, one valid, two misspelled | 3 | 1 | the drop is real and complete |
+| one valid + one misspelled action | 2 | 1 | the misspelled action is gone |
+| `policies` + `experimental.policies` | 2 | 2 | `experimental.policies` merges into `info.policies`, so it must be counted |
+| global file + project file, one each | 2 | 2 | per-document, no inheritance between sources |
+| the same statement twice | 2 | 2 | no dedupe, so counting is faithful |
+
+That is the whole basis of D55's option B: declared counts come from the file,
+enforced counts from the document, and the difference is exactly what the host
+dropped. The enum is never consulted, so a new action name cannot make the row
+wrong. Raw output: `scratch/round-11/{E-D58,E-D59a,E-D59b,E-D59c,dup}.out`.
+
+### E-D57 — the ten loads were one setup
+
+Round 10 counted ten `loading plugin` lines after one `config.updated` and left
+it unexplained. Re-reading the same three logs:
+
+| Log | `config.updated` | `loading plugin` | distinct ids | `[opencode-muse]` (setup output) |
+|---|---|---|---|---|
+| E-D51.err | 1 | 10 | 1 | 2 |
+| E-D51b.err | 1 | 9 | 1 | 2 |
+| E-D52a.err | 1 | 20 | 1 | 2 |
+
+One id every time, one generation every time, and the plugin's own setup output
+exactly once every time. The burst in E-D51.err is eight loads at 159–162 ms
+intervals with nothing between them — no `config.updated`, no watcher line, no
+event — plus one more after `shutdown started`. So the count measures loader
+entries, not plugin initialisation: neither "ten plugins" nor "ten generations"
+was ever the right reading, and there was no storm. What re-enters the loader is
+still unnamed; it cannot be a reload, because a reload would show a generation
+and a second setup. Raw output: `scratch/round-11/E-D57.out`.
+
+### D55 — the row, and what it cannot see
+
+Option B, because E-D59 came back clean. `scripts/doctor.ts` gains a `policies`
+row beside `plugins`, over the same documents: for each source with a `path`, it
+reads the file (a small JSONC reader — comments, `//` inside a string, trailing
+commas), counts `policies` plus `experimental.policies`, and compares with that
+document's `info.policies`. Fewer enforced than declared is a `warn` that names
+the file and both numbers; an unreadable source is skipped, never guessed; a
+config with no policies is `skipped`, not `ok`, so the row never implies
+protection nobody wrote. Against the real CLI with one valid and one misspelled
+statement it printed `2 declared, 1 enforced`.
+
+The remote half is not covered and the row does not pretend otherwise: a
+Console-delivered policy is decoded on the vendor's side, where unknown actions
+and effects are filtered without a diagnostic (`anomalyco/opencode#60252`), so
+there is no file here to read.
+
+### E-D60 — idempotency is not the contract
+
+`setup()` returns a cleanup closure (`src/plugin.ts:547`), and every observed log
+shows exactly one `setup()` per process. The contract opencode offers is one
+setup and one cleanup, not a re-entrant setup; a second call would register a
+second adapter and a second host, which is why the loader caches. Since no log
+re-ran it, there is nothing to fix and no test was invented for a path the host
+does not take.
+
+### D57 / D58 — two planes, one sentence each
+
+Muse's managed policy is current, not abandoned: 1.4.13's changelog names it
+again, and `muse --version` is still 1.4.25, unchanged since round 8, so
+re-bisecting the validator would have been a repeat. Console-delivered policy
+stays unmeasurable here; what changed is that its silence is now recorded as a
+fact rather than an absence.
+
+### What this round did not measure
+
+No Console workspace exists here, so the remote sentence rests on the vendor's
+issue and not on a probe. Whether a source-file change re-enters the loader
+(E-D61) was not spent: the count is already explained as loader entries, and a
+paid turn would not have made the row or the clause different. The JSONC reader
+is only exercised against the fixtures in `test/doctor.test.ts`, not against
+every config file in the wild.
