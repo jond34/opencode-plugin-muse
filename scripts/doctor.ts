@@ -8,16 +8,17 @@
  * for the plugin entries, which no other surface answers. The only writes are
  * the two explicit trust flags, and the only host interaction is a handshake
  * plus a session that is immediately left — no turn, no allowance, no model
- * call. The config rows also read the log `opencode debug config` writes, at the
- * path the host itself names, because that log is the only place a dropped
- * statement or a rejected file is reported (E-D62, E-D64).
+ * call. The config rows spawn `opencode --print-logs debug config` and read this
+ * run's own stderr, because that stream is the only place a dropped statement or
+ * a rejected file is reported, and it belongs to this spawn by construction
+ * (E-D64, E-D70).
  *
  * Redaction is a hard rule: no credential, no identity, and no absolute home
  * path reaches the output. `museHome` and the workspace are printed with the
  * home prefix folded to `~`.
  */
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { checkAllowance, parseAllowance } from "../src/allowance.js";
@@ -219,16 +220,16 @@ interface PolicySource {
 }
 
 /**
- * What the host wrote to its log about this run.
+ * What this run's own log output said about the config files it read.
  *
- * `reason` is set when the log could not be read at all, and `live` is false when
- * it was read but names no candidate config file. Neither may be read as "no
- * drop": a raised level or a rotated log produces an empty delta that looks
- * exactly like a clean run (E-D62), so a row only says `ok` when the log itself
- * mentioned a file it could have warned about.
+ * The host is spawned with `--print-logs`, so its log arrives on the doctor's own
+ * stderr. That is what makes attribution exact: the stream belongs to this spawn,
+ * so a diagnostic on it cannot be another process's, and no list of candidate
+ * paths is needed (E-D70). `live` is false when the stream carried no structured
+ * line at all, which is also what a host without the flag looks like; neither it
+ * nor an empty diagnostic list may be read as "no drop" (D64).
  */
 export interface ConfigLog {
-  readonly reason: string | null;
   readonly live: boolean;
   readonly diagnostics: readonly ConfigDiagnostic[];
 }
@@ -252,137 +253,37 @@ function field(line: string, key: string): string | undefined {
 }
 
 /**
- * Diagnostics in a log delta that belong to this run's config files.
+ * Diagnostics in this run's own log output.
  *
- * The filter is by source first. A parallel run's delta holds another process's
- * diagnostics, so "every diagnostic in the delta" is not a drop test (E-D62).
- *
- * `live` is what makes an empty result mean something, and it has to accept two
- * shapes: a diagnostic names the file in `source=`, while a clean run's watcher
- * lines name its config directory in `path=` and never mention the file at all.
- * The directory is included only as the parent of a candidate file, so the
- * `~/.opencode` scan every run performs cannot make a run look logged.
+ * There is no source filter: the stream is this spawn's stderr, so a diagnostic
+ * on it is ours (E-D70). `live` accepts any structured line, because every run
+ * opens with `message="cli starting"` (E-D70, E-D71); requiring a config file to
+ * be named would make a clean run indistinguishable from a silent one, and a
+ * silent stream must never read as a clean config (D64).
  */
-export function configDiagnostics(
-  delta: string,
-  sources: readonly string[],
-): { live: boolean; diagnostics: ConfigDiagnostic[] } {
-  const files = new Set(sources.map((source) => safeReal(source)));
-  const directories = new Set(sources.map((source) => safeReal(dirname(source))));
+export function configDiagnostics(stderr: string): ConfigLog {
   let live = false;
   const diagnostics: ConfigDiagnostic[] = [];
-  for (const line of delta.split("\n")) {
-    const source = field(line, "source");
-    const named = field(line, "path");
-    if (
-      (source !== undefined && files.has(safeReal(source))) ||
-      (named !== undefined && (files.has(safeReal(named)) || directories.has(safeReal(named))))
-    ) {
-      live = true;
-    }
-    if (source === undefined || !files.has(safeReal(source))) continue;
+  for (const line of stderr.split("\n")) {
+    if (field(line, "timestamp") === undefined || field(line, "level") === undefined) continue;
+    live = true;
     if (!line.includes(DIAGNOSTIC_MESSAGE)) continue;
+    const source = field(line, "source");
     const path = field(line, "path");
-    if (path === undefined) continue;
+    if (source === undefined || path === undefined) continue;
     diagnostics.push({ source, path, action: field(line, "action") ?? "dropped" });
   }
   return { live, diagnostics };
 }
 
-/** Bytes written after `offset`, or why they could not be read. */
-export function readLogDelta(path: string, offset: number): { text: string } | { reason: string } {
-  let size: number;
-  try {
-    size = statSync(path).size;
-  } catch {
-    return { reason: `no log at ${redact(path)}` };
-  }
-  // A log that shrank rotated between the offset and this read. Reading from the
-  // stale offset would return nothing, which reads exactly like "no drop".
-  if (size < offset) return { reason: "the log was truncated during the run" };
-  const length = Math.min(size - offset, 4 * 1024 * 1024);
-  const buffer = Buffer.alloc(length);
-  const fd = openSync(path, "r");
-  try {
-    readSync(fd, buffer, 0, length, size - length);
-  } finally {
-    closeSync(fd);
-  }
-  return { text: buffer.toString("utf8") };
-}
-
-/** Where the host writes its log, from the host itself. */
-function logFile(): string | undefined {
-  const result = spawnSync("opencode", ["debug", "paths", "log"], {
-    encoding: "utf8",
-    timeout: 10_000,
-    maxBuffer: 1024 * 1024,
-  });
-  if (result.error !== undefined || result.status !== 0) return undefined;
-  const dir = result.stdout
-    .replace(/\x1b\[[0-9;]*m/g, "")
-    .trim()
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .pop();
-  return dir === undefined ? undefined : join(dir, "opencode.log");
-}
-
-/**
- * The config files this run could have read: what the host printed, plus the
- * candidates in the config directory and the working directory.
- *
- * The second part is the point. A file the host rejected is not printed at all
- * (E-D64), so the printed list alone can never name it, and a rejected file is
- * exactly what the rows have to report.
- */
-function configCandidates(documents: unknown, env: NodeJS.ProcessEnv): string[] {
-  const candidates = new Set<string>();
-  if (Array.isArray(documents)) {
-    for (const document of documents) {
-      const doc = document as PolicySource | null;
-      // A directory document is a scan root, not a file this run read: every run
-      // has one for `~/.opencode`, and counting it would make liveness trivial.
-      if (typeof doc?.path === "string" && doc.type !== "directory") candidates.add(doc.path);
-    }
-  }
-  const configHome = env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
-  for (const dir of [join(configHome, "opencode"), process.cwd(), join(homedir(), ".opencode")]) {
-    for (const name of ["opencode.json", "opencode.jsonc"]) {
-      const path = join(dir, name);
-      if (existsSync(path)) candidates.add(path);
-    }
-  }
-  return [...candidates];
-}
-
-/** One `debug config` spawn, with the log read around it. */
-function readConfig(
-  documents: () => unknown,
-  env: NodeJS.ProcessEnv,
-): { documents: unknown; log: ConfigLog } {
-  const file = logFile();
-  let offset = 0;
-  if (file !== undefined) {
-    try {
-      offset = statSync(file).size;
-    } catch {
-      offset = 0;
-    }
-  }
-  const printed = documents();
-  if (file === undefined) {
-    return {
-      documents: printed,
-      log: { reason: "`opencode debug paths log` did not answer", live: false, diagnostics: [] },
-    };
-  }
-  const delta = readLogDelta(file, offset);
-  if ("reason" in delta) {
-    return { documents: printed, log: { reason: delta.reason, live: false, diagnostics: [] } };
-  }
-  const { live, diagnostics } = configDiagnostics(delta.text, configCandidates(printed, env));
-  return { documents: printed, log: { reason: null, live, diagnostics } };
+/** What one `opencode debug config` spawn printed. */
+export interface ConfigRun {
+  /** Parsed stdout, or undefined when the CLI refused or printed no JSON. */
+  readonly documents: unknown;
+  /** This run's own log, which carries the host's config diagnostics. */
+  readonly stderr: string;
+  /** The exit status, or null when the spawn itself failed. */
+  readonly status: number | null;
 }
 
 /**
@@ -408,14 +309,14 @@ function enforcedStatements(documents: unknown[]): { total: number; sources: num
  * D59: is every statement the config declares actually enforced?
  *
  * The answer comes from the host's own diagnostic, not from reading the file
- * (E-D62, E-D63). A statement that fails validation is dropped with a line in the
- * server log, and a file that fails to parse is not printed at all (E-D64), so a
- * count of declared versus printed statements cannot see the case that matters:
- * a rejected file beside a valid one leaves the count reporting `ok` while a
- * whole file's policies were thrown away. The row reports each drop with its
- * pointer. `ok` means the log named a config file and reported no drop; a log
- * that names none is `skipped`, because an empty delta is also what a raised
- * level or a rotated log looks like.
+ * (E-D62, E-D63). A statement that fails validation is dropped with a line in
+ * this run's log output, and a file that fails to parse is not printed at all
+ * (E-D64), so a count of declared versus printed statements cannot see the case
+ * that matters: a rejected file beside a valid one leaves the count reporting
+ * `ok` while a whole file's policies were thrown away. The row reports each drop
+ * with its pointer. `ok` means this run printed a structured log line and
+ * reported no drop; a stream with no such line is `skipped`, because a host that
+ * stopped printing `--print-logs` looks exactly like a clean run (D64).
  *
  * Limits the row states by staying quiet: the remote (Console-delivered) path is
  * not visible at all, and nothing here re-derives the action enum, which is what
@@ -441,7 +342,7 @@ export function policyRow(documents: unknown, log: ConfigLog): Check {
         .map((drop) => `${redact(drop.source)}: ${drop.path} (${drop.action})`)
         .join("; ")}`,
       remediation:
-        "a statement that fails validation is dropped with a warning in the server log, and nothing matching means the action is allowed; check the action and effect names",
+        "a statement that fails validation is dropped with a warning in this run's own log output, and nothing matching means the action is allowed; check the action and effect names",
     };
   }
   if (rejected.length > 0) {
@@ -453,20 +354,12 @@ export function policyRow(documents: unknown, log: ConfigLog): Check {
       } rejected by the host, so nothing it declares is enforced; see the config row`,
     };
   }
-  if (log.reason !== null) {
-    return {
-      id: "policies",
-      status: "skipped",
-      detail: `${enforced.total} statement(s) enforced, but the host log was not read (${log.reason}); drops unknown`,
-      remediation: "run `opencode debug paths log`, then check that the file it names is readable",
-    };
-  }
   if (!log.live) {
     return {
       id: "policies",
       status: "skipped",
-      detail: `${enforced.total} statement(s) enforced, but the host log named no config source for this run; drops unknown`,
-      remediation: "run `opencode debug config`, then check the log at `opencode debug paths log`",
+      detail: `${enforced.total} statement(s) enforced, but the host printed no log output for this run; drops unknown`,
+      remediation: "run `opencode --standalone --print-logs debug config` directly to see why",
     };
   }
   if (enforced.total === 0) {
@@ -479,7 +372,7 @@ export function policyRow(documents: unknown, log: ConfigLog): Check {
   return {
     id: "policies",
     status: "ok",
-    detail: `${enforced.total} statement(s) from ${enforced.sources} source(s) enforced, and the host log reported no drop`,
+    detail: `${enforced.total} statement(s) from ${enforced.sources} source(s) enforced, and this run's log reported no drop`,
   };
 }
 
@@ -491,7 +384,7 @@ export function policyRow(documents: unknown, log: ConfigLog): Check {
  * takes every plugin entry and every policy statement in it with it, which is
  * the silent case all three rows exist for.
  */
-function configRow(log: ConfigLog): Check | undefined {
+export function configRow(log: ConfigLog): Check | undefined {
   const rejected = log.diagnostics.filter((diagnostic) => diagnostic.path === "$");
   if (rejected.length === 0) return undefined;
   return {
@@ -505,18 +398,29 @@ function configRow(log: ConfigLog): Check | undefined {
   };
 }
 
-/** `opencode debug config`, or undefined when the CLI is absent or refuses. */
-function opencodeConfig(): unknown {
-  const result = spawnSync("opencode", ["--standalone", "debug", "config"], {
+/**
+ * `opencode debug config`, with this run's own log on stderr.
+ *
+ * `--print-logs` is what makes the diagnostic attributable: it is on the stream
+ * of the process we spawned, so no path list is consulted (D63, E-D70). A CLI
+ * that is absent, refuses, or prints no JSON still returns its stderr, so a
+ * diagnostic from a run that failed later is not thrown away.
+ */
+export function opencodeConfig(): ConfigRun {
+  const result = spawnSync("opencode", ["--standalone", "--print-logs", "debug", "config"], {
     encoding: "utf8",
     timeout: 20_000,
     maxBuffer: 16 * 1024 * 1024,
   });
-  if (result.error !== undefined || result.status !== 0) return undefined;
+  const stderr = result.stderr ?? "";
+  const status = result.status ?? null;
+  if (result.error !== undefined || result.status !== 0) {
+    return { documents: undefined, stderr, status };
+  }
   try {
-    return JSON.parse(result.stdout) as unknown;
+    return { documents: JSON.parse(result.stdout) as unknown, stderr, status };
   } catch {
-    return undefined;
+    return { documents: undefined, stderr, status };
   }
 }
 
@@ -738,14 +642,15 @@ async function main(): Promise<number> {
       detail: "--offline: opencode's config was not read",
     });
   } else {
-    const { documents, log } = readConfig(opencodeConfig, env);
+    const run = opencodeConfig();
+    const log = configDiagnostics(run.stderr);
     const config = configRow(log);
     if (config !== undefined) report.checks.push(config);
     const rejected = log.diagnostics
       .filter((diagnostic) => diagnostic.path === "$")
       .map((diagnostic) => diagnostic.source);
-    report.checks.push(pluginRow(documents, join(import.meta.dir, ".."), packageName(), rejected));
-    report.checks.push(policyRow(documents, log));
+    report.checks.push(pluginRow(run.documents, join(import.meta.dir, ".."), packageName(), rejected));
+    report.checks.push(policyRow(run.documents, log));
   }
 
   const trust = trustState(env, root);
