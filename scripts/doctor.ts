@@ -284,7 +284,12 @@ async function main(): Promise<number> {
           probe.hooks.length === 0
             ? "no installed handlers"
             : `${probe.hooks.length} handler(s): ${probe.hooks
-                .map((row) => `${row.handlerKind}/${row.event}${row.enabled ? "" : " (disabled)"}`)
+                .map(
+                  (row) =>
+                    `${row.handlerKind}/${row.event}` +
+                    `${row.handlerKind === "plugin" ? " (installed plugin)" : ""}` +
+                    `${row.enabled ? "" : " (disabled)"}`,
+                )
                 .join(" ")}`,
         ...(refusal === null
           ? {}

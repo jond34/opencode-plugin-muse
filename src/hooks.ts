@@ -7,14 +7,21 @@
  * a repository that supplies one is asking for execution that no approval
  * surface of ours covers. The host reports each installed handler with its
  * origin (`hook/list` → `handlerKind`), which is what this module reads:
- * `project` and `plugin` rows are refused until the exact file is accepted.
+ * `project` rows are refused until the exact file is accepted. A `plugin` row
+ * is allowed: every install scope writes into the user's own store ("Nothing is
+ * written into the repository"), so it is code the person installed and
+ * approved, not a file a checkout can plant. The doctor still prints the origin
+ * of every handler, so an installed plugin is visible rather than silent.
  *
- * The acceptance is a record, not a prompt: `@opencode/plugin` 2.3.2 has no
+ * The acceptance is a record, not a prompt: the server half's `Context` has no
  * dialog surface, so the record is written by the doctor or by the env override
- * below, and it names the file's hash so an edited file asks again.
+ * below, and it names the file's hash so an edited file asks again. (A package
+ * may ship a `./tui` part that can ask — that is how the allowance warning
+ * reaches a TUI — but this gate runs before any UI exists, so the record stays
+ * the mechanism and the TUI stays a notice.)
  */
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { SessionHost } from "./session.js";
 import { stateDirectory } from "./usage-ledger.js";
@@ -25,8 +32,8 @@ export const HOOKS_RELATIVE_PATH = join(".muse", "hooks.json");
 /** Accept the repo's hooks for this run, without a trust record. */
 export const PROJECT_HOOKS_ENV = "MUSE_ALLOW_PROJECT_HOOKS";
 
-/** Origins that mean "the workspace or a plugin installed into it supplies this". */
-const BLOCKING_KINDS: ReadonlySet<string> = new Set(["project", "plugin"]);
+/** Origins that mean "the workspace supplies this". A plugin is the user's install. */
+const BLOCKING_KINDS: ReadonlySet<string> = new Set(["project"]);
 
 /** One installed handler, as `hook/list` reports it. */
 export interface HookRow {
@@ -110,7 +117,7 @@ export async function readHookCatalog(
   }
 }
 
-/** Enabled handlers whose origin is the workspace or a workspace plugin. */
+/** Enabled handlers whose origin is the workspace's own file. */
 export function blockingHooks(rows: readonly HookRow[]): HookRow[] {
   return rows.filter((row) => row.enabled && BLOCKING_KINDS.has(row.handlerKind));
 }
@@ -216,12 +223,10 @@ export function hookGateRefusal(
   const file = hooksFilePath(root);
   const digest = hooksDigest(file);
   if (hooksTrusted(root, digest, env)) return null;
-  const exists = existsSync(file);
-  const subject = exists ? file : "an installed Muse plugin";
   return (
-    `Muse would load ${blocking.length} workspace-supplied hook(s) in ${canonicalRoot(root)}: ` +
+    `Muse would load ${blocking.length} repo-supplied hook(s) in ${canonicalRoot(root)}: ` +
     `${describeKeys(blocking)}. Hooks are commands Muse runs outside opencode's permissions, ` +
-    `so this session is refused. Accept ${subject} for one run with ${PROJECT_HOOKS_ENV}=1, ` +
+    `so this session is refused. Accept ${file} for one run with ${PROJECT_HOOKS_ENV}=1, ` +
     `or record it as trusted with the plugin's doctor (bun run doctor --trust-hooks).`
   );
 }

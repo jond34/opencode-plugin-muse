@@ -111,9 +111,9 @@ describe("hook catalog", () => {
     expect(blockingHooks([{ ...PROJECT_ROW, enabled: false }])).toHaveLength(0);
   });
 
-  test("project and plugin rows block; managed and user rows do not", () => {
+  test("a project row blocks; plugin, managed and user rows do not", () => {
     const blocking = blockingHooks([PROJECT_ROW, PLUGIN_ROW, USER_ROW, MANAGED_ROW]);
-    expect(blocking.map((row) => row.handlerKind)).toEqual(["project", "plugin"]);
+    expect(blocking.map((row) => row.handlerKind)).toEqual(["project"]);
   });
 
   test("an unreadable catalog is unknown, not empty", async () => {
@@ -149,11 +149,12 @@ describe("hook gate", () => {
     expect(refusal).toContain(hooksFilePath(root));
   });
 
-  test("a plugin hook is refused even with no hooks file", async () => {
+  test("a plugin hook is allowed with no hooks file, because the user installed it", async () => {
     const env = await stateEnv();
     const root = await mkdtemp(join(tmpdir(), "muse-hook-ws-"));
-    const refusal = hookGateRefusal([PLUGIN_ROW], root, env);
-    expect(refusal).toContain("installed Muse plugin");
+    expect(hookGateRefusal([PLUGIN_ROW], root, env)).toBeNull();
+    // A plugin row does not excuse a repo-supplied file in the same workspace.
+    expect(hookGateRefusal([PLUGIN_ROW, PROJECT_ROW], root, env)).not.toBeNull();
   });
 
   test("an accepted file passes until its bytes change", async () => {
@@ -219,7 +220,7 @@ describe("session creation", () => {
     }
     expect(failure).toBeInstanceOf(HarnessError);
     expect((failure as HarnessError).code).toBe("containment_breach");
-    expect((failure as HarnessError).message).toContain("workspace-supplied hook");
+    expect((failure as HarnessError).message).toContain("repo-supplied hook");
     expect(requests).toEqual(["hook/list"]);
     expect(commands.map((entry) => entry.method)).toEqual(["session/start", "session/leave"]);
     expect(commands.some((entry) => entry.method === "turn/start")).toBe(false);
