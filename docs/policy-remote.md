@@ -51,6 +51,15 @@ source in `debug config` rather than a remote decision. A denial that comes from
 it names the workspace (`Blocked by Acme's policy`), where a local statement does
 not.
 
+The surface, as observed in round 23, is a **Controls** page with three groups:
+*Reservations* (a provider, model or extension reserved to named members, which
+nobody else may use), *Policies* (a member or group restricted to certain models,
+spend caps, or tools), and *Control templates*. A policy targets *members tagged
+with* a tag, and a workspace with no tags has no way to scope one. The Models
+page is separate: a per-model switch decides what members may use at all. None of
+this is a Providers/Tools editor in the shape round 22's research described, so
+treat that description as the documented model rather than the observed UI.
+
 | Event | Effect on the host |
 |---|---|
 | Policy added or changed | Applies on the next fetch, about once a minute |
@@ -79,11 +88,23 @@ all 404; `/api/integration` exists but returns an empty list when no workspace i
 connected, and `/api/policies/current` appears in the binary only as a string
 (E-R22-08).
 
-Round 22 could not test the connected case: no workspace was connected on this
-machine, so `debug config` had nothing to show. E13 is unmeasured, not failed.
-The before/after read is written out in `docs/round-22-plan.md`; it needs ten
-minutes and a Console session, and until it runs the honest statement is that the
-compile is documented by the vendor and not observed here.
+**Round 23 measured the connected case, and the answer is still no.** The
+workspace `Default` (`wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`) is bound to this machine —
+`opencode auth list` stores an `OpenCode` entry labelled `Default`, the workspace
+name — and the Console reports a connected client. Disabling one model
+(`beam-free`) in that workspace, waiting past the fetch window, and re-reading
+the host changed nothing: the same one `document` and two `directory` sources, no
+Console source, and `beam-free` still listed by `opencode models --standalone`
+(111 lines). The toggle was restored to `enabled` afterwards. So a workspace
+restriction is not visible through either surface this plugin can read, and the
+no-attribution rule is measured rather than inferred.
+
+What that leaves untested is the wording of a denial: the vendor says a
+Console-derived denial names the workspace, while a local statement does not.
+Reproducing it needs a member tag and a Providers or Tools deny, which is a
+larger account change than a model toggle, and it would not change the doctor
+— the plugin still cannot attribute the decision it sees. E19 stays unmeasured
+with that cost stated.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
 source and a stated precedence, and `chrome://policy` can reload and show it.

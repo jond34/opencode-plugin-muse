@@ -356,8 +356,24 @@ month. **D145: schedule monthly once the workflow is on the default branch** —
 a `schedule:` trigger only fires from the default branch, so this cannot be
 added today.
 
-**E18, E19 — still blocked.** Both need a Console workspace and a policy, which
-is an owner action; the Console cell stays unmeasured.
+**E18 — run against a live workspace, and the answer is no.** The Console is
+*opencode's*, at `opencode.ai/console`; the tab offered for this round was Meta's
+Model API dashboard, which has no policy surface at all. The account's workspace
+`Default` (`wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`, plan Go) is bound to this machine:
+`opencode auth list` stores an `OpenCode` entry labelled `Default`. Its Controls
+page has Reservations, Policies and Control templates; a policy scopes by
+*member tag* and the workspace has none, so the reversible lever was the Models
+page's per-model switch. `beam-free` was disabled, the fetch window passed, and
+the host did not move: one `document` plus two `directory` sources, still no
+Console source, and `beam-free` still in `opencode models --standalone`. The
+switch was restored to `enabled`, and the page confirmed `Beam enabled`.
+**D146: no doctor clause, no Console attribution** — measured, not inferred.
+
+**E19 — skipped deliberately.** The denial wording needs a member tag plus a
+Providers or Tools deny, a bigger change to a live workspace than a model
+toggle, and it would not give the doctor anything to print, because attribution
+is what is missing. Cost recorded in `policy-remote.md`; the cell stays
+unmeasured.
 
 Checks actually run: `npm run build`; `bun run check:offline` (439 tests, 38
 files, 0 fail); `bun test test/hook-gate.test.ts` under a symlinked `TMPDIR`
