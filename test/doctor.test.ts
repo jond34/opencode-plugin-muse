@@ -13,6 +13,7 @@ import {
 import {
   configDiagnostics,
   configRow,
+  exitCode,
   pluginRow,
   policyRow,
   postureCheck,
@@ -445,6 +446,8 @@ describe("this run's own log output", () => {
     expect(row?.status).toBe("warn");
     expect(row?.detail).toContain(rejected);
     expect(row?.detail).toContain("rejected malformed JSON or JSONC document");
+    // D72: the reader may not own the file, and nothing here can tell which.
+    expect(row?.remediation).toContain("if you cannot edit this file, ask whoever administers it");
     expect(configRow(configDiagnostics([starting(), watcher("/tmp/opencode")].join("\n")))).toBeUndefined();
   });
 
@@ -457,5 +460,98 @@ describe("this run's own log output", () => {
     expect(row.status).toBe("skipped");
     expect(row.detail).toContain(rejected);
     expect(row.detail).toContain("config row");
+  });
+});
+
+/**
+ * D68/D69: the gate is a table over the rows, so the contract is asserted rather
+ * than inferred from one spawned run. E-D75 measured what four real trees return;
+ * these pin the rule each of those numbers follows from.
+ */
+describe("the strict gate", () => {
+  type Row = "ok" | "warn" | "fail" | "skipped";
+  const row = (id: string, status: Row) => ({ id, status, detail: "" });
+  const cases: Array<{
+    name: string;
+    checks: ReturnType<typeof row>[];
+    strict: boolean;
+    read: boolean;
+    want: number;
+  }> = [
+    {
+      name: "a fail returns 1 with or without the flag",
+      checks: [row("host", "fail")],
+      strict: false,
+      read: true,
+      want: 1,
+    },
+    {
+      name: "a clean run returns 0 under strict",
+      checks: [row("plugins", "ok"), row("policies", "ok")],
+      strict: true,
+      read: true,
+      want: 0,
+    },
+    {
+      name: "a config row returns 0 by default",
+      checks: [row("config", "warn")],
+      strict: false,
+      read: true,
+      want: 0,
+    },
+    {
+      name: "a config row returns 1 under strict",
+      checks: [row("config", "warn")],
+      strict: true,
+      read: true,
+      want: 1,
+    },
+    {
+      name: "a dropped policy statement returns 1 under strict",
+      checks: [row("policies", "warn")],
+      strict: true,
+      read: true,
+      want: 1,
+    },
+    {
+      name: "policies skipped for declaring none returns 0 under strict",
+      checks: [row("policies", "skipped")],
+      strict: true,
+      read: true,
+      want: 0,
+    },
+    {
+      name: "environmental rows stay advisory under strict",
+      checks: [row("plugins", "warn"), row("host", "warn"), row("allowance", "warn")],
+      strict: true,
+      read: true,
+      want: 0,
+    },
+    {
+      name: "a run that did not look returns 0 by default",
+      checks: [row("plugins", "skipped"), row("policies", "skipped")],
+      strict: false,
+      read: false,
+      want: 0,
+    },
+    {
+      name: "a run that did not look returns 1 under strict",
+      checks: [row("plugins", "skipped"), row("policies", "skipped")],
+      strict: true,
+      read: false,
+      want: 1,
+    },
+  ];
+  for (const { name, checks, strict, read, want } of cases) {
+    test(name, () => expect(exitCode(checks, { strict, read })).toBe(want));
+  }
+
+  test("--offline --strict exits 1 and still reports both rows skipped", () => {
+    const { root, state } = workspace();
+    const { code, out } = run(["--json", "--offline", "--strict"], root, state);
+    expect(code).toBe(1);
+    const report = parse(out);
+    expect(report.checks.find((check) => check.id === "plugins")?.status).toBe("skipped");
+    expect(report.checks.find((check) => check.id === "policies")?.status).toBe("skipped");
   });
 });

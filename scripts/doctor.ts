@@ -69,6 +69,7 @@ interface Report {
 interface Options {
   readonly json: boolean;
   readonly offline: boolean;
+  readonly strict: boolean;
   readonly trustHooks: boolean;
   readonly forgetHooks: boolean;
 }
@@ -77,6 +78,7 @@ function parseArgs(argv: readonly string[]): Options {
   return {
     json: argv.includes("--json"),
     offline: argv.includes("--offline"),
+    strict: argv.includes("--strict"),
     trustHooks: argv.includes("--trust-hooks"),
     forgetHooks: argv.includes("--forget-hooks"),
   };
@@ -394,7 +396,8 @@ export function configRow(log: ConfigLog): Check | undefined {
       .map((diagnostic) => `${redact(diagnostic.source)} (${diagnostic.action})`)
       .join("; ")}: the host did not read the file, so no plugin entry or policy in it is enforced`,
     remediation:
-      "fix its JSON or JSONC; the host drops the whole file rather than the one bad statement",
+      "fix its JSON or JSONC; the host drops the whole file rather than the one bad statement; " +
+      "if you cannot edit this file, ask whoever administers it",
   };
 }
 
@@ -623,12 +626,48 @@ async function probeHost(
   }
 }
 
+/**
+ * D68/D69: what the run's exit code says, and when `--strict` says more.
+ *
+ * Without the flag the contract is the one every caller already has: a `fail`
+ * returns 1 and nothing else does. Under `--strict` the question narrows to *did
+ * this run check the config it was asked about*, so a `config` row (the host
+ * refused a file), a `policies` warn (a statement was dropped) and a run that never
+ * looked (`--offline`, or a CLI that did not answer) return 1. The rows about the
+ * machine and the install stay advisory even then: on this machine a working run
+ * warns `host`, and this checkout's own run warns `plugins` too, so gating them
+ * would fail a tree that works (E-D73).
+ *
+ * One code, not a ladder: 1 is already what `fail` returns, and a caller that gates
+ * asks whether it may ship (D71). `policies: skipped` because the config declares
+ * no statements is not a failure — nothing was dropped.
+ */
+export interface Gate {
+  /** `--strict`: a discarded config, or a config never read, fails the run. */
+  readonly strict: boolean;
+  /** Whether `opencode debug config` answered, so the config rows describe a run. */
+  readonly read: boolean;
+}
+
+export function exitCode(checks: readonly Check[], gate: Gate): number {
+  if (checks.some((check) => check.status === "fail")) return 1;
+  if (!gate.strict) return 0;
+  if (!gate.read) return 1;
+  const discarded = checks.some((check) => check.id === "config");
+  const dropped = checks.some((check) => check.id === "policies" && check.status === "warn");
+  return discarded || dropped ? 1 : 0;
+}
+
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
   const env = process.env;
   const root = process.cwd();
   const report: Report = { asOf: new Date().toISOString(), checks: [], hooks: null };
   report.checks.push(versions(), platform(), containment(env));
+
+  // Whether `opencode debug config` answered: the one fact the checks cannot
+  // carry, because a skipped row is also what a clean config looks like.
+  let read = false;
 
   if (options.offline) {
     report.checks.push({
@@ -643,6 +682,7 @@ async function main(): Promise<number> {
     });
   } else {
     const run = opencodeConfig();
+    read = Array.isArray(run.documents);
     const log = configDiagnostics(run.stderr);
     const config = configRow(log);
     if (config !== undefined) report.checks.push(config);
@@ -776,8 +816,6 @@ async function main(): Promise<number> {
   report.checks.push(ledger(env));
   report.hooks = trust;
 
-  const failed = report.checks.some((check) => check.status === "fail");
-
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -787,7 +825,7 @@ async function main(): Promise<number> {
     }
     console.log(`\nstate: ${redact(stateDirectory(env))}`);
   }
-  return failed ? 1 : 0;
+  return exitCode(report.checks, { strict: options.strict, read });
 }
 
 // Guarded so a test can import the rows without running the doctor.
