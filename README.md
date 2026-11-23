@@ -229,9 +229,15 @@ matching means the action is allowed — leaves a typo in an action or effect na
 indistinguishable from having written no policy at all. So check the log after
 editing a `deny`, and prove the deny by its effect: a turn that should have been
 stopped and was not is the signal, and a typo produces exactly the same silence.
-`bun run doctor` closes the local half of that gap — its `policies` row compares
-what each config file declares with what the host will enforce and names the file
-when the counts differ. That is the local path only. A policy delivered by
+`bun run doctor` closes the local half of that gap: its `policies` row reads the
+log the host writes (`opencode debug paths log` names it) and reports each
+`configuration normalization diagnostic` for the config files this run read, with
+the statement's pointer and the host's own action. It says `ok` only when that
+log named one of those files and reported no drop; a log it could not read, or
+one that named none of them, is `skipped` rather than `ok`. A file the host
+refuses outright is not printed at all, so the doctor reports it once in a
+`config` row and the `policies` and `plugins` rows defer to it instead of naming
+a cause that is not the cause. That is the local path only. A policy delivered by
 Console is decoded on the vendor's side and unknown actions and effects are
 filtered without a diagnostic (`anomalyco/opencode#60252`), so on a managed
 machine there is no log line to check and the effect is the only evidence.
