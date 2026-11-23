@@ -107,9 +107,14 @@ describe("resume after a watchdog kill", () => {
     });
     const firstPid = Number(readFileSync(pidFile, "utf8"));
 
-    expect(await waitFor(() => events.some((event) => event.type === "turn.terminal"), 4_000)).toBe(
-      true,
-    );
+    // The idle clock is what ends the turn (1000 ms); the rest is starting a
+    // bun child and its handshake. On Windows that cold start measured ~4.0 s
+    // in two runs, so the budget there is the spawn cost, not a shorter claim
+    // (E22).
+    const terminalBudgetMs = process.platform === "win32" ? 15_000 : 4_000;
+    expect(
+      await waitFor(() => events.some((event) => event.type === "turn.terminal"), terminalBudgetMs),
+    ).toBe(true);
     const terminal = events.find((event) => event.type === "turn.terminal");
     expect(terminal && "failure" in terminal ? terminal.failure?.code : undefined).toBe(
       "host_idle_timeout",

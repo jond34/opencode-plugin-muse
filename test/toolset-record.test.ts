@@ -80,7 +80,9 @@ describe("toolset observation", () => {
 
   test("the root prefers the override, then the host's museHome, then XDG", () => {
     const env = { XDG_DATA_HOME: "/d", MUSE_SESSIONS_ROOT: "/o" } as NodeJS.ProcessEnv;
-    expect(sessionsRoot({ env, museHome: "/home/tester/.muse" })).toBe(join("/o"));
+    // The override is returned as written, not rejoined: an empty or relative
+    // path is refused elsewhere, and a caller's spelling is kept.
+    expect(sessionsRoot({ env, museHome: "/home/tester/.muse" })).toBe("/o");
 
     const noOverride = { XDG_DATA_HOME: "/d" } as NodeJS.ProcessEnv;
     expect(sessionsRoot({ env: noOverride, museHome: "/home/tester/.muse" })).toBe(

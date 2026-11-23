@@ -195,17 +195,20 @@ describe("host config", () => {
     expect(report.error).toBeTruthy();
   });
 
+  // The platform is an argument, but the join is the host's, so a POSIX
+  // expectation compared against it on Windows measures the separator. Build
+  // the expected string instead (E22).
   test("resolves the real config dir per platform", () => {
     expect(
       userMuseConfigDir({ platform: "linux", homeDirectory: "/home/u", env: {} }),
-    ).toBe("/home/u/.config/muse");
+    ).toBe(join("/home/u", ".config", "muse"));
     expect(
       userMuseConfigDir({
         platform: "linux",
         homeDirectory: "/home/u",
         env: { XDG_CONFIG_HOME: "/cfg" },
       }),
-    ).toBe("/cfg/muse");
+    ).toBe(join("/cfg", "muse"));
     expect(
       userMuseConfigDir({
         platform: "win32",
