@@ -66,7 +66,7 @@ jobs:
   # support claim: no `muse serve` runs.
   seam-windows:
     name: seam-windows (spawn contract, stub binary)
-    if: ${{ !contains(github.ref, 'ci/real') }}
+    if: ${{ !contains(github.ref, 'ci/real') && !contains(github.ref, 'ci/mac') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
