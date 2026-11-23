@@ -38,9 +38,10 @@ stderr, and its `policies` row reports each one by pointer and action, saying
 from `debug config` entirely, so a separate `config` row reports it once
 (E-D64). Because attribution is the stream and not a list of paths, a rejected
 file in any ancestor directory the host walked is reported as well (E-D66).
-`--strict` makes those two rows a gate: a `config` row, a `policies` warn, or a
-run that could not read the config exits 1, while the rows about the machine stay
-advisory (D69). Both rows rest on `--print-logs`, which the vendor documents as a
+Those two rows are a gate by default: a `config` row, a `policies` warn, or a run
+that could not read the config exits 1, while the rows about the machine stay
+advisory (D69, D75). `--no-strict` reports only; `--strict` also fails an explicit
+`--offline`, which the default exempts because the user asked it not to look (D76). Both rows rest on `--print-logs`, which the vendor documents as a
 debugging aid, and on message text — there is no structured diagnostics surface
 upstream, which is what `anomalyco/opencode#60252` asks for (D73).
 A Console-delivered policy

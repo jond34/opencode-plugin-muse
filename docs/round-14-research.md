@@ -16,6 +16,11 @@ Experiments E-D72–E-D76 are done; the tables are the evidence for every decisi
 
 ## 1. What the field does
 
+> Corrected in round 15: the Homebrew cell below inverted brew's default. `brew
+doctor` gates every finding (`fatal: true`), and round 15 §1 has the source and the
+manpage (E-D81). The polarity built on this table was reopened in
+`docs/round-15-research.md`.
+
 | Tool | Command | Contract | Source |
 |---|---|---|---|
 | nginx | `nginx -t` | non-zero on a config error; `-T` is the dump, `-t` is the gate | nginx docs |
