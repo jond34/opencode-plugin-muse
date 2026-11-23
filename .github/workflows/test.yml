@@ -10,6 +10,10 @@ permissions:
   contents: read
 
 jobs:
+  # Informational (D137): the fixtures lean POSIX — three test files touch
+  # chmod/0600, eight reference /tmp or /home — so a Windows failure here is a
+  # finding about the suite, not a claim about the plugin. The seam job below is
+  # the gate.
   offline:
     name: offline (${{ matrix.os }})
     strategy:
@@ -32,3 +36,30 @@ jobs:
       # it is not meaningful on PowerShell.
       - run: npm ci
       - run: npm run check:offline
+
+  # E11/E12: the Windows spawn contract, without Muse. A stub `muse.cmd`, a
+  # native binary renamed `muse-bin-9.9.9-R1.1.exe`, and a `.muse-version`
+  # pointer reproduce the installer's layout; `hostname.exe` stands in for the
+  # real binary so a successful spawn is observable. This proves the resolver
+  # and the EINVAL/ENOENT contract on a real Windows kernel — it is not a
+  # support claim: no `muse serve` runs.
+  seam-windows:
+    name: seam-windows (spawn contract, stub binary)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run build
+      - name: E11 spawn contract
+        shell: pwsh
+        run: node test/seam/windows-spawn.mjs
+      # Timeboxed and never gating: a hosted runner may reap the tree with a job
+      # object, which makes a clean result inconclusive rather than good news.
+      - name: E12 kill semantics (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: node test/seam/windows-kill.mjs
