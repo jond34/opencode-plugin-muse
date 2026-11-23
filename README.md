@@ -80,9 +80,12 @@ percentages rather than a per-turn cost.
   skill catalog are off, and its toolset is pinned to the bridge. The asymmetry
   is deliberate: MCP tools stay on through Muse while Muse's own tools stay off,
   and subagents and workflows stay disabled — a smaller surface with the same
-  reach is the whole point of the bridge, and each of those three would add a
-  path that does not cross opencode's permission engine. So the model's tool
-  surface is opencode's and every call crosses opencode's engine. That covers
+  reach is the whole point of the bridge. Their spawner tools are outside the
+  pinned toolset, a child would be a billed call whose own context opencode never
+  sees, and spawning belongs to opencode. It is not that a child would escape the
+  gate: Muse's children inherit the lead session's tools and permission boundary
+  and cannot widen them. So the model's tool surface is opencode's and every call
+  crosses opencode's engine. That covers
   the model, not the workspace. The plugin grants workspace
   trust because the bridge does not start without it: a repo's
   `.muse/hooks.json` commands and project skills then load outside opencode's
@@ -92,7 +95,14 @@ percentages rather than a per-turn cost.
   call is emitted into opencode, which decides and runs it — there is no private
   pre-check here to bypass, and the gate is opencode's (`allowAll`'s vendor
   justification is the same boundary: the client already holds the user's
-  ambient authority). The bridge's denial path is pinned by a test. Repo-supplied
+  ambient authority). The bridge's denial path is pinned by a test. `allowAll`
+  is measured, not assumed: `denyUnmatched` refuses every bridged call
+  (`deny_unmatched: no policy rule allows this action`), because Muse's saved
+  rules are command-prefix scoped and cannot name an MCP tool. Approval is
+  not the only layer: Muse's OS sandbox is independent of it and is never
+  disabled here, though it is inert while the toolset has no shell tool. A
+  managed policy plane, when one is present, can narrow the posture above the
+  plugin's sight. Repo-supplied
   Muse hooks (`project` handlers) are refused
   when a session opens: the host names every installed handler's origin, and a
   workspace file is accepted only after its exact hash is recorded

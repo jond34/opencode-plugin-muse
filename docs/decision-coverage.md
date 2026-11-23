@@ -65,6 +65,7 @@ still undispatched (`gh run list` shows no `test` run on `main`).
 | Mid-turn steering | `turn/steer` behind `supportsSteering` | H | `contract/adapter.ts:98` |
 | Interrupt / cancel | Yes, not durable across restart | D | R2-era decision |
 | Turn timeout on live sessions | Three clocks per turn, `0` disables each | H | `src/watchdog.ts`: first byte 900 s, idle 180 s after frames start, warn at 90 s; env-tunable (`MUSE_FIRST_BYTE_TIMEOUT_MS`, `MUSE_IDLE_TIMEOUT_MS`, `MUSE_IDLE_WARN_MS`). Only substantive frames count (item/delta, item lifecycle, approval, user input), never keepalives or usage echoes. Pinned by `test/watchdog.test.ts`. One-off turns keep their own 120 s |
+| Turn cap (model steps per turn) | None; opencode's budget is the ceiling | X | E-D29: `muse serve` rejects `--max-model-steps` — "unexpected argument", with the tip offering `--model` — and the flag is documented for `muse exec` only. The typings carry no step or spend member on `turn/start` either (the nine members are listed in the structured-output row), so this surface has nothing to set. Not a declined knob: the surface does not exist |
 | A bridged tool call that outlives the idle clock | Not distinguished from a wedge | U | U17: the clock measures host frames, and a `tools/call` executing in opencode sends none until it returns. Any tool over `MUSE_IDLE_TIMEOUT_MS` (180 s default) — a build, a test suite, a permission prompt nobody answers — fails the turn as `host_idle_timeout`, interrupts, and closes the host. The wire guide defines no keepalive or progress frame, and the approvals page says a pending approval "parks its turn indefinitely", so silence is the protocol's normal state for exactly the work this plugin delegates. Nothing in `session.ts` pauses the clock around the bridge |
 | Provider backoff as dead air | `turn/modelRetryScheduled` is unread | U | U18: the wire carries a durable "retrying in N s, attempt N/M" fact specifically so a streaming client does not show dead air (`msp.d.ts:3768`), and `grep -r retryScheduled src/` is empty. A long retry chain looks exactly like a wedge to both the user and the clock. The vendor's own Rust client pairs per-method deadlines with this notification rather than a whole-turn silence budget |
 | Retry / backoff | Disabled deliberately | D | edge table: `session.retry` disabled |
@@ -82,9 +83,13 @@ still undispatched (`gh run list` shows no `test` run on `main`).
 | Parallel tool calls | Transport's normal case | H | product-gaps §6 |
 | Per-call cancellation | Keyed by request id | H | `bridge.ts:263` |
 | Muse built-in tools | Pinned off | H | A11, A16 |
-| Muse subagents / workflows | Off by containment; activity ledger-only | D | A21, D21: README's Containment bullet states it and why — each would add a path that does not cross opencode's permission engine |
+| Muse subagents / workflows | Off by containment; activity ledger-only | D | A21, D21: the spawner tools are outside the pinned toolset, each child is a billed call whose context opencode never sees, and spawning belongs to opencode (owner, round 6). The old reason — "a path that does not cross opencode's permission engine" — was wrong: a child inherits the lead's tools and permission boundary and cannot widen it, so its calls would cross opencode like the parent's. Revisit only as a bridged `spawn` tool opencode calls by name |
 | MCP tools | `supportsMcpTools: true` | H | `capabilities.ts:49` |
-| Authority order: `allowAll` vs opencode's engine | Muse `allowAll`, opencode gates | D | A20, D21: structural, not a shortcut — the plugin has no tool executor (`session-registry.ts` emits the call into opencode), so there is no private pre-check to bypass; `test/bridge-denial.test.ts` pins the denied case; the vendor's own justification for exposing `allowAll` is the spawn boundary ("the client already holds the user's ambient authority"). README states it |
+| Authority order: `allowAll` vs opencode's engine | Muse `allowAll`, opencode gates | D | A20, D21: structural, not a shortcut — the plugin has no tool executor (`session-registry.ts` emits the call into opencode), so there is no private pre-check to bypass; `test/bridge-denial.test.ts` pins the denied case; the vendor's own justification for exposing `allowAll` is the spawn boundary ("the client already holds the user's ambient authority"). README states it. Round 6 measured the alternative instead of arguing it: under `denyUnmatched` a bridged call reaches `tool.started` and is refused with `deny_unmatched: no policy rule allows this action` (E-D24), and Muse's saved rules are command-prefix scoped, so no rule can name an MCP tool. `allowAll` is the only mode that lets a bridged call through, not merely the convenient one |
+| Muse's OS sandbox | On, never disabled, inert here | D | `serveArgs` passes no `--disable-sandbox`, and the vendor documents the sandbox as independent of approval: "Each layer works on its own. If you disable one layer, the other stays in place." It is inert because the pinned toolset has no shell tool, and MCP tools are explicitly unsandboxed, so the fence that actually holds is the allowlist. D29 keeps it on rather than removing a layer that costs nothing |
+| Runtime approval-mode switch | Available, unused | D | E-D23: all four modes are accepted mid-session — `applyOutcome: completed`, `source: approvalReconfigure`, `effectiveMode` folded — so the lever is real and opencode-side reasoning about "nobody else switches" does not apply to Muse. D31 keeps one mode because there is one tool source: the mode governs tools Muse itself would run, and it runs none. Reversing condition: a second tool source |
+| Muse's approval judge | Never on | D | `--approval-judge on|off` exists and is not passed. It is a billed reviewer between opencode's decision and the model's call, so turning it on would double-gate a call opencode has already decided, and under this toolset it would have nothing eligible to review |
+| In-process host hooks | Not available | X | The host reads hooks from a file — the `hooks` block, or `managed_hooks_path` — and the typings expose no callback registration, so a host hook cannot be a function in this process. `src/hooks.ts` reads and reports the file records instead |
 | Muse permission profiles | Rejected until stable | D | A20 |
 | Acceptance path for `plugin`-origin hooks | Refused, with only a per-run env var to get through | P | P5: `--trust-hooks` records the digest of `.muse/hooks.json`, but a handler whose origin is an installed Muse plugin has no file, so `hooksDigest` is null, `hooksTrusted` is false, and the record can never cover it. The documented acceptance path does not reach one of the two origins it blocks |
 | Tool output saturation marking | Ledger-only for native calls | D | A21, A3 |
@@ -141,6 +146,7 @@ still undispatched (`gh run list` shows no `test` run on `main`).
 | Vendor partnership / host identity | Not pursued; the plugin says it is unofficial | D | D14: no partnership is sought, and the README says unofficial, not affiliated, not endorsed. Asking is the only move that changes the category, and it is a decision to leave alone |
 | Published terms, privacy statement | README identity + on-disk paragraphs | D | D14: what the plugin holds (no credentials), what it writes (one ledger file, counts only), what it sends (nothing but the turns), and the MIT licence. No separate policy document: there is no server, no account, and no data collection to describe |
 | Platform support (Windows, macOS) | Tested on Linux only | U | `.github/workflows/test.yml` runs the offline suite on all three, `workflow_dispatch` only: configured, never dispatched, and `gh run list` on 2026-11-22 shows no `test` run. U16. The vendor supports all three (native binary, PowerShell installer, and a documented Windows list: PowerShell instead of Bash, a UAC prompt when the sandbox initialises, no voice, no session messaging), so spawn resolution is not the concern; the matrix would only prove the suite, whose hosts are `.mjs` fixtures under node, not the seam. What it would not answer either way: POSIX modes on the ledger and trust record; the shutdown ladder, which Windows cannot honour — Node's docs say `SIGTERM`/`SIGKILL` "terminate the process forcefully and abruptly", so "drain, then SIGTERM, then SIGKILL" collapses to one hard kill; and the UAC prompt, which spawned headless surfaces as `host_idle_timeout` |
+| Enterprise config planes | Present, empty | X | E-D28: `muse config validate --plane policy` accepts `{"schema_version":1}` and `{"schema_version":1,"settings":{}}`, and rejects every member tried — `approval_mode`, `run`, `tools`, `security`, `permissions`, `mcp`, `sandbox`, `allowed_approval_policies` and forty more — as `unknown_member` at `location=settings`. The `defaults` plane accepted `run`, so the validator works and the vocabularies differ. `muse config status --json` reports both planes `absent` here. So a managed lock exists as a mechanism with no usable vocabulary on 1.4.25, and `serve`'s posture ceiling ("posture up to managed policy") has nothing to read. Not surfaced in the doctor (D29): local health is the doctor's subject, and a plane that is absent on every machine it has seen is not local state |
 | opencode Effect API migration | Tripwire, stay on Promise | D | A19 |
 | Semver gate on host drift | Advisory by default; `MUSE_STRICT_HOST=1` refuses | H | `host-facts.ts:84-103` gates on no fingerprint, any drift tier, or no `sessionMcp`. Opt-in is the decision, not a placeholder: E-D5 measured the installed 1.4.25 host refusing against the 1.4.24 pin, so strict-by-default would break the normal case |
 
@@ -190,13 +196,23 @@ against `9c1dc6d` on 2026-11-22; the plan that closes them is
 
 ## Counts
 
-H 39 · D 34 · P 0 · X 2 · U 2 · (N not used: no row here is purely opencode's)
+H 39 · D 37 · P 0 · X 5 · U 2 · (N not used: no row here is purely opencode's)
 
-Seventy-five of seventy-seven rows are closed: thirty-nine verified and
-exercised, and thirty-four decided with a written reason. Two are impossible by
-rule (sampling controls, and one host per spawning party) rather than chosen.
-Two are open, both unmeasured rather than undecided: U16 needs the owner's
-GitHub session, and U26 needs one timestamped frame.
+Seventy-eight of eighty-three rows are closed: thirty-nine verified and
+exercised, thirty-seven decided with a written reason, and five absent rather
+than chosen — sampling controls, one host per spawning party, and round 6's
+three (a per-turn step cap on `serve`, in-process host hooks, a policy plane with
+no usable member on 1.4.25). Two are open, both unmeasured rather than
+undecided: U16 needs the owner's GitHub session, and U26 needs one timestamped
+frame.
+
+Round 6 opened six rows and closed all six: the approval-mode lever and the
+judge as decisions, the sandbox as the layer that survives an approval bypass,
+and three absences measured rather than assumed. The claim it corrected was the
+subagent row's reason (D21): a Muse child inherits the lead's tools and
+permission boundary and cannot widen them, so the old "a path that does not
+cross opencode" was wrong — the spawner tools are simply outside the pinned
+toolset, and spawning belongs to opencode.
 
 Round 4 closed the five rows it opened: U17, U18 and U19 (the first two were the
 only ones that failed a turn a user was entitled to) and P5 and P6 (a record

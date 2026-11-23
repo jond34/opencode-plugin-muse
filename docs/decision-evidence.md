@@ -497,6 +497,121 @@ loads and is reported as `preToolUse`, while a lowercase `preToolUse` key is
 silently ignored — empty catalog, nothing on stderr. Worth knowing when a
 workspace's hooks "do nothing".
 
+## Round 6 — the approval layer, measured
+
+The round-5 review claimed the plugin's containment story rested on an unstated
+choice: that `allowAll` was pinned with no runtime switch, that no layer survived
+a bypass, and that four knobs were absent rather than declined. Three free probes
+and three paid turns settle it. Probes are in `scratch/approval-modes.ts` and
+`scratch/approval-mode-turn.ts`.
+
+### E-D23 — is the runtime switch real? (free)
+
+One live session, started as the plugin starts it, then all four closed modes
+selected on the wire and read back:
+
+```
+started: {"lastCommandId":null,"mode":"allowAll","source":"startup"}
+denyUnmatched   → {"status":"accepted","applyOutcome":"completed","effectiveMode":{"mode":"denyUnmatched","source":"approvalReconfigure"}}
+onRequest       → {"status":"accepted","applyOutcome":"completed","effectiveMode":{"mode":"onRequest","source":"approvalReconfigure"}}
+promptUnmatched → {"status":"accepted","applyOutcome":"completed","effectiveMode":{"mode":"promptUnmatched","source":"approvalReconfigure"}}
+allowAll        → {"status":"accepted","applyOutcome":"completed","effectiveMode":{"mode":"allowAll","source":"approvalReconfigure"}}
+after: {"mode":"allowAll","source":"approvalReconfigure"}
+```
+
+No `select, never create` refusal: the host's configuration already defines all
+four, so a client may select any of them mid-session. The pin was ours, not a
+limit (D31).
+
+### E-D24 — what does `denyUnmatched` do to a bridged call? (three turns)
+
+Same session shape as the plugin uses, mode switched on the wire, one prompt:
+*use the `lookup` tool with q=hello, then reply with the result.* The bridge
+records whether `callTool` was reached.
+
+```
+control (allowAll)   1. bridge tool calls: 1 lookup
+                     2. approval requests: 0
+                     4. terminal: completed
+                     6. assistant text: Looking up “hello” for you. | ok
+                     7. event types: …,tool.started,tool.completed,…
+
+denyUnmatched (1st)  1. bridge tool calls: 0 (none)
+                     2. approval requests: 0   3. errors: 0   4. terminal: completed
+
+denyUnmatched (2nd)  1. bridge tool calls: 0 (none)
+                     6. assistant text: Looking up “hello” for you. | Lookup denied |
+                        : `deny_unmatched: no policy rule allows this action`
+                     7. event types: …,tool.started,tool.completed,…
+```
+
+The first run is kept on purpose. On its own it reads as "the model never tried",
+which is why it is not evidence; the control is what makes the second run
+interpretable. With the mode denying, the call still reaches `tool.started` and
+`tool.completed`, the bridge's `callTool` is never invoked, and the model is told
+`deny_unmatched: no policy rule allows this action`. Muse's saved rules are
+command-prefix scoped ("save a rule for this command's prefix"), not tool-name
+globs, so nothing a user or this plugin can write would match a bridged MCP tool.
+`denyUnmatched` and the bridge cannot coexist.
+
+### E-D25, E-D26 — not run
+
+`onRequest` and `promptUnmatched` were the remaining modes. After E-D24 and
+E-D28 neither has a path to a working bridge: they would raise an approval for
+every bridged call, which is the second gate opencode has already replaced. The
+product answer closed the last door as well — an approval is acceptable only
+inside opencode's UI, and a Muse approval is a Muse surface. One paid turn of the
+four was left unspent rather than spent to confirm a mode we would not ship.
+
+### E-D28 — what does the policy plane accept? (free)
+
+`muse config validate --plane policy --file` over 45 candidate members:
+
+```
+{"schema_version":1}                        valid: plane=policy schema_version=1
+{"schema_version":1,"settings":{}}          valid: plane=policy schema_version=1
+{"schema_version":1,"settings":{"permissions":{}}}  enterprise_document_invalid: plane=policy reason=unknown_member location=settings
+… approval_mode, run, tools, security, mcp, sandbox, allowed_approval_policies,
+  hooks, managed_hooks_path, agents, telemetry, network, limits … same refusal
+{"schema_version":2,"settings":{}}          enterprise_schema_unsupported: reason=unsupported_schema_version
+--plane defaults {"settings":{"run":{}}}     valid: plane=defaults schema_version=1
+--plane defaults {"settings":{"approval_mode":"never"}}  unknown_member
+```
+
+The validator works and the two planes have different vocabularies: `defaults`
+accepts `run`, `policy` accepted none of the 45 names tried. `muse config status
+--json` reports both planes `absent` on this machine. So an enterprise lock is a
+mechanism with no usable member on 1.4.25 — which also means `serve`'s posture
+ceiling ("posture up to managed policy") has nothing to read.
+
+### E-D29 — is there a per-turn cap on `serve`? (free)
+
+```
+$ muse serve --max-model-steps 5
+muse serve: unexpected argument '--max-model-steps' found
+  tip: a similar argument exists: '--model'
+```
+
+The cap exists on `muse exec` and not on the surface this plugin drives, and the
+typings have no step or spend member on `turn/start`. Absent, not declined.
+
+### Decisions taken (round 6)
+
+- **D27** `allowAll` stays, now measured: it is the only mode in which a bridged
+  call reaches `callTool`. A denying mode refuses it before the bridge sees it.
+- **D28** subagents and workflows stay off, and the reason is corrected: their
+  spawner tools are outside the pinned toolset, a child is a billed call whose
+  context opencode never sees, and spawning belongs to opencode. A Muse child
+  inherits the lead's tools and permission boundary and cannot widen them, so the
+  old "path that does not cross opencode" was wrong.
+- **D29** the sandbox stays on and is never disabled; it is the layer independent
+  of approval, inert here only because the toolset has no shell tool. No doctor
+  row for the config planes: local health is the doctor's subject.
+- **D30** six rows opened and closed (turn cap, in-process hooks and the planes as
+  absent; the judge, the runtime lever and the sandbox as decisions).
+- **D31** one mode, no mid-session switching, because there is one tool source.
+  Reversing condition recorded: a second tool source.
+
 ## Decisions taken
 
 These were owner calls, not experiments. The owner approved every experiment and
