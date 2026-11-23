@@ -432,6 +432,14 @@ it is the measurement D22 wanted. Then:
   frame at 36.7 s did not reset the clock. So the plugin reported a timeout for
   a turn the host had recorded as completed 6.6 s earlier.
 
+**Corrected in round 7 (E-D32).** That last bullet is an instrument error. The
+probe registered `connection.onNotification`, which is a *setter* — assigning it
+replaced the host's own router (`src/host.ts:348`) — so the adapter heard no
+frames after the bridge settled and its idle clock expired on frames the host
+had sent. With additive listeners the same shape of turn settles `completed`
+17.4 s in. The suspension measurement above stands; "the plugin failed a
+completed turn" does not.
+
 **What this settles.** D16's suspension is real on a live host, not only against
 a fixture. `task/background` is closed for bridged calls. And the end-of-turn
 gate is a phase the clock does not know about — see U26.
@@ -611,6 +619,187 @@ typings have no step or spend member on `turn/start`. Absent, not declined.
   absent; the judge, the runtime lever and the sandbox as decisions).
 - **D31** one mode, no mid-session switching, because there is one tool source.
   Reversing condition recorded: a second tool source.
+
+## Round 7 — the residual ledger
+
+Answers the "Against consensus" note quoted in `round-7-plan.md` §1. Free probes
+against Muse 1.4.25 and opencode 2.3.2, one paid turn run twice (once with a
+broken instrument, once corrected). Raw logs are in `scratch/cfg/`.
+
+### E-D30 — what a managed plane can actually set (free)
+
+`muse config validate --plane <defaults|policy> --file` over 15 documents, both
+planes (`scratch/cfg/e-d30.sh`, output `e-d30.log`). Trimmed to the verdicts:
+
+```
+defaults {"model":"x"}                        -> valid: member=settings.model state=active binds=defaults user_overridable=true
+defaults {"run":{"toolset":[]}}               -> valid: member=settings.run.toolset state=active binds=defaults user_overridable=true
+defaults {"run":{"workflow_trigger_mode":"off"}} -> valid: member=settings.run.workflow_trigger_mode state=active binds=defaults user_overridable=true
+defaults {"permissions":{"default_profile":"read-only"}} -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+defaults {"run":{"approval_mode":"untrusted"}} -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings.run
+defaults {"hooks":{}}                          -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+defaults {"mcp":{}}                            -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+defaults {"runtime_capabilities":{}}           -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+defaults {"session_retention_days":30}         -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+defaults {"allowed_approval_policies":["untrusted"]} -> enterprise_document_invalid: plane=defaults reason=unknown_member location=settings
+policy   {"schema_version":1}                 -> valid: plane=policy schema_version=1
+policy   {"run":{}}                           -> enterprise_document_invalid: plane=policy reason=unknown_member location=settings
+policy   {"model":"x"}                        -> enterprise_document_invalid: plane=policy reason=unknown_member location=settings
+policy   {"permissions":{"default_profile":"read-only"}} -> enterprise_document_invalid: plane=policy reason=unknown_member location=settings
+```
+
+The plane whose name implies a lock accepts nothing. The plane that binds has
+four members and every one is `user_overridable=true`. The plugin's private
+`settings.json` is a user settings file (`src/host-config.ts:218-245`), so an
+admin's `run.toolset` default loses to the plugin's `mcp__opencode__*` pin: on
+1.4.25 an enterprise cannot even narrow the toolset against this plugin.
+
+### E-D31 — the permission-profile catalog (free)
+
+Run 1, on the handshake the plugin actually sends (`scratch/permission-profile.ts`):
+
+```
+permissionProfile/list -> error: permissionProfile/list requires experimentalApi capability
+start with unknown id  -> command … rejected: no profile definitely-not-a-profile in the host catalog
+pin :read-only         -> permissionState: null
+pin :unrestricted      -> permissionState: null
+no pin                 -> permissionState: null
+```
+
+Run 2, with `capabilities.experimentalApi: true`
+(`scratch/permission-profile-experimental.ts`):
+
+```
+initialize -> granted=["sessionMcp"]
+permissionProfile/list -> {"profiles":[
+  {"available":true,"profileId":":read-only","label":"Read only","reviewerAuthority":"human"},
+  {"available":true,"profileId":":ask-me","label":"Ask me","reviewerAuthority":"human"},
+  {"available":true,"profileId":":auto-review","label":"Auto-review","reviewerAuthority":"autoReview"},
+  {"available":true,"profileId":":unrestricted","label":"Unrestricted","reviewerAuthority":"none"}]}
+pin :read-only     -> {"approval":"onRequest","filesystem":"sandboxed","network":"restricted","reviewer":"human"}
+pin :unrestricted  -> {"approval":"allowAll","filesystem":"unrestricted","network":"enabled","reviewer":"none"}
+pin :ask-me        -> {"approval":"onRequest","filesystem":"sandboxed","network":"off","reviewer":"human"}
+no pin             -> {"approval":"onRequest","filesystem":"sandboxed","network":"off","reviewer":"autoReview"}  (profileId :auto-review)
+```
+
+`:read-only` survived a `session/read` after the start, so the pin is recorded,
+not just acknowledged. What the plugin cannot do is *see* it: the catalog and
+`permissionState` are experimental, and the plugin requests only `sessionMcp`.
+
+### E-D32 — the end-of-turn gate, timestamped (1 paid turn, run twice)
+
+**Run 1** (60 s window, `scratch/eot-gate.ts` as first written): every frame was
+seen by the probe, `turn/completed terminal="completed"` arrived at 17.9 s, and
+the adapter still failed the turn at 70.9 s with `host_idle_timeout`. The gap was
+exactly 60 s after the bridged call settled — the adapter had heard nothing else.
+
+Cause: `Connection.onNotification(handler)` is a setter
+(`node_modules/@muse-code/sdk/dist/src/connection/connection.js:299-301`), and the
+probe assigned it after `openSession`, replacing the host's router. Round 5's
+E-D19 probe did the same thing.
+
+**Run 2** (same turn shape, `addNotificationListener` instead):
+
+```
+  2949ms tools/call sleep_ms ms=6000
+  8949ms tools/call returning
+ 11123ms FRAME turn/foregroundCompleted
+ 17406ms item/completed (last substantive frame)
+ 17423ms FRAME turn/completed terminal="completed"
+ 17423ms adapter turn.terminal status=completed failure=null
+```
+
+So the frame arrives, the adapter settles the turn, and `onTurnCompleted` stops
+the clock as written. The gate is 6.3 s of silence between
+`turn/foregroundCompleted` and completion, but an item completes at its edge, so
+the idle clock never sees it in this shape. The residual is narrow and real: a
+gate longer than the idle window, with no item frame inside it, would still trip
+the clock — and `turn/foregroundCompleted` is the host's own non-terminal "still
+working" signal, which the plugin did not count.
+
+### E-D33 — which sandbox flags `serve` takes (free)
+
+`muse serve --help` (1.4.25), verbatim:
+
+```
+Sandbox posture (fixed for the host's lifetime; only the default where each session may choose its own):
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this host
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+```
+
+and, from the same help: "Approval mode is the other way round — it is selected
+on the wire, so there is no approval flag here." `serveArgs`
+(`src/host.ts:72-83`) passes `--preset`, `--contributor-mode`, `--trust-workspace`,
+`--disable-write`, `--disable-request-user-input` and nothing else: no
+`--disable-sandbox`, no `--sandbox-network`, no `--disable-shell`.
+
+### E-D34 — the matrix, blocked (free)
+
+```
+$ gh workflow run test.yml
+HTTP 404: workflow test.yml not found on the default branch
+  (https://api.github.com/repos/jond34/opencode-plugin-muse/actions/workflows/test.yml)
+```
+
+`git ls-tree origin/main -- .github/workflows/` lists `publish.yml` only;
+`test.yml` exists on local `HEAD` (`7ce5721`), which is 60 commits ahead of
+`origin/main` (`56d4ca0`). A dispatch runs a ref that exists remotely, so the
+workflow cannot be exercised without a push, which this round does not do. U16's
+*mechanism* question is therefore unanswered rather than answered negatively —
+the record must not say "the workflow does not work".
+
+### E-D35 — what the ACP shim actually is (free)
+
+`pi-is314/opencode-acp-client` README, quoted:
+
+```
+opencode v2 TUI ──HTTP + SSE──▶ opencode-acp-client ──ACP stdio──▶ any ACP agent
+```
+
+Its `docs/ACP-MATRIX.md` says `session/request_permission` is implemented and
+powers "the permission dialog: `permission.asked` →
+`/api/session/:id/permission/:rid/reply` → `permission.replied`"; `fs/read_text_file`
+and `fs/write_text_file` are refused with `-32601` ("use the agent's own tools");
+and under capability degradation: "MCP support (`mcpCapabilities.*`) — Everything
+else — Nothing to configure: the client is not an MCP host and serves no MCP
+server list, so the sidebar's MCP section stays empty." Known gaps: "pty, MCP
+auth, provider OAuth, worktree changes, revert/share, most of `/tui/*`".
+
+So the TUI *can* answer the agent's own permission requests — the one place the
+note is right that the shim carries something — while opencode's engine, its
+rules and its tools are absent. It is not an MCP host, so opencode's tools cannot
+be handed to the agent at all. That is "none of the control surface", not "less".
+
+### Decision lines
+
+- **D32** the containment paragraph says one gate (opencode's rules), one
+  allowlist (`mcp__opencode__*`), no isolation, and a `deny` rule as the only
+  hard stop; a copyable block ships under "A hard stop, if you want one".
+- **D33** no profile is pinned; the sentence is qualified, and the README says a
+  user's `:unrestricted` default removes Muse's sandbox.
+- **D34** `turn/foregroundCompleted` counts as progress — the gate's opening
+  re-arms the idle clock instead of being read as a wedge — with a test that
+  fails without the line.
+- **D35** the ACP route stays closed, re-premised on the shim's architecture and
+  its absence as an MCP host; reopening condition is an ACP client inside
+  opencode's engine that registers opencode's tools as an MCP server.
+- **D36** no client-side turn cap; the wire has no step or spend member and an
+  interrupt would fire after the spend it exists to prevent.
+
+### What this round does not settle
+
+- The `opencode_bash` action name in the README's deny block comes from
+  opencode's V2 action table (`<server>_<tool>`); it was not exercised against a
+  bridged call.
+- Windows and macOS remain unmeasured (E-D34 blocked).
+- Whether a host ever omits `turn/foregroundCompleted` is unknown; if it does,
+  the clock behaves as it did before D34.
 
 ## Decisions taken
 
