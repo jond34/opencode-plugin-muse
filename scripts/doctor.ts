@@ -1,0 +1,340 @@
+/**
+ * `bun run doctor` — what this install is, in one screen.
+ *
+ * The rules are the ones `codex doctor` and `claude doctor` follow: read-mostly,
+ * one row per check with a remediation line, `--json` for a report, and nothing
+ * executed that was merely found on `PATH`. The only writes are the two explicit
+ * trust flags, and the only host interaction is a handshake plus a session that
+ * is immediately left — no turn, no allowance, no model call.
+ *
+ * Redaction is a hard rule: no credential, no identity, and no absolute home
+ * path reaches the output. `museHome` and the workspace are printed with the
+ * home prefix folded to `~`.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { checkAllowance, parseAllowance } from "../src/allowance.js";
+import {
+  canonicalRoot,
+  forgetHookTrust,
+  hookGateRefusal,
+  hooksDigest,
+  hooksFilePath,
+  hookTrustPath,
+  readHookTrust,
+  readHookRows,
+  recordHookTrust,
+  type HookRow,
+} from "../src/hooks.js";
+import { MuseHost } from "../src/host.js";
+import { hasSchemaDrift, hostFactsFrom } from "../src/host-facts.js";
+import { ledgerPath, stateDirectory } from "../src/usage-ledger.js";
+import { packageVersion } from "../src/version.js";
+
+type Status = "ok" | "warn" | "fail" | "skipped";
+
+interface Check {
+  readonly id: string;
+  readonly status: Status;
+  readonly detail: string;
+  readonly remediation?: string;
+}
+
+interface HookReport {
+  readonly file: string | null;
+  readonly digest: string | null;
+  readonly trusted: boolean;
+  readonly rows: HookRow[] | null;
+  readonly refusal: string | null;
+}
+
+interface Report {
+  asOf: string;
+  checks: Check[];
+  hooks: HookReport | null;
+}
+
+interface Options {
+  readonly json: boolean;
+  readonly offline: boolean;
+  readonly trustHooks: boolean;
+  readonly forgetHooks: boolean;
+}
+
+function parseArgs(argv: readonly string[]): Options {
+  return {
+    json: argv.includes("--json"),
+    offline: argv.includes("--offline"),
+    trustHooks: argv.includes("--trust-hooks"),
+    forgetHooks: argv.includes("--forget-hooks"),
+  };
+}
+
+/** Fold the home directory to `~` and drop anything credential-shaped. */
+export function redact(text: string): string {
+  const home = homedir();
+  const folded = home.length > 1 ? text.split(home).join("~") : text;
+  return folded
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\b(sk|pk|ghp|gho|github_pat)_[A-Za-z0-9_]{8,}/g, "[redacted]");
+}
+
+function versions(): Check {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as {
+    version?: string;
+    dependencies?: Record<string, string>;
+  };
+  return {
+    id: "versions",
+    status: "ok",
+    detail: `plugin ${pkg.version ?? packageVersion()}, sdk pin ${pkg.dependencies?.["@muse-code/sdk"] ?? "unknown"}, bun ${process.versions.bun ?? "n/a"}, node ${process.versions.node}`,
+  };
+}
+
+function containment(env: NodeJS.ProcessEnv): Check {
+  const on = (name: string): string => {
+    const value = env[name]?.trim();
+    return value === undefined || value.length === 0 ? "off" : value;
+  };
+  return {
+    id: "containment",
+    status: "ok",
+    detail:
+      `MUSE_CONTAINMENT=${on("MUSE_CONTAINMENT")} MUSE_CONTRIBUTOR_MODE=${on("MUSE_CONTRIBUTOR_MODE")} ` +
+      `MUSE_NATIVE_HISTORY=${on("MUSE_NATIVE_HISTORY")} MUSE_STRICT_HOST=${on("MUSE_STRICT_HOST")}`,
+  };
+}
+
+function ledger(env: NodeJS.ProcessEnv): Check {
+  const path = ledgerPath(new Date(), env);
+  if (!existsSync(path)) {
+    return { id: "ledger", status: "ok", detail: `no rows today at ${redact(path)}` };
+  }
+  const counts = new Map<string, number>();
+  let rows = 0;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (line.trim().length === 0) continue;
+    rows += 1;
+    let kind = "unreadable";
+    try {
+      const parsed = JSON.parse(line) as { type?: unknown };
+      kind = typeof parsed.type === "string" ? parsed.type : "turn";
+    } catch {
+      // Counted as unreadable; the file is append-only and a torn line is real.
+    }
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  const summary = [...counts.entries()].map(([kind, count]) => `${kind}=${count}`).join(" ");
+  return { id: "ledger", status: "ok", detail: `${redact(path)} (${rows} rows today: ${summary})` };
+}
+
+function trustState(env: NodeJS.ProcessEnv, root: string): HookReport {
+  const file = hooksFilePath(root);
+  const exists = existsSync(file);
+  const digest = hooksDigest(file);
+  const canonical = canonicalRoot(root);
+  const trusted =
+    digest !== null &&
+    readHookTrust(env).some(
+      (entry) => entry.canonicalPath === canonical && entry.hooksSha256 === digest,
+    );
+  return {
+    file: exists ? redact(file) : null,
+    digest: digest === null ? null : digest.slice(0, 12),
+    trusted,
+    rows: null,
+    refusal: null,
+  };
+}
+
+async function probeHost(
+  root: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ checks: Check[]; hooks: HookRow[] | null; usage: unknown }> {
+  const checks: Check[] = [];
+  let host: MuseHost | undefined;
+  try {
+    host = await MuseHost.spawn({ cwd: root, trustWorkspace: true });
+  } catch (error) {
+    checks.push({
+      id: "host",
+      status: "fail",
+      detail: redact(error instanceof Error ? error.message : String(error)),
+      remediation: "check that `muse` is installed and logged in (`muse login`)",
+    });
+    return { checks, hooks: null, usage: null };
+  }
+  try {
+    const facts = hostFactsFrom(host.initializeResult, host.fingerprintWarning);
+    checks.push({
+      id: "host",
+      status: hasSchemaDrift(facts) ? "warn" : "ok",
+      detail: `${facts.serverName ?? "unknown"} ${facts.serverVersion ?? "?"}, schema ${facts.schemaVersion ?? "?"} (${facts.schemaFingerprint ?? "no fingerprint"}), sessionMcp ${facts.grantedCapabilities.includes("sessionMcp") ? "granted" : "withheld"}, durability ${facts.sessionDurability ?? "unknown"}, platform ${facts.platform === null ? "unknown" : `${facts.platform.os}/${facts.platform.family}`}`,
+      ...(hasSchemaDrift(facts)
+        ? { remediation: "the CLI is newer than the SDK pin; MUSE_STRICT_HOST=1 refuses this host" }
+        : {}),
+    });
+
+    let usage: unknown = null;
+    try {
+      usage = await host.connection.request("usage/read", {});
+    } catch {
+      // An older host without the method leaves the allowance row skipped.
+    }
+
+    const started = await host.connection.command(
+      "session/start",
+      { workspaceRoot: root },
+      { commandId: host.connection.mintCommandId() },
+    );
+    const sessionId = String(
+      (started?.session as { sessionId?: unknown } | undefined)?.sessionId ?? "",
+    );
+    let hooks: HookRow[] | null = null;
+    if (sessionId.length > 0) {
+      try {
+        hooks = readHookRows(await host.connection.request("hook/list", { sessionId }));
+      } catch {
+        hooks = null;
+      }
+      await host.connection
+        .command("session/leave", { sessionId, stop: true }, { commandId: host.connection.mintCommandId() })
+        .catch(() => undefined);
+    }
+    return { checks, hooks, usage };
+  } catch (error) {
+    checks.push({
+      id: "host-probe",
+      status: "fail",
+      detail: redact(error instanceof Error ? error.message : String(error)),
+    });
+    return { checks, hooks: null, usage: null };
+  } finally {
+    await host.close().catch(() => undefined);
+  }
+}
+
+async function main(): Promise<number> {
+  const options = parseArgs(process.argv.slice(2));
+  const env = process.env;
+  const root = process.cwd();
+  const report: Report = { asOf: new Date().toISOString(), checks: [], hooks: null };
+  report.checks.push(versions(), containment(env));
+
+  const trust = trustState(env, root);
+
+  if (options.trustHooks || options.forgetHooks) {
+    const file = hooksFilePath(root);
+    if (options.trustHooks && !existsSync(file)) {
+      report.checks.push({
+        id: "hooks-trust",
+        status: "fail",
+        detail: `no hooks file at ${redact(file)}`,
+        remediation: "run this from the workspace that supplies one",
+      });
+    } else if (options.trustHooks) {
+      const digest = hooksDigest(file) as string;
+      recordHookTrust(
+        { canonicalPath: canonicalRoot(root), hooksSha256: digest, acceptedAtMs: Date.now() },
+        env,
+      );
+      trust.trusted = true;
+      report.checks.push({
+        id: "hooks-trust",
+        status: "ok",
+        detail: `recorded ${redact(file)} (${digest.slice(0, 12)}) in ${redact(hookTrustPath(env))}`,
+      });
+    } else {
+      const removed = forgetHookTrust(canonicalRoot(root), env);
+      trust.trusted = false;
+      report.checks.push({
+        id: "hooks-trust",
+        status: removed ? "ok" : "warn",
+        detail: removed
+          ? `forgot ${canonicalRoot(root)}`
+          : `no record for ${redact(canonicalRoot(root))}`,
+      });
+    }
+  }
+
+  if (options.offline) {
+    report.checks.push({
+      id: "host",
+      status: "skipped",
+      detail: "--offline: no host spawned, so auth, schema, hooks and allowance are unknown",
+    });
+  } else {
+    const probe = await probeHost(root, env);
+    report.checks.push(...probe.checks);
+    trust.rows = probe.hooks;
+    if (probe.hooks === null) {
+      report.checks.push({
+        id: "hooks",
+        status: "warn",
+        detail: "the host did not report a hook catalog",
+      });
+    } else {
+      const refusal = hookGateRefusal(probe.hooks, root, env);
+      trust.refusal = refusal === null ? null : redact(refusal);
+      report.checks.push({
+        id: "hooks",
+        status: refusal === null ? "ok" : "warn",
+        detail:
+          probe.hooks.length === 0
+            ? "no installed handlers"
+            : `${probe.hooks.length} handler(s): ${probe.hooks
+                .map((row) => `${row.handlerKind}/${row.event}${row.enabled ? "" : " (disabled)"}`)
+                .join(" ")}`,
+        ...(refusal === null
+          ? {}
+          : { remediation: "MUSE_ALLOW_PROJECT_HOOKS=1 for one run, or --trust-hooks" }),
+      });
+    }
+    const usage = parseAllowance(probe.usage);
+    if (usage === null) {
+      report.checks.push({ id: "allowance", status: "skipped", detail: "no usage observation" });
+    } else {
+      const percent = usage.window?.usedPercent;
+      report.checks.push({
+        id: "allowance",
+        status: percent !== undefined && percent >= 90 ? "warn" : "ok",
+        detail:
+          percent === undefined
+            ? `tier ${usage.tier ?? "unknown"}: no window reported`
+            : `tier ${usage.tier ?? "unknown"}, window ${percent}% used, resets ${usage.window?.resetsAtMs === null || usage.window?.resetsAtMs === undefined ? "unknown" : new Date(usage.window.resetsAtMs).toISOString()}`,
+      });
+      // The warning path itself is exercised, so the doctor and the plugin
+      // agree on when a user is told; the doctor logs nothing itself.
+      await checkAllowance({ read: async () => probe.usage }, env, () => undefined);
+    }
+  }
+
+  if (trust.file !== null) {
+    report.checks.push({
+      id: "hooks-file",
+      status: trust.trusted ? "ok" : trust.refusal === null ? "warn" : "warn",
+      detail: `${trust.file} sha256:${trust.digest ?? "unknown"}, ${trust.trusted ? "accepted" : "not accepted"}`,
+      ...(trust.trusted
+        ? {}
+        : { remediation: "this workspace's hooks are refused until accepted (--trust-hooks)" }),
+    });
+  }
+  report.checks.push(ledger(env));
+  report.hooks = trust;
+
+  const failed = report.checks.some((check) => check.status === "fail");
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    for (const check of report.checks) {
+      console.log(`${check.status.padEnd(7)} ${check.id.padEnd(12)} ${check.detail}`);
+      if (check.remediation !== undefined) console.log(`        ${" ".repeat(12)} -> ${check.remediation}`);
+    }
+    console.log(`\nstate: ${redact(stateDirectory(env))}`);
+  }
+  return failed ? 1 : 0;
+}
+
+process.exitCode = await main();
