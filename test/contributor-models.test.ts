@@ -95,6 +95,20 @@ describe("toModelInfo", () => {
     expect(info.settings?.compaction).toBeUndefined();
   });
 
+  // The plugin-path probe (E-D124) showed a provider with canonical: "meta"
+  // keeping its own model limits; opencode copies the label, not the catalog's
+  // numbers. Pin the local half: the record's limits win, and `canonical` is
+  // left to the provider so there is one source for the label.
+  test("keeps the model record's limits and leaves canonical to the provider", () => {
+    const info = toModelInfo(providerID, {
+      modelId: "muse-spark-1.3",
+      contextLimit: 111111,
+      outputLimit: 22222,
+    });
+    expect(info.limit).toEqual({ context: 111111, output: 22222 });
+    expect(info.canonical).toBeUndefined();
+  });
+
   test("names contributor entries the way models.dev does", () => {
     const name = (modelId: string) =>
       toModelInfo(providerID, { modelId, displayLabel: modelId }).name;
