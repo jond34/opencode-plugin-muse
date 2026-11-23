@@ -233,14 +233,15 @@ against `9c1dc6d` on 2026-11-22; the plan that closes them is
 
 H 41 · D 34 · P 1 · X 5 · U 1 · N 3
 
-Eighty-three of eighty-four rows are closed: forty verified and exercised,
+Eighty-four of eighty-five rows are closed: forty-one verified and exercised,
 thirty-four decided with a written reason, one partial, and five absent rather than chosen —
 sampling controls, one host per spawning party, in-process host hooks, a policy
 plane with no usable member on 1.4.25, and a `policies` deny of this plugin that
 no code of ours can see. One is open, unmeasured rather than undecided: U16,
-which needs the matrix workflow on a branch that exists remotely. The two N rows are opencode's: OS isolation for a bridged call,
-which the harness owns and does not provide, and the turn cap, which opencode's
-`agent.steps` supplies off by default. Round 7 also corrected the rows that still said U or P for
+which needs the matrix workflow on a branch that exists remotely. The three N rows are opencode's: OS isolation for a bridged call,
+which the harness owns and does not provide, the turn cap, which opencode's
+`agent.steps` supplies off by default, and two installs of the same package,
+where opencode loads one instance per package name and the first entry wins. Round 7 also corrected the rows that still said U or P for
 questions closed in rounds 4 and 5 (the idle clock, provider backoff, the
 `plugin`-origin hook path, the allowance warning), which is why the counts moved
 by more than this round's two new rows.
