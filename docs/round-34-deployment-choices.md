@@ -38,7 +38,9 @@ not a choice; it is a prerequisite for any publish.
   `npm unpublish` is limited (72 hours for new packages, then conditions), so
   the real rollback is `npm deprecate` plus a fixed version.
 - Moving `latest` back does not help consumers whose range resolves the bad
-  version; only a deprecation message reaches them.
+  version; only a deprecation message reaches them. Publishing under a
+  non-`latest` tag does not hide the version from ranges either: the version
+  is in the packument, and a range matches versions, not tags.
 - Since 2026-07-28 npm scans a version before it becomes available, typically
   5–15 minutes; since 2026-09-03 the stage approve button is disabled until
   the scan completes. A hold or block is a real branch; re-staging does not
@@ -58,7 +60,7 @@ not a choice; it is a prerequisite for any publish.
 |---|---|---|
 | **A. Publish `0.1.13` to `latest`** | Stage, verify, owner approves; users can install; provenance public | Version immutable; `latest` movable; deprecate for range users |
 | **B. Leave one verified stage pending** | No public version; stage reserves `0.1.13` | Reject later, or approve later |
-| **C. Publish `0.1.13` to `next` only** | Public and verifiable, but `latest` stays `0.1.12`; promote later | Version immutable; `latest` can be promoted |
+| **C. Publish `0.1.13` to `next` only** | Public and verifiable; `latest` stays `0.1.12` for bare/tag installs; promote later | Version immutable; `latest` can be promoted |
 | **D. Publish `0.2.0` to `latest`** | Renumber, rebuild, stage, approve | Same as A |
 | **E. Do not stage or publish** | Keep working privately | Nothing burned |
 
@@ -93,17 +95,19 @@ rejected. A forgotten stage is release debt.
 
 ### Steelman C
 
-A `next` publish gives a public, provenance-bearing artifact with a smaller
-blast radius: `latest` stays on `0.1.12`, and only users who opt into `next`
-see it. It supports a soak before promotion. For a release that changes
-defaults, that is a real risk reduction.
+A `next` publish gives a public, provenance-bearing artifact while `latest`
+stays on `0.1.12`. Bare `npm install pkg` and `pkg@latest` consumers stay on the
+old version, and users who explicitly opt into `next` can test the release
+before promotion. Provenance becomes publicly verifiable without moving the
+default channel.
 
 ### Strawman C
 
-`next` is a second-class channel; bare opencode installs and normal npm
-installs do not see it. Promotion is another write (and possibly another 2FA),
-and the version is still immutable. For a small plugin, the extra channel may
-buy more ceremony than signal.
+`next` is not a true canary for range consumers. A version published under any
+tag is still in the packument, so `^0.1.0` resolves `0.1.13` even while
+`latest` points at `0.1.12`. Only a version outside the range (for example
+`0.2.0`) or a prerelease is actually held back from `^0.1` users. Promotion is
+another write, and the version is still immutable.
 
 ### Risks
 
@@ -113,16 +117,17 @@ buy more ceremony than signal.
 | npm scan hold/block | Low–medium | Delay; possible appeal | Wait; do not re-stage; appeal if blocked |
 | Stage content differs from candidate | Low | Stop before approve | File-list and per-file hash comparison |
 | Owner 2FA unavailable | Medium | No publish | Leave stage pending |
-| `latest` moves to a bad version | Low | Range users get it | Move `latest` back; deprecate; publish fix |
+| `latest` moves to a bad version | Low | Range users get it | Move `latest` back; deprecate; publish fix. A `next` tag does not shield ranges |
 | Packaged copy still says “not published” | High if unfixed | Permanent false claim | O45 before any rebuild |
 
 ### Recommendation
 
 **A** after O45 and F2, if you are ready to own a public version. Choose **C**
-if you want a soak and are willing to promote later. Choose **B** if you are
-not ready; it is a clean stop, not a failure. Do not choose **E** unless you
-are also pausing the release work, because it leaves the hardening unavailable
-indefinitely.
+if you want a soak for bare/tag installs, but do not call it a range canary:
+`^0.1` consumers can still resolve `0.1.13`. If you want a real canary, use
+`0.2.0-rc.1` on `next` or `0.2.0`. Choose **B** if you are not ready; it is a
+clean stop, not a failure. Do not choose **E** unless you are also pausing the
+release work, because it leaves the hardening unavailable indefinitely.
 
 ## Decision 2: rehearse reject first?
 
@@ -266,9 +271,11 @@ changes defaults and hook behavior, and npm caret users should opt in. **A** if
 you treat 0.x as no compatibility promise and want the hardening to reach
 `^0.1` users automatically. My lean is **B**, because the changelog’s own
 “Containment and private host configuration” section describes behavior users
-will notice, not a bug fix. This is the one decision where I would not hide
-behind a default; it is a product-intent question: is `0.1.13` a patch to the
-`0.1` line, or the start of a containment line?
+will notice, not a bug fix. It also has a deployment side effect: a version
+outside `^0.1` is the only reliable way to keep the release away from range
+consumers. This is the one decision where I would not hide behind a default;
+it is a product-intent question: is `0.1.13` a patch to the `0.1` line, or the
+start of a containment line?
 
 ## Cross-cutting risks
 
