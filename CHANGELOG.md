@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1
+
+Documentation-only patch. No source, `dist/`, dependency, or export changes; the
+`.`, `./tui`, provider id, `MUSE_*` variables, and model behaviour are the same as
+`1.0.0`.
+
+- The npm page now shows the same README as GitHub: the demo GIF, the quickstart,
+  and the `opencode.jsonc` pin. npm renders the README from the published
+  tarball, so this needed a version.
+- `package.json` gains `homepage`, so the npm sidebar links to this repository's
+  README next to the existing `repository` link.
+- The install and config pins name `1.0.1`.
+
 ## 1.0.0
 
 First stable release of the cleaned public tree, published on 2026-11-24. The
