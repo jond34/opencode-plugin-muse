@@ -19,13 +19,13 @@ outlive the artifacts goes in `docs/evidence/`.
 | B4. `runner.arch` in workflow | done | `84ba90f` | free |
 | B5. Claims table + checker | done | `84ba90f` | free, network; 15/15 current |
 | E34. Windows coverage | done | `ab5358f` | 2 dispatches; 416 ran / 3 skipped; EOF close-promise gap recorded |
-| E35. Project-scoped plugin hook | done | `hooks.ts` reworded | installs project-trusted; approve required; session dispatch unmeasured |
-| E36. Console target inventory | done | uncommitted | found 9 targets; E31 read the collapsed trigger |
-| E37. Policy write probe | done | uncommitted | UI write; compiled, visible in `document`, not attributable |
-| E38. Grandchild survivor | done | `53bb819` | no survivor on the hosted runner; 239 samples, 0 failed; no taskkill |
+| E35. Project-scoped plugin hook | done | `c19e854` | installs project-trusted; approve required; session dispatch unmeasured |
+| E36. Console target inventory | done | `0a5646b` | found 9 targets; E31 read the collapsed trigger |
+| E37. Policy write probe | done | `0a5646b` | UI write; compiled, visible in `document`, not attributable |
+| E38. Grandchild survivor | done | `c19e854` | no survivor on the hosted runner; 239 samples, 0 failed; no taskkill |
 | E39. `denyUnmatched` wildcard | blocked | | needs a bridged call, which needs a turn; O4 did not fire |
 | E40. Citation pass | done | `84ba90f` | 15/15 current; older four not reopened |
-| C. Results + decision table applied | done | this commit | final commit |
+| C. Results + decision table applied | done | `5401d54` | final commit |
 | O. Owner choices raised | done | | O1–O4 did not fire; O5–O8 remain defaults |
 
 ---
