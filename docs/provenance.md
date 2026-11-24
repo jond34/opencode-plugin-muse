@@ -43,13 +43,17 @@ owner action.
 
 Round 30 repacked the tarball after moving four unshipped README doc links to
 absolute GitHub URLs. The `dist/` hash above is unchanged. Round 31 then changed
-the package to ship the built `dist/` entry only; the candidate is 165 files
-with tarball SHA-256
-`e1b707f4da6fa7202cb58694023d4f7d75d8be3d35d657837f19def85a1aa3f7`. The old
+the package to ship the built `dist/` entry only; the candidate is 165 files.
+The raw `.tgz` SHA-256 is not a stable identity: the current `npm pack` and the
+X9a pack both reported
+`0cd241a28af45e624dc743f003948911041664304064c1cf7215e1fdf8731d57`, while an
+earlier pack reported `e1b707f4…`. Compare the extracted file list and per-file
+hashes, not the raw archive header. The normalized content digest is
+`bcb23e5dc2c111963e930a0723cee17ba021388b91267bb050c51f5495b1d286`. The old
 208-file digest remains in the local archive. Round 33 added the advisory doctor
 detail, which changed `dist/` to 160 files /
-`3470ecc9…`. Two independent clean builders (E64, branch B1) produced the same
-`dist/` and byte-identical 165-file tarballs; the record is
+`3470ecc9…`. Two clean builders (E64, branch B1) produced the same `dist/` and
+the same 165-file content; the record is
 [`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json).
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:

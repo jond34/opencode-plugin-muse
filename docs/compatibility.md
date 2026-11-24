@@ -1,8 +1,9 @@
 # Compatibility
 
-This file tracks the wire and version contract. The pins below are the last
-tested pair. The architecture and subscription-boundary record stays in the
-local archive rather than the public tree.
+This file tracks the wire and version contract. The dependency pins below are
+the compile pins; the live X9a pair is recorded separately. The architecture and
+subscription-boundary record stays in the local archive rather than the public
+tree.
 
 ## Public API at 1.0
 
@@ -14,18 +15,25 @@ the native-history default are not promised.
 
 ## Tested versions
 
-| Surface | Version |
-| --- | --- |
-| opencode host | 2.3.2 |
-| `@opencode/plugin` | 2.3.2 |
-| `@muse-code/sdk` | 1.4.24 |
-| Muse Code CLI | 1.4.24 |
+| Surface | Version | Role |
+| --- | --- | --- |
+| opencode host | 2.4.1 | live X9a, 2026-11-24 |
+| Muse Code CLI | 1.4.25 | live X9a, 2026-11-24 |
+| `@opencode/plugin` | 2.3.2 | compile pin |
+| `@muse-code/sdk` | 1.4.24 | compile pin |
 
-The plugin compiles against the 2.3.2 plugin package and runs inside the 2.3.2
-host. The `SessionRequest.messages` metadata field added in 2.3.2 is additive
-and unused.
+The plugin compiles against the 2.3.2 plugin package. X9a ran it inside the
+2.4.1 host on 2026-11-24: one simple turn, one bridged `shell` call, and one
+resumed turn all returned the expected nonce. The 2.3.2/1.4.24 pair is a compile
+pin, not a live-tested pair in that run. On 2.4.1, `opencode models` did not list
+the plugin-injected `muse/*` provider, but `opencode run -m muse/muse-ember-1.0`
+resolved it and completed the turns; the models command is a display gap there,
+not the provider proof. The record is
+[`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json).
 
-The policy vocabulary this pair reads is `policies` (2.2.3 and newer).
+The `SessionRequest.messages` metadata field added in 2.3.2 is additive and
+unused. The policy vocabulary the 2.3.2 compile pin reads is `policies` (2.2.3
+and newer).
 `plugin.use`, `provider.use` and `tool.use` all take effect on 2.3.2 and were
 measured on 2026-11-23 (E-D47–E-D49): a denied `tool.use` check fails with
 `Blocked by configuration policy`, a denied plugin is not loaded, and a denied

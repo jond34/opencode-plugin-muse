@@ -5,8 +5,13 @@ already have. Muse appears in the model picker as the `muse` provider, and
 requests go through the signed-in `muse` CLI, so no Muse credential reaches
 opencode or your config.
 
-Tested with Muse CLI 1.4.24 on opencode 2.3.2; it also loads on opencode 2.4.1 and
-lists `muse/*` there (measured 2026-11-23). This is a republished build of
+X9a on 2026-11-24 passed on opencode 2.4.1 with Muse CLI 1.4.25: the plugin
+answered a simple turn, a bridged shell call, and a resumed turn. The package
+compiles against `@opencode/plugin` 2.3.2 and `@muse-code/sdk` 1.4.24; that
+compile pair is not a live-tested pair in this run. On 2.4.1, `opencode models`
+does not list the plugin-injected `muse/*` provider even though `opencode run -m
+muse/...` resolves it. See [compatibility](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/compatibility.md). This is a
+republished build of
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 with five patches. [CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md)
 has the diffs; [docs/provenance.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/provenance.md)

@@ -1,0 +1,71 @@
+{
+  "experiment": "X9a",
+  "date": "2026-11-24",
+  "status": "pass",
+  "candidate": {
+    "version": "1.0.0",
+    "tarballSha256": "0cd241a28af45e624dc743f003948911041664304064c1cf7215e1fdf8731d57",
+    "tarballFiles": 165,
+    "contentDigest": "bcb23e5dc2c111963e930a0723cee17ba021388b91267bb050c51f5495b1d286"
+  },
+  "environment": {
+    "os": "linux",
+    "node": "24.22.1",
+    "npm": "11.19.1",
+    "opencode": "2.4.1",
+    "museCli": "1.4.25 (1.4.25-R9361.1)",
+    "packagePinOpencode": "2.3.2",
+    "packagePinMuseSdk": "1.4.24"
+  },
+  "method": [
+    "npm pack from the frozen tree into a disposable destination",
+    "extract the tarball into a disposable local opencode plugin directory",
+    "npm install --omit=dev --ignore-scripts in the extracted directory",
+    "write an isolated opencode config listing only that local directory",
+    "link the owner Muse auth file into the isolated config without reading it",
+    "run opencode with --standalone and a disposable HOME/XDG root"
+  ],
+  "protocol": {
+    "turn1": {
+      "status": "pass",
+      "reply": "X9-OK-x9a-1795512326-19070",
+      "exact": true
+    },
+    "turn2": {
+      "status": "pass",
+      "tool": "shell",
+      "toolOutput": "X9-TOOL-x9t-1795512346-15949",
+      "exactFinalText": true,
+      "note": "The model emitted a short preamble before the tool call; the final text was the exact tool output."
+    },
+    "turn3": {
+      "status": "pass",
+      "resumedNonce": "X9-TOOL-x9t-1795512346-15949",
+      "exact": true
+    }
+  },
+  "provider": {
+    "modelsCli": "opencode models on 2.4.1 did not list a muse/* row",
+    "directRun": "opencode run -m muse/muse-ember-1.0 resolved the model and completed the turn",
+    "conclusion": "The CLI list is a display gap on 2.4.1; direct model resolution is the provider proof for this run."
+  },
+  "containment": {
+    "verdict": "degraded/unknown",
+    "schemaDrift": true,
+    "warning": "Muse schema fingerprint differs from the SDK pin; tools.bridge-only-observed=degraded prompt.instructions=unknown",
+    "strictHost": "not-tested"
+  },
+  "support": {
+    "x9aPair": "opencode 2.4.1 / Muse CLI 1.4.25",
+    "x9c": "same run; no separate pair",
+    "pinnedPairLive": false
+  },
+  "conclusion": "Candidate content loaded from the local directory and completed all three turns on opencode 2.4.1 / Muse 1.4.25. X9b is not-run until a published version exists.",
+  "limits": [
+    "One machine, one host version, one model id.",
+    "The pinned compile pair (opencode 2.3.2 / Muse 1.4.24) was not live-run in this pass.",
+    "The schema-drift warning is recorded; strict-host behavior was not tested.",
+    "X9b, the published install command, is not proven by this run.",
+    "This does not prove Windows desktop parity, sandboxing, or a cost cap."
+  ]
+}

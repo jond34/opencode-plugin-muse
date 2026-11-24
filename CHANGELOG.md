@@ -7,6 +7,13 @@ First stable release of the cleaned public tree. The package name, `.` and
 install command are the compatibility promise; model ids and vendor behavior
 remain data.
 
+X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: a simple turn,
+a bridged `shell` call, and a resumed turn all returned the expected nonce. The
+package compiles against `@opencode/plugin` 2.3.2 and `@muse-code/sdk` 1.4.24;
+that pair was not live-run in this pass. On 2.4.1, `opencode models` does not
+list the plugin-injected `muse/*` provider, but a direct `opencode run -m
+muse/...` resolves it.
+
 ### Containment and private host configuration
 
 - The plugin starts `muse serve` with a private config directory, so Muse's own

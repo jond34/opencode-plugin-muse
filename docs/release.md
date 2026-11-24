@@ -1,20 +1,24 @@
-# Release and candidate gates
+# Release gates
 
-This page is the operational release record: what is published, what a local
-candidate must prove, and how a version reaches npm. It does not authorize a
-publish, a staged upload, a tag, or a push.
+This page is the operational release record: what is published, what the local
+candidate must prove, and how a version reaches npm. It does not itself
+authorize a publish, a staged upload, a tag, or a push.
 
 ## Current public state
 
 - npm `latest` is `0.1.12`, published 2026-11-18. The only tag is `v0.1.12`;
   there is no GitHub Release.
+- X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: the candidate
+  completed a simple turn, a bridged tool call, and a resumed turn. See
+  [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json). No stage,
+  tag, or GitHub Release exists.
 - The tree is the `1.0.0` candidate. Its build identity and candidate hashes are
-  recorded in [`provenance.md`](provenance.md). That record does not authorize a
-  publish, a staged upload, a tag, or a push.
+  recorded in [`provenance.md`](provenance.md).
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
 - The version is `1.0.0`; see the public API below. A candidate is not a release
-  until npm and the GitHub tag both verify.
+  until npm and the GitHub tag both verify. X9b, the published install command,
+  is not proven until a public version exists.
 
 ## Watch item
 
