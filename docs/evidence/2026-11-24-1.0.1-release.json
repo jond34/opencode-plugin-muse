@@ -80,14 +80,16 @@
   "checks": {
     "releaseGate": "pass at b15ba82 (build, strict claims 23/23 current, docs 17 files / 19 relative links, pack 165 files, clean packed install and import, audit 25 moderate / 0 high / 0 critical, diff check)",
     "offlineSuite": "441 pass; the 11 failures are confined to gitignored local bench files and occur identically without this change",
-    "prChecks": "offline pass, CodeQL pass, both Windows jobs skipped"
+    "prChecks": "offline pass, CodeQL pass, both Windows jobs skipped",
+   "liveTurnAfterRelease": "Owner ran one turn on 1.0.1 through the opencode TUI at 2026-11-24T19:27Z: a trivial bash tool call bridged and returned. Corroboration from the local log: plugin @jonathand34/opencode-plugin-muse@1.0.1 loaded at 19:27:09.513Z from the 1.0.1 cache dir, and a muse-bin-1.4.25 serve child started in the same second with --trust-workspace --disable-write --disable-request-user-input. The model id was not captured. Owner-run, so it is not independent verification."
   },
   "x9": {
     "rerun": false,
     "reason": "dist/ is byte-identical to 1.0.0, so the X9a/X9b/X9c runs recorded on 2026-11-24 still describe the shipped plugin code."
   },
   "limits": [
-    "No live turn was run against 1.0.1; the docs-only claim rests on the unchanged dist hash and the byte-exact stage parity.",
+    "The post-release live turn covers one trivial bash tool call, not the X9 matrix; those passed on 1.0.0 against a dist hash identical to 1.0.1's.",
+    "That turn was run by the owner on the owner's machine, so it is not a stranger signal and does not count toward the third threshold.",
     "The page was checked in a headless browser against the rendered DOM, not by a human eye; the screenshots live in the local distribution scratch directory and are not committed.",
     "One machine, one host pair, one model id, as for 1.0.0."
   ]
