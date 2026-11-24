@@ -1564,3 +1564,15 @@ stage checks were not run; the release does not resume.
 
 **Verification.** A4 gate negative tests both exited 1 at the intended
 assertions. Documentation checks are recorded in the round-32 commit.
+
+**D262 — P1 A / P2 A after the E65 follow-up (owner decision).** The
+pre-committed H3 branch pointed at blocking `plugin` origins and holding. A
+follow-up measurement changed the cost: with an installed but unapproved plugin,
+`hook/list` returns `{enabled: true, handlerKind: "plugin"}` and no trust status,
+so a `plugin` block would refuse every session in that workspace for a hook the
+private host would not run. The live bypass needs an approval inside the private
+config, which the plugin never creates and never updates. The owner therefore
+keeps P1 A (allow, corrected claim, documented limitation) and resumes under
+P2 A after E61/F1/E64/E60, with a watch item for a Muse change that makes the
+host read the user's approvals or exposes a per-plugin trust status. P3 A and
+P4 D stand. No gate code was added.

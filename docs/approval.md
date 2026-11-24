@@ -90,8 +90,14 @@ that store. The plugin writes a fresh private config per host process and never
 approves or updates inside it, so a normal session has no live path; the
 reachable consequence there is that the user's approval is inert.
 
-The release is stopped pending P1/P2: block `plugin` origins, or accept the inert
-production path with the caveat. Records:
+**P1 A is the chosen posture:** keep the `plugin`-origin allow and state the
+limitation. Blocking plugin origins was rejected because `hook/list` reports a
+dormant, unapproved plugin hook as `enabled: true` with no trust field, so the
+gate would refuse sessions for hooks the host would not run; the live bypass
+needs an approval inside the private config, which the plugin never creates.
+The release resumes under P2 A after the normal gates, with this limitation and
+the update caveat documented. A watch item covers a Muse change that makes the
+host read the user's approvals. Records:
 [`evidence/2026-11-26-r31-e62.json`](evidence/2026-11-26-r31-e62.json) and
 [`evidence/2026-11-26-r32-e65.json`](evidence/2026-11-26-r32-e65.json). This is a
 Muse-side finding, not a claim that the plugin maps a Muse approval.

@@ -154,6 +154,22 @@
       "check": { "kind": "http" }
     },
     {
+      "id": "muse-hook-definition-hash",
+      "claim": "A modified Muse plugin hook does not run until it is approved again",
+      "url": "https://meta-models.github.io/muse-code-sdk/1.4/guides/plugins/concepts/hooks/",
+      "quote": "a modified hook does not run until you approve it again",
+      "version": "1.4",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "codex-hook-trust",
+      "claim": "Codex binds hook trust to the current hash and skips changed plugin hooks until reviewed",
+      "url": "https://developers.openai.com/codex/hooks",
+      "quote": "Codex records trust against the hook’s current hash, so new or changed hooks are marked for review and skipped until trusted.",
+      "version": "current",
+      "check": { "kind": "http" }
+    },
+    {
       "id": "npm-stage-reject-2fa",
       "claim": "npm stage reject requires 2FA",
       "url": "https://docs.npmjs.com/cli/v12/commands/npm-stage",

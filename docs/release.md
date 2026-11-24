@@ -23,9 +23,12 @@ publish, a staged upload, a tag, or a push.
 - Round 31 changed the package to publish the built `dist/` entry only, not
   `src/` or `docs/`. The candidate tarball is now 165 files, SHA-256
   `b1b8fde031aa6797e2d174433d8736edbadc8eb252423f69d2870ec37052b0c1`. The
-  `dist/` hash is unchanged. Release is **stopped**: E62 found a changed plugin
-  hook can run after `muse plugins update` without re-approval; E55a/E55b remain
-  blocked on the owner browser, and E60 was not run.
+  `dist/` hash is unchanged. Release is **stopped for round 31**: E62 found a
+  changed plugin hook can run after `muse plugins update` without re-approval.
+  Round 32 bounded that to the one-time legacy migration (E65) and chose P1 A /
+  P2 A: keep the `plugin`-origin allow, document that a user-approved Muse plugin
+  hook is inert in this host, and resume after E61/F1/E64/E60. E55a/E55b remain
+  blocked on the owner browser; E60 needs `npm login` and reject 2FA.
 
 ## Version policy
 

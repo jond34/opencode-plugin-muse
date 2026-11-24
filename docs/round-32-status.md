@@ -70,16 +70,24 @@ pre-committed H3 stop fired: P1/P2 are now an owner decision, not defaults.
 
 ## Result
 
-The release remains stopped. No stage, approval, publish, tag, or push was
-performed. P1 and P2 are open:
+The release remains stopped for this round, but the P1/P2 choice is now made:
+**P1 A** (keep the `plugin`-origin allow, correct the claim) and **P2 A**
+(resume with the documented caveat and a watch item) after E61/F1/E64/E60. No
+stage, approval, publish, tag, or push was performed.
 
-- **P1:** keep the `plugin`-origin allow and correct the claim (A), or block
-  `plugin` origins as defense in depth (B).
-- **P2:** resume with the documented caveat that the user's plugin approval is
-  inert in this host, or hold pending a code gate/vendor fix.
+The reversal of the pre-committed H3 → B/C branch rests on one follow-up
+measurement: `hook/list` reports an installed but unapproved plugin hook as
+`enabled: true, handlerKind: "plugin"`, with no trust status. Blocking plugin
+origins would therefore refuse sessions for dormant hooks, while the live bypass
+needs an approval inside the private config that the plugin never creates. The
+full evaluation is in `docs/round-32-p1-p2-decision.md`.
 
-E61, E55a/E55b, E64, and E60 remain unrun; they are gated behind the P1/P2
-choice.
+Watch item: if Muse makes `muse serve` read the user's approval store, or exposes
+a per-plugin trust status, re-run E65 and re-open P1; B becomes cheap and live at
+that point.
+
+E61, E55a/E55b, E64, and E60 remain unrun. E61/F1/E64 are next on the resumed
+path; E60 needs `npm login` and the owner at the reject 2FA prompt.
 
 ## Verification
 
@@ -87,7 +95,7 @@ choice.
 |---|---|
 | `npx tsc -p tsconfig.json` | exit 0 |
 | `bun test test/hook-gate.test.ts` | 60 pass / 0 fail / 171 expect; 3 files |
-| `bun scripts/check-claims.ts --strict` | 21/21 current as of 2026-11-24 |
+| `bun scripts/check-claims.ts --strict` | 23/23 current as of 2026-11-24 |
 | `git diff --check` | pass |
 | A4 pack negative | exit 1: `forbidden file (src/): src/adapter.ts` |
 | A4 audit negative | exit 1: `audit: 1 high, 0 critical; release blocked` |
