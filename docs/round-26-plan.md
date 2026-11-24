@@ -19,7 +19,7 @@ outlive the artifacts goes in `docs/evidence/`.
 | B4. `runner.arch` in workflow | done | `84ba90f` | free |
 | B5. Claims table + checker | done | `84ba90f` | free, network; 15/15 current |
 | E34. Windows coverage | done | `ab5358f` | 2 dispatches; 416 ran / 3 skipped; EOF close-promise gap recorded |
-| E35. Project-scoped plugin hook | todo | | 1–2 real runs |
+| E35. Project-scoped plugin hook | done | `hooks.ts` reworded | installs project-trusted; approve required; session dispatch unmeasured |
 | E36. Console target inventory | done | uncommitted | found 9 targets; E31 read the collapsed trigger |
 | E37. Policy write probe | done | uncommitted | UI write; compiled, visible in `document`, not attributable |
 | E38. Grandchild survivor | todo | | 1 dispatch |

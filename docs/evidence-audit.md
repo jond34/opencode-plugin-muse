@@ -49,7 +49,7 @@ landed, so the two cannot disagree about counts.
 | B4. `runner.arch` | done | `.github/workflows/test.yml`; X64 / ARM64 in the artifact |
 | B5. Claims table | done | `docs/claims.md`; 15/15 current |
 | E34. Windows coverage | done | run 45302817218: 416 ran / 3 skipped; EOF close-promise gap |
-| E35. Hook scope | todo | round-26 plan |
+| E35. Hook scope | done | `docs/evidence/2026-11-24-e35.json`; approve required before the hook is effective |
 | E36/E37. Console route | todo | round-26 plan |
 | E38. Grandchild | todo | round-26 plan |
 | E39. `denyUnmatched` wildcard | todo | round-26 plan |

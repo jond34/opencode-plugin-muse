@@ -15,6 +15,8 @@
  *                       the turn is admitted and no frame ever arrives.
  *   resume-answer     — answer `session/resume`, and a `turn/start` with a
  *                       started item, a delta, and a completion.
+ *   spawn-detached    — spawn a detached sleeper after the handshake and write
+ *                       its pid to `<pidfile>.grandchild` (E38).
  *
  * `FAKE_MSP_METHODS_FILE` gets one line per request method, so a test can tell
  * a resume from a second start. `userAgent` echoes `NODE_EXTRA_CA_CERTS`, which
@@ -26,6 +28,7 @@
  * Run it as `process.execPath <this file>`: no shebang, no exec bit, and the
  * same source works under bun and node on every platform.
  */
+import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
@@ -115,6 +118,18 @@ process.stdin.on("data", (chunk) => {
       if (message.method !== "initialize") continue;
       answered = true;
       respond(message.id, initializeResult);
+      if (mode === "spawn-detached") {
+        // E38: a grandchild the host created, detached from this process, so
+        // closing the host does not make it a child the SDK can reach.
+        const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], {
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+        if (pidFile !== undefined && child.pid !== undefined) {
+          writeFileSync(`${pidFile}.grandchild`, String(child.pid));
+        }
+      }
       if (mode === "eof-alive") {
         // The transport is gone from the client's side; the process is not.
         process.stdout.end();

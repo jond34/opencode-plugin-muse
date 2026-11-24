@@ -8,10 +8,13 @@
  * surface of ours covers. The host reports each installed handler with its
  * origin (`hook/list` → `handlerKind`), which is what this module reads:
  * `project` rows are refused until the exact file is accepted. A `plugin` row
- * is allowed: every install scope writes into the user's own store ("Nothing is
- * written into the repository"), so it is code the person installed and
- * approved, not a file a checkout can plant. The doctor still prints the origin
- * of every handler, so an installed plugin is visible rather than silent.
+ * is allowed: Muse installs every scope into the user's own store (`--scope
+ * project` included), records a project-trusted plugin only for a trusted
+ * workspace, and keeps its hooks inert until `muse plugins approve` (E35,
+ * 1.4.25). So a checkout can supply the plugin source, but it cannot make Muse
+ * run the hook without the person's approval; the approval is keyed to the
+ * capability definition hash. The doctor still prints the origin of every
+ * handler, so an installed plugin is visible rather than silent.
  *
  * The acceptance is a record, not a prompt: the server half's `Context` has no
  * dialog surface, so the record is written by the doctor or by the env override

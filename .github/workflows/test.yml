@@ -114,6 +114,11 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: node test/seam/windows-kill.mjs
+      # E38: a detached grandchild; the sampler's blind spot is the measurement.
+      - name: E38 grandchild survivor (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: node test/seam/windows-grandchild.mjs
 
   # E16a/E16c: the vendor installer, the binary it writes, and a real `muse
   # serve` closed through the plugin's own path. No credential: the handshake is
