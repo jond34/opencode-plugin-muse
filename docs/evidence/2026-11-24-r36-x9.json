@@ -4,9 +4,9 @@
   "status": "pass",
   "candidate": {
     "version": "1.0.0",
-    "tarballSha256": "0cd241a28af45e624dc743f003948911041664304064c1cf7215e1fdf8731d57",
+    "tarballSha256": "35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2",
     "tarballFiles": 165,
-    "contentDigest": "bcb23e5dc2c111963e930a0723cee17ba021388b91267bb050c51f5495b1d286"
+    "contentDigest": "54cc6eef776e806b581cfe992b78316c9fded90404231bdee91ed021114757c4"
   },
   "environment": {
     "os": "linux",
@@ -28,19 +28,19 @@
   "protocol": {
     "turn1": {
       "status": "pass",
-      "reply": "X9-OK-x9a-1795512326-19070",
+      "reply": "X9-OK-x9a-1795514640-1521",
       "exact": true
     },
     "turn2": {
       "status": "pass",
       "tool": "shell",
-      "toolOutput": "X9-TOOL-x9t-1795512346-15949",
+      "toolOutput": "X9-TOOL-x9t-1795514649-12868",
       "exactFinalText": true,
       "note": "The model emitted a short preamble before the tool call; the final text was the exact tool output."
     },
     "turn3": {
       "status": "pass",
-      "resumedNonce": "X9-TOOL-x9t-1795512346-15949",
+      "resumedNonce": "X9-TOOL-x9t-1795514649-12868",
       "exact": true
     }
   },

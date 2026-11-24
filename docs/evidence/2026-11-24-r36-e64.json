@@ -1,0 +1,66 @@
+{
+  "experiment": "E64",
+  "date": "2026-11-24",
+  "question": "Does a second clean builder produce the same dist/ and the same tarball as the final candidate?",
+  "sourceCommit": "7ea3da29eacb749febcbf88e489979a5cb7166df",
+  "method": {
+    "copies": [
+      "scratch/r36-e64-new/a",
+      "scratch/r36-e64-new/b"
+    ],
+    "source": "git archive HEAD | tar -x -C <copy> for each copy",
+    "isolation": "Each copy got its own HOME, npm_config_cache, and TMPDIR under its own directory.",
+    "commands": [
+      "npm ci --no-audit --no-fund",
+      "npm run build",
+      "npm pack --pack-destination <copy>/pkg"
+    ],
+    "comparison": "dist/index.js SHA-256, sorted dist/ path+hash digest, tarball SHA-256, tarball file content digest, file counts",
+    "toolchain": {
+      "node": "v24.22.1",
+      "npm": "11.19.1",
+      "bun": "1.4.4",
+      "uname": "Linux jonathanmainpc 6.18.58.1-microsoft-standard-WSL2 x86_64"
+    }
+  },
+  "a": {
+    "distIndexSha256": "a2e598c1fa4fdfa9b8d0f9cbbdb75467e87c8738c8f24f61e72a51bbfe79be17",
+    "distDigest": "3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669",
+    "distFiles": 160,
+    "tarballSha256": "35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2",
+    "tarballFiles": 165,
+    "tarballContentDigest": "54cc6eef776e806b581cfe992b78316c9fded90404231bdee91ed021114757c4"
+  },
+  "b": {
+    "distIndexSha256": "a2e598c1fa4fdfa9b8d0f9cbbdb75467e87c8738c8f24f61e72a51bbfe79be17",
+    "distDigest": "3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669",
+    "distFiles": 160,
+    "tarballSha256": "35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2",
+    "tarballFiles": 165,
+    "tarballContentDigest": "54cc6eef776e806b581cfe992b78316c9fded90404231bdee91ed021114757c4"
+  },
+  "finding": {
+    "branch": "B1",
+    "distMatch": true,
+    "tarballMatch": true,
+    "headerDrift": false,
+    "reading": "Two independent clean copies, each with a fresh HOME and cache, produced byte-identical tarballs and identical dist/ content. The local npm pack also produced the same raw tarball SHA-256."
+  },
+  "result": "B1: dist and tarball both match across two clean builders.",
+  "branch": "B1",
+  "decisions": [
+    "D264",
+    "O34 B"
+  ],
+  "limits": [
+    "Both builders ran on the same machine and toolchain; this is not a cross-machine reproducibility claim.",
+    "The tarball contains only dist, README, LICENSE, CREDITS, and CHANGELOG; docs/ and scripts/ are not packaged.",
+    "No publish, stage, tag, or approval was performed."
+  ],
+  "artifacts": [
+    "scratch/r36-e64-new/a",
+    "scratch/r36-e64-new/b",
+    "scratch/r36-e64-new/a/pkg",
+    "scratch/r36-e64-new/b/pkg"
+  ]
+}
