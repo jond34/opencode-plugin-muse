@@ -91,13 +91,7 @@ afterEach(async () => {
 });
 
 describe("the process behind the seam", () => {
-  // SIGSTOP, SIGTERM and process-group signalling are POSIX: on Windows the
-  // first two are not the same signals, so these two results are measured on
-  // Linux only (and macOS by construction, not by run). The inheritance test
-  // below is platform-neutral.
-  const posixOnly = process.platform === "win32" ? test.skip : test;
-
-  posixOnly(
+  test(
     "a transport EOF leaves the process alive until something closes it",
     async () => {
       const connection = await spawnFixture("eof-alive");
@@ -107,16 +101,18 @@ describe("the process behind the seam", () => {
       expect(alive(pid())).toBe(true);
       expect(await settleWithin(connection.exited, 100)).toBe("pending");
 
-      // And the SDK's own close is what ends it, by the ladder rather than by
-      // luck: the fixture only exits when SIGTERM reaches it.
+      // And the SDK's own close is what ends it. On POSIX the fixture records
+      // the SIGTERM it caught; Windows has no catchable SIGTERM, so the marker
+      // is not an assertion there — the pid's death is.
       await connection.close();
-      expect(existsSync(`${pidFile()}.term`)).toBe(true);
+      if (process.platform !== "win32") expect(existsSync(`${pidFile()}.term`)).toBe(true);
+      expect(await settleWithin(connection.exited, 5_000)).toBe("settled");
       expect(alive(pid())).toBe(false);
     },
     15_000,
   );
 
-  posixOnly(
+  test(
     "a frozen host settles nothing, including an interrupt",
     async () => {
       const connection = await spawnFixture("freeze");
@@ -140,6 +136,7 @@ describe("the process behind the seam", () => {
       // the callers above.
       expect(await settleWithin(connection.connection.closed, 100)).toBe("pending");
       await connection.close();
+      expect(await settleWithin(connection.exited, 5_000)).toBe("settled");
       expect(alive(pid())).toBe(false);
     },
     15_000,

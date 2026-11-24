@@ -34,27 +34,6 @@ export const PLATFORM_SKIPS: readonly PlatformSkip[] = [
     decisionRow: "U23",
   },
   {
-    file: "test/host-config.test.ts",
-    name: "links the user's login instead of copying it",
-    platform: "win32",
-    reason: "creating a symlink on a runner may need a privilege; E34 ports this with the EPERM fallback",
-    decisionRow: "P5 / O3",
-  },
-  {
-    file: "test/host-process.test.ts",
-    name: "a transport EOF leaves the process alive until something closes it",
-    platform: "win32",
-    reason: "the SIGTERM marker is not interceptable on Windows; E34 ports the pid-liveness half",
-    decisionRow: "U22",
-  },
-  {
-    file: "test/host-process.test.ts",
-    name: "a frozen host settles nothing, including an interrupt",
-    platform: "win32",
-    reason: "the fixture froze with SIGSTOP; the portable freeze landed in E30, so E34 ports this",
-    decisionRow: "U22",
-  },
-  {
     file: "test/platform.test.ts",
     name: "POSIX reports the mode the plugin writes",
     platform: "win32",

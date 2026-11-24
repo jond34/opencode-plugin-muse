@@ -126,9 +126,10 @@ describe("host config", () => {
   });
 
   // Windows refuses a file symlink without SeCreateSymbolicLinkPrivilege, and
-  // the product swallows that by design (the host then reports no login). A
-  // runner without Developer Mode cannot hold the claim either way.
-  test.skipIf(process.platform === "win32")("links the user's login instead of copying it", async () => {
+  // the product swallows that by design (the host then reports no login). E34
+  // runs the test there: either the link exists and is a link, or the documented
+  // fallback holds (no copy, the rest of the config still written).
+  test("links the user's login instead of copying it", async () => {
     const base = home();
     const realDir = join(base, ".config", "muse");
     mkdirSync(realDir, { recursive: true });
@@ -138,8 +139,15 @@ describe("host config", () => {
     const config = await write({ baseDir: base, homeDirectory: base, env: {} });
     try {
       const link = join(config.xdg, "muse", "auth.json");
-      expect(lstatSync(link).isSymbolicLink()).toBe(true);
-      expect(readFileSync(link, "utf8")).toBe('{"token":"test"}\n');
+      if (process.platform === "win32" && !existsSync(link)) {
+        // EPERM/EACCES: the product's documented fallback is no link, not a
+        // copied token. The settings file proves the rest of the write ran.
+        expect(existsSync(link)).toBe(false);
+        expect(existsSync(config.settingsPath)).toBe(true);
+      } else {
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(link, "utf8")).toBe('{"token":"test"}\n');
+      }
     } finally {
       config.remove();
     }
