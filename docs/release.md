@@ -6,22 +6,35 @@ publish, a staged upload, a tag, or a push.
 
 ## Current public state
 
-- npm `latest` is `1.0.0`, published 2026-11-24 from commit
-  `af503fdc4462f035caa1a68300764522cdae2c83`. The tags are `v0.1.12` and
-  `v1.0.0`; `v1.0.0` has an immutable GitHub Release.
+- npm `latest` is `1.0.1`, published 2026-11-24 from commit
+  `b15ba82f959536004ab80f96f70f370f075dc52e`. The tags are `v0.1.12`, `v1.0.0`,
+  and `v1.0.1`; `v1.0.0` and `v1.0.1` have immutable GitHub Releases.
+- `1.0.1` is documentation-only: no source, `dist/`, dependency, export,
+  provider id, or documented `MUSE_*` variable changed. `dist/` still hashes to
+  `3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669` over 160
+  files, the value recorded for `1.0.0`, so the X9 runs below still describe the
+  shipped plugin code and were not repeated. It exists because npm renders the
+  README inside the tarball and cannot be edited in place: it publishes the
+  current README and adds `homepage`. Its record is
+  [`evidence/2026-11-24-1.0.1-release.json`](evidence/2026-11-24-1.0.1-release.json).
 - X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: a simple
   turn, a bridged tool call, and a resumed turn all returned the expected nonce.
   X9b then installed the published `1.0.0` and returned an exact nonce from a
   run that loaded only that package. See
   [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json).
-- The stage was downloaded and matched the release tree byte for byte before
-  approval. Its record is [`evidence/2026-11-24-r36-release.json`](evidence/2026-11-24-r36-release.json).
+- Both stages were downloaded and matched the release tree byte for byte before
+  approval. Their records are
+  [`evidence/2026-11-24-r36-release.json`](evidence/2026-11-24-r36-release.json)
+  and [`evidence/2026-11-24-1.0.1-release.json`](evidence/2026-11-24-1.0.1-release.json).
 - The build identity and published hashes are recorded in
-  [`provenance.md`](provenance.md).
+  [`provenance.md`](provenance.md) for `1.0.0`; `comparison.md` and
+  `provenance.md` keep their `1.0.0` dates because those record what was verified
+  then.
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The version is `1.0.0`; see the public API below. npm, the tag, the provenance
-  attestation, and the immutable Release all name the same commit.
+- The version is `1.0.1`; the public API below is unchanged from `1.0.0`. npm,
+  the tag, the provenance attestation, and the immutable Release all name the
+  same commit.
 
 ## Watch item
 

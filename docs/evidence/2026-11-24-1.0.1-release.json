@@ -1,0 +1,75 @@
+{
+  "experiment": "Release 1.0.1 (docs-only: GitHub README to the npm page)",
+  "date": "2026-11-24",
+  "status": "published",
+  "version": "1.0.1",
+  "sourceCommit": "b15ba82f959536004ab80f96f70f370f075dc52e",
+  "tag": {
+    "name": "v1.0.1",
+    "object": "3bcda35a58a0b944a1556852852a2275260061f0",
+    "commit": "b15ba82f959536004ab80f96f70f370f075dc52e"
+  },
+  "npm": {
+    "publishedAt": "2026-11-24T18:53:24.959Z",
+    "distTags": {
+      "latest": "1.0.1"
+    },
+    "tarballSha256": "e32f0ee0468519ab7d87230c072725d62ab2f1192a7468b4669c2e5bde5f9765",
+    "tarballBytes": 201075,
+    "tarballFiles": 165,
+    "shasum": "6c27c8d0bd6461053fa6e0b149bc444bc798102c",
+    "integrity": "sha512-0E2y2D/Hud8xeGwlYbML3Mil/+4UdLrdp8K4N+EL5EzSNDprKitQKpMzpny3q9UhZ1VM0fCT58k54u3/NX2NTA==",
+    "attestationUrl": "https://registry.npmjs.org/-/npm/v1/attestations/@jonathand34%2fopencode-plugin-muse@1.0.1",
+    "provenancePredicateType": "https://slsa.dev/provenance/v1",
+    "provenanceCommit": "b15ba82f959536004ab80f96f70f370f075dc52e",
+    "signatureAudit": "104 packages have verified registry signatures or attestations; no failure reported",
+    "readme": {
+      "tarballBytes": 28564,
+      "containsDemoGif": true,
+      "containsQuickstart": true,
+      "note": "The printed npm page renders this README; before 1.0.1 it rendered the 1.0.0 tarball's 26,137-byte README without the demo or quickstart."
+    }
+  },
+  "stage": {
+    "id": "17466cd8-d321-4fa5-8a6c-63e772090e28",
+    "status": "approved",
+    "stagedBy": "GitHub Actions (trusted automation)",
+    "stagedAt": "2026-11-24T18:31:40.669Z",
+    "parity": "exact",
+    "tarballSha256": "e32f0ee0468519ab7d87230c072725d62ab2f1192a7468b4669c2e5bde5f9765",
+    "parityMethod": "npm stage download, compared with a clean rebuild (rm -rf dist && npm run build && npm pack) of b15ba82"
+  },
+  "workflow": {
+    "stageRun": "https://github.com/jond34/opencode-plugin-muse/actions/runs/45460239694",
+    "stageRunConclusion": "success",
+    "sourceCommit": "b15ba82f959536004ab80f96f70f370f075dc52e",
+    "route": "workflow_dispatch of publish.yml, so the artifact carries CI provenance rather than local credentials"
+  },
+  "githubRelease": {
+    "id": 457199940,
+    "url": "https://github.com/jond34/opencode-plugin-muse/releases/tag/v1.0.1",
+    "publishedAt": "2026-11-24T18:55:18Z",
+    "immutable": true,
+    "assets": []
+  },
+  "build": {
+    "distSha256": "3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669",
+    "distFiles": 160,
+    "sameDistAs100": true,
+    "note": "Identical to the dist hash recorded for 1.0.0 in provenance.md, so no source or build output changed."
+  },
+  "checks": {
+    "releaseGate": "pass at b15ba82 (build, strict claims 23/23 current, docs 17 files / 19 relative links, pack 165 files, clean packed install and import, audit 25 moderate / 0 high / 0 critical, diff check)",
+    "offlineSuite": "441 pass; the 11 failures are confined to gitignored local bench files and occur identically without this change",
+    "prChecks": "offline pass, CodeQL pass, both Windows jobs skipped"
+  },
+  "x9": {
+    "rerun": false,
+    "reason": "dist/ is byte-identical to 1.0.0, so the X9a/X9b/X9c runs recorded on 2026-11-24 still describe the shipped plugin code."
+  },
+  "limits": [
+    "No live turn was run against 1.0.1; the docs-only claim rests on the unchanged dist hash and the byte-exact stage parity.",
+    "The npm page content was confirmed through the registry packument and the packed tarball, not a rendered browser screenshot.",
+    "One machine, one host pair, one model id, as for 1.0.0."
+  ]
+}
