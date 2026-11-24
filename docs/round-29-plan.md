@@ -108,9 +108,11 @@ A short, operational page, not another essay:
   scratch; Windows sentence unchanged unless E53 passes.
 - **Publish flow:** GitHub OIDC trusted publishing; staged publish
   (`npm stage publish`) then owner 2FA approval is the recommended path
-  (O22). The workflow change is one line plus a pinned npm CLI upgrade: staged
-  publishing requires npm 11.15+, while the workflow currently takes whatever
-  npm ships with Node 24. It does not publish anything by itself.
+  (O22). The trusted publisher should be **stage-only**, so a direct
+  `npm publish` from that workflow is rejected. The workflow change is one line
+  plus a pinned npm CLI upgrade: staged publishing requires npm 11.15+, while
+  the workflow currently takes whatever npm ships with Node 24. It does not
+  publish anything by itself.
 - **Rollback:** never overwrite a published version; deprecate it and publish a
   patch. A failed stage can be rejected without a registry change.
 - **What not to promise:** no desktop parity, no containment behind the bridge,
@@ -232,7 +234,9 @@ integration file is unstaged.
    publishing requires 11.15+. Pin the job to a known CLI with
    `npm install -g npm@11.19.1` before `npm ci` if the bundled version is older
    (the job currently does not pin npm). Update `SECURITY.md`, `README.md`, and
-   `docs/release.md` to say staged, not direct. Do not dispatch the workflow.
+   `docs/release.md` to say staged, not direct, and record the owner's
+   stage-only trusted-publisher setting as an external action. Do not dispatch
+   the workflow.
 5. `npm pack --pack-destination scratch/r29-e51`; record size, unpacked size,
    shasum, integrity, file count. Inspect `tar -tzf` for:
    - no `scratch/`, no `test/`, no `evidence/*.tgz`, no `.env*`, no `.git`;
@@ -316,6 +320,12 @@ Use a temporary branch/worktree or a scratch plugin, not the release branch. Cal
 normal bridge emit the tool call. Count prompts and saved approvals. If a
 one-prompt path is not demonstrated, B is not ready; keep A.
 
+Before spending a turn, check whether the installed opencode API has a
+non-prompting `permission.allows` or a single-use admission binding. Current
+opencode has neither (`anomalyco/opencode#64787`, `#61645` are open); if that is
+still true, record D226 without a turn. `assert` is not a check — it prompts
+when the rules say `ask`.
+
 **Branches:**
 
 | Result | Action |
@@ -347,7 +357,7 @@ one-prompt path is not demonstrated, B is not ready; keep A.
 | D223 | E53 survivor | O17 A + warning | O17 |
 | D224 | E53 UAC block | O17 A; interactive-only | O17 |
 | D225 | E54 one prompt | O16 B implementable, not shipped | O16 |
-| D226 | E54 two prompts | O16 A | O16 |
+| D226 | E54 two prompts, or no non-prompting admission API | O16 A | O16 |
 | D227 | O21 0.1.13 | Apply 0.1.13 | O21 |
 | D228 | O21 0.2.0 | Apply 0.2.0; update docs/hash | O21 |
 | D229 | O22 staged | Workflow to `npm stage publish`; docs | O22 |
@@ -370,9 +380,10 @@ Only run this after A and R2. The candidate is a commit, not a publish.
    publish.
 5. **Staged flow.** If O22 A, change `publish.yml` to `npm stage publish`, pin
    npm 11.19.1 if the job's bundled CLI is below 11.15, and update
-   `SECURITY.md`, README, and `docs/release.md`. The trusted publisher must
-   allow staged publishing; npm always allows `npm stage publish` for a trusted
-   publisher, but the owner still needs 2FA to approve.
+   `SECURITY.md`, README, and `docs/release.md`. The trusted publisher should be
+   stage-only; npm always allows `npm stage publish` for a trusted publisher,
+   but the owner still needs 2FA to approve. Changing the npm setting is an
+   owner action, not a repo action; record it as unverified if it cannot be read.
 6. **Release notes.** `CHANGELOG.md` and the GitHub body draft. No GitHub
    Release in this round.
 7. **Stop.** Report the candidate commit and the exact next owner action:
@@ -473,12 +484,12 @@ Recommendation: A.
 
 ### O22. Publish gate
 
-- **A. Staged publish with 2FA.** Default.
+- **A. Staged publish with 2FA, trusted publisher stage-only.** Default.
 - **B. Direct OIDC `npm publish`.**
 - **C. Manual local publish.** Reject.
 
 Recommendation: A. It is one workflow line and a human approval, not a new
-system.
+system; stage-only closes the direct-publish bypass.
 
 ### O23. Release notes
 
@@ -509,8 +520,9 @@ Recommendation: A for this round.
 - **The docs can drift again.** A1 is one commit; R2/E51 do not edit counts
   except where a result moves them.
 - **O22 A changes the publish workflow.** It does not publish anything until the
-  owner dispatches it. Record the trusted-publisher setting as unverified if the
-  local token cannot read it.
+  owner dispatches it. The stage-only trusted-publisher setting is owner-side;
+  record it as unverified if the local token cannot read it. A direct-publish
+  fallback would reintroduce the bypass A is meant to close.
 - **E53 is owner-assisted.** No desktop claim from a runner or a checklist.
 - **E54 can spend turns.** Cap 2; stop at two prompts or a blocked API.
 

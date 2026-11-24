@@ -51,7 +51,8 @@ Apply these unless the owner has replied otherwise:
 - **O20 A:** evidence stays repo-side.
 - **O21 A:** version 0.1.13.
 - **O22 A:** change the workflow to staged publish, pinning npm 11.19.1 if the
-  job's bundled CLI is below 11.15; do not dispatch it.
+  job's bundled CLI is below 11.15, and document stage-only trusted publishing;
+  do not dispatch it.
 - **O23 A:** add `CHANGELOG.md` and a GitHub body draft.
 - **O24 A:** README + `SECURITY.md`; no `SUPPORT.md`, no issue templates.
 
@@ -190,8 +191,9 @@ Follow plan §2 E51:
    `npm stage publish`. Check `npm --version`; staged publishing requires
    11.15+. The job currently inherits npm from Node 24, so if the bundled CLI is
    older, add `npm install -g npm@11.19.1` before `npm ci`. Update
-   `SECURITY.md`, README, and `docs/release.md` to say staged, not direct. Do
-   not dispatch it.
+   `SECURITY.md`, README, and `docs/release.md` to say staged, not direct, and
+   record the owner's stage-only trusted-publisher setting as an external
+   action. Do not dispatch it.
 5. `npm pack --pack-destination scratch/r29-e51`; inspect the tarball for the
    required files and the forbidden ones (scratch, tests, evidence tarballs,
    `.env*`, `.git`). Record size, shasum, integrity, count.
@@ -239,8 +241,10 @@ hosted runner as a desktop. Do not invent a result. Artifact only if run:
 Under O16 A (default), mark E54 `not run: O16 A`. Do not modify approval code.
 
 If the owner selected O16 B, follow plan §2 E54 on a scratch/temporary worktree:
-one spike, at most two turns, count prompts and saved approvals. Apply D225/D226.
-Do not ship the surface in this round.
+first check whether the installed opencode API has a non-prompting
+`permission.allows` or single-use admission binding. If not, record D226 with no
+turn. Otherwise run one spike, at most two turns, count prompts and saved
+approvals. Apply D225/D226. Do not ship the surface in this round.
 
 ## Step 7 — final documentation and checks
 

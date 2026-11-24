@@ -37,6 +37,13 @@ Sources were read on 2026-11-25. The strongest facts are the ones measured in
 this repository or stated in current vendor documentation. Search results were
 used to find the primary pages, not as authority by themselves.
 
+**Search coverage.** Successful MCP searches: Exa, Parallel (`web_search`),
+Keenable, You, Nimble, Tinyfish, and GitHub issue/PR search. Linkup refused for
+insufficient funds; Parallel `web_research` refused with a 402; Tinyfish's first
+call used a malformed `fetch` argument, and the retry succeeded. The failed
+providers are recorded rather than counted as coverage. Primary docs were then
+read directly (`read_url`) for npm, opencode, Muse, Microsoft, and SemVer.
+
 - **High confidence:** the repository's own state (`package.json`, workflow,
   `dist`, npm metadata, tags), and the vendor pages for npm trusted/staged
   publishing, opencode permissions and plugin permissions, and Muse approvals.
@@ -86,7 +93,9 @@ npm documents two relevant mechanisms:
 - **Staged publishing** runs `npm stage publish`, then a maintainer reviews and
   approves with 2FA via `npm stage approve` or npmjs.com. It requires npm CLI
   11.15.0+ and 2FA on the account. It is designed for exactly the “CI can
-  publish while I am asleep” risk.
+  publish while I am asleep” risk. npm also recommends configuring the trusted
+  publisher as **stage-only**, so a direct `npm publish` from that workflow is
+  rejected rather than merely unused.
 
 The current workflow calls `npm publish` directly. That is a valid OIDC publish,
 but it has no human gate after CI builds the tarball. A staged workflow changes
@@ -180,6 +189,16 @@ gate the only gate. Neither is in this plugin today.
 This is why D194 does **not** imply O16 B. The saved rule works; the missing
 piece is a user-visible surface that does not double-ask and does not turn a
 Muse policy into an opencode policy by accident.
+
+The current opencode API makes that harder than it first looks. `permission.assert`
+is a prompting operation: opencode's own tools documentation says nested
+built-in and MCP tools still enforce their own permissions, while plugin tools
+enforce the permissions they assert. There is no `permission.allows` yet;
+`anomalyco/opencode#64787` asks for a non-prompting check. There is also no
+race-safe, single-use admission exposed to plugins; `#61645` asks for one. Without
+either, a plugin cannot ask “is this call already allowed?” or bind an approval
+to the exact invocation it is about to emit. A one-prompt path would have to be
+built on an API that does not currently exist.
 
 ### What would make B safe
 
@@ -359,16 +378,18 @@ feature set to read as more than a patch.
 ### O22. Publish gate
 
 - **A. Staged publish with 2FA.** Change the workflow to `npm stage publish`,
-  review the staged tarball, approve with 2FA. Default.
+  configure the trusted publisher as stage-only, review the staged tarball, and
+  approve with 2FA. Default.
 - **B. Direct OIDC `npm publish`.** Current workflow; fastest, no human gate.
 - **C. Manual local publish.** Reject; loses the OIDC/provenance path.
 
 Steelman A: CI can be compromised; a human approval after the build is the
-cheapest control that preserves provenance. Strawman A: it adds a manual step
-and a second place for the release to stall. Steelman B: the workflow is already
-pinned and the owner reviews the commit. Strawman B: a compromised workflow can
-publish while the owner sleeps. **Recommendation: A.** It is one workflow line
-and one trusted-publisher setting, not a new system.
+cheapest control that preserves provenance, and stage-only means a compromised
+workflow cannot bypass it with a direct publish. Strawman A: it adds a manual
+step and a second place for the release to stall. Steelman B: the workflow is
+already pinned and the owner reviews the commit. Strawman B: a compromised
+workflow can publish while the owner sleeps. **Recommendation: A.** It is one
+workflow line and one trusted-publisher setting, not a new system.
 
 ### O23. Release notes
 
@@ -448,4 +469,7 @@ Repository facts:
 Upstream issues referenced:
 
 - `meta-models/muse-code-sdk#149`, `#107`, `#96`, `#138`, `#139`, `#62`
-- `anomalyco/opencode#50652`, `#63555`, `#62602`
+- `anomalyco/opencode#50652`, `#63555`, `#62602`, `#64787`, `#61645`,
+  `#36055`
+- npm staged publishing changes: GitHub changelog 2026-05-22;
+  `npm-stage` CLI reference
