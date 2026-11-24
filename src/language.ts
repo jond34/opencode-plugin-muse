@@ -22,6 +22,8 @@ export interface LanguageSession extends HarnessSession {
   readonly resumeOutcome?: "started" | "resumed" | "resume_fallback";
   /** True once the host died under this session; it cannot serve a turn again. */
   readonly hostExited?: boolean;
+  /** The watchdog's close ladder, when a reopen must wait for it. */
+  readonly hostEnding?: Promise<void>;
   setModel(model: string): Promise<void>;
   /** The language path always steers; the optional contract member is required here. */
   steerTurn(input: SteerTurnInput): Promise<void>;
