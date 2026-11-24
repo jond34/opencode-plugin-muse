@@ -44,11 +44,11 @@ landed, so the two cannot disagree about counts.
 | Item | Status | Where |
 |---|---|---|
 | A. Claim corrections | in progress | `policy-remote.md`, `decision-coverage.md`, `platform-support.md`, `round-25-plan.md` |
-| B1. JUnit summary | todo | `scripts/junit-summary.ts` |
-| B2. Skip ledger | todo | `test/skip-ledger.test.ts` |
-| B4. `runner.arch` | todo | `.github/workflows/test.yml` |
-| B5. Claims table | todo | `docs/claims.md` |
-| E34. Windows coverage | todo | round-26 plan |
+| B1. JUnit summary | done | `scripts/junit-summary.ts`; `docs/evidence/2026-11-24-ab5358f.json` |
+| B2. Skip ledger | done | `scripts/skip-ledger.ts`; three Windows skips declared |
+| B4. `runner.arch` | done | `.github/workflows/test.yml`; X64 / ARM64 in the artifact |
+| B5. Claims table | done | `docs/claims.md`; 15/15 current |
+| E34. Windows coverage | done | run 45302817218: 416 ran / 3 skipped; EOF close-promise gap |
 | E35. Hook scope | todo | round-26 plan |
 | E36/E37. Console route | todo | round-26 plan |
 | E38. Grandchild | todo | round-26 plan |
