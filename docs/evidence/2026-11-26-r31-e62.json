@@ -1,0 +1,72 @@
+{
+  "experiment": "E62",
+  "date": "2026-11-23",
+  "status": "security-finding",
+  "question": "Does a fresh project-scoped plugin install require approval, and does changing the hook command re-ask?",
+  "versions": {
+    "muse": "Muse Code 1.4.25 (1.4.25-R9361.1)",
+    "node": "v24.22.1"
+  },
+  "isolation": {
+    "root": "scratch/r31-e62",
+    "workspaceC": "scratch/r31-e62/ws-c",
+    "storeC": "scratch/r31-e62/store-c (isolated XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME, XDG_CACHE_HOME)",
+    "workspaceD": "scratch/r31-e62/ws-d (prepared, not run)",
+    "ownerConfigTouched": false,
+    "trustPrecondition": "trust.json for each workspace was seeded before install; this is a trust precondition, not a measurement"
+  },
+  "plugin": {
+    "name": "e62-probe",
+    "version": "0.1.0",
+    "hook": "SessionStart `mark`; command node hooks/mark-a.mjs, changed to node hooks/mark-b.mjs",
+    "firstManifestSha256": "sha256:ba5eb86a387a1a0c0a66008fb8977aa904e42c6432fa1a12798f1e467d67e9ff",
+    "firstPackageSha256": "sha256:ccaeacae342d6c100b5350d329b98271fc239a1b42556166db464e88beb53256",
+    "firstDefinitionHash": "sha256:d3f45a82ea2b0f2565340f6cf9dfd32bf8c666da8590fc70712ae683f34641dc",
+    "changedManifestSha256": "sha256:50677195384a83f92b01c74435209897126669d398a887c2ac874a8547b095b4",
+    "changedPackageSha256": "sha256:b7665c270ad4acd168cec8691d04905bf4b561ae18850c4b64d1ac29344d89fe",
+    "changedDefinitionHash": "sha256:9d33b40f04fc81d6596cefb6d7a0330d8379a4d854d63e975c6157b701bcf6b1"
+  },
+  "commands": [
+    "cd scratch/r31-e62/ws-c && XDG_CONFIG_HOME=… XDG_DATA_HOME=… XDG_STATE_HOME=… XDG_CACHE_HOME=… muse plugins install ./plugin --scope project --json",
+    "… muse plugins inspect e62-probe --json",
+    "… muse plugins approve e62-probe --json",
+    "… muse exec --json --provider echo --trust-workspace 'ok'",
+    "sed -i 's#hooks/mark-a.mjs#hooks/mark-b.mjs#' scratch/r31-e62/ws-c/plugin/.muse-plugin/plugin.json",
+    "… muse plugins update e62-probe --json",
+    "… muse plugins inspect e62-probe --json",
+    "rm -f scratch/r31-e62/ws-c/marker-a.txt scratch/r31-e62/ws-c/marker-b.txt",
+    "… muse exec --json --provider echo --trust-workspace 'ok'"
+  ],
+  "observations": [
+    "Fresh project-scoped install exited 0 with warning `third-party plugin: hooks require review before activation`.",
+    "Before approval, inspect reported runtime capability `mark` status `review_needed` and effective_capabilities [].",
+    "Approval exited 0 and recorded trusted_definition_hash sha256:d3f45a… for plugin:e62-probe:hook:mark.",
+    "The first echo turn exited 0, wrote marker-a.txt (6 bytes), and reported 1 completed model call with 0 input/output tokens.",
+    "Changing only the hook command and running `muse plugins update` exited 0; inspect then reported status `modified`, diagnostic code `modified_definition_hash`, and candidate hash sha256:9d33b4….",
+    "The next echo turn exited 0 and wrote marker-b.txt at 2026-11-23 21:27:18.450 -0800 (sha256 c46699865b6d7c32e964b9feaaf93ff06d3ad8f4455432137837fa9bd894c85a).",
+    "After that run, inspect reported `trusted_enabled`; settings.json held trusted_definition_hash sha256:9d33b4… and `legacy_hook_trust_amnesty_applied: true`.",
+    "The same inspect still reported effective_capabilities [] while the hook had executed."
+  ],
+  "result": "A changed plugin hook ran without a new approval. Muse reported the capability as modified before the run, then the run applied a legacy trust amnesty, promoted the new definition hash, and executed it. This is E62 B2: a security finding.",
+  "branch": "D246 B2: stop release; changed hook runs without re-approval",
+  "workspaceD": "not run because the B2 stop condition fired after the second turn",
+  "cost": "free; two echo turns, 1 completed call each, 0 tokens",
+  "turns": 2,
+  "limits": [
+    "This measures Muse CLI 1.4.25 on Linux with an isolated store and a project-scoped local plugin.",
+    "It does not identify whether the defect is the legacy amnesty migration or the execution path's failure to re-check the modified hash; both are visible in the record.",
+    "It does not test a paid model turn, another Muse version, or a workspace-file hook.",
+    "Workspace D's unapproved control was not run after the stop condition."
+  ],
+  "artifacts": [
+    "scratch/r31-e62/install-c.json",
+    "scratch/r31-e62/inspect-c-before.json",
+    "scratch/r31-e62/approve-c.json",
+    "scratch/r31-e62/run-c-1.json",
+    "scratch/r31-e62/update-c.json",
+    "scratch/r31-e62/inspect-c-after-update.json",
+    "scratch/r31-e62/run-c-2.json",
+    "scratch/r31-e62/inspect-c-after-run2.json",
+    "scratch/r31-e62/store-c/config/muse/settings.json"
+  ]
+}

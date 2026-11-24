@@ -8,27 +8,23 @@
     "url": "git+https://github.com/jond34/opencode-plugin-muse.git"
   },
   "type": "module",
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./tui": {
       "types": "./dist/tui.d.ts",
-      "import": "./src/tui.ts",
-      "default": "./src/tui.ts"
+      "import": "./dist/tui.js",
+      "default": "./dist/tui.js"
     }
   },
   "files": [
     "dist",
-    "src",
-    "docs/compatibility.md",
-    "docs/native-history-evidence.md",
-    "docs/provenance.md",
     "README.md",
     "LICENSE",
     "CREDITS.md",
@@ -43,7 +39,9 @@
     "doctor": "bun scripts/doctor.ts",
     "junit:summary": "bun scripts/junit-summary.ts",
     "repro": "bash scripts/repro.sh",
-    "check:claims": "bun scripts/check-claims.ts"
+    "check:claims": "bun scripts/check-claims.ts",
+    "check:claims:strict": "bun scripts/check-claims.ts --strict",
+    "release:check": "bash scripts/check-release.sh"
   },
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",

@@ -13,14 +13,19 @@ publish, a staged upload, a tag, or a push.
   [`provenance.md`](provenance.md).
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The next version is `0.1.13` (O21 A). It is prepared locally, reproducible
-  from the lockfile, and not published by the preparation round. The candidate
-  hash is recorded in [`provenance.md`](provenance.md).
+- The next version is `0.1.13` (O21 A). It is prepared locally; locally
+  reproducible from the lockfile, independent rebuild pending. It is not
+  published by the preparation round. The candidate hash is recorded in
+  [`provenance.md`](provenance.md).
 - Round 30 repacked the candidate after moving four README doc links to absolute
   GitHub URLs: tarball shasum `caf36bb5…`, 208 files. The dependency gate records
   25 moderate and no high/critical; O25 A accepts them with a 2027-02-28 review.
-  Release is **held**: E55's Console matrix is blocked on the owner browser, and
-  E60's stage rehearsal was not authorized.
+- Round 31 changed the package to publish the built `dist/` entry only, not
+  `src/` or `docs/`. The candidate tarball is now 165 files, SHA-256
+  `b1b8fde031aa6797e2d174433d8736edbadc8eb252423f69d2870ec37052b0c1`. The
+  `dist/` hash is unchanged. Release is **stopped**: E62 found a changed plugin
+  hook can run after `muse plugins update` without re-approval; E55a/E55b remain
+  blocked on the owner browser, and E60 was not run.
 
 ## Version policy
 
@@ -34,19 +39,21 @@ tag name if one is later created, and the release notes.
 
 ## Candidate gates
 
-All of these run before the candidate is called ready:
+All of these run before the candidate is called ready. `bash
+scripts/check-release.sh` is the executable contract; `publish.yml` runs it
+before `npm stage publish`.
 
-1. `bun scripts/check-claims.ts` — the outside claims are current.
-2. `npm run check:offline` — typecheck plus the offline suite.
-3. `bash scripts/repro.sh` — rebuild from the committed lockfile and print
-   `PASS` against the hash in `provenance.md`.
-4. `npm pack` inspection — required files present; no scratch, tests, evidence
-   tarballs, `.env*`, `.git`, or owner-modified files.
-5. Isolated install and import from the packed tarball, outside this checkout.
-6. `npm audit --omit=dev` against a clean install of the packed tarball, with the
-   dependency gate below.
-7. The Windows sentence stays best-effort unless a named desktop result exists.
-8. `git diff --check`; the only unstaged file is the owner's integration file.
+| Gate | Enforced by | Evidence | Owner-only? |
+|---|---|---|---|
+| Strict external claims | `check-release.sh` → `check-claims.ts --strict` | `docs/claims.json` | No |
+| Typecheck and offline suite | `publish.yml` → `npm run check:offline` | `test/` | No |
+| Reproducible `dist/` | `publish.yml` → `scripts/repro.sh` | `docs/provenance.md` | No |
+| Pack inspection | `check-release.sh` | `scratch/r31-pack.json` | No |
+| Isolated install and import | `check-release.sh` | temp app under `$TMPDIR` | No |
+| Clean packed-install audit | `check-release.sh` | `scratch/r31-audit.json` | No |
+| Windows sentence | Owner review of `docs/platform-support.md` | named desktop result or absence | Yes |
+| Diff check | `check-release.sh` → `git diff --check` | working tree | No |
+| Stage approval | `npm stage approve <stage-id>` with 2FA | npm stage | Yes |
 
 A green suite is necessary, not sufficient. It does not exercise the publish
 workflow, the registry, or a model turn.
@@ -92,6 +99,11 @@ publish` does not require 2FA; approval does. The trusted publisher should be
 configured as **stage-only**; that setting is owner-side, not repo-side, and
 rejects a direct `npm publish` from the workflow. The workflow does not publish
 anything until the owner dispatches it.
+
+A newly created trusted-publisher configuration expires if its first successful
+publish is not completed within **2 days**. Create the configuration when a
+release is ready to stage, not weeks in advance. These are npm-side facts, not
+repo-side checks.
 
 Staged publishing requires npm CLI 11.15.0+. The workflow pins `npm@11.19.1`
 before `npm ci` so the runner does not depend on the bundled CLI.

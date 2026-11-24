@@ -8,16 +8,37 @@ posture, not an assumption that approvals do not exist.
 
 Muse has four approval modes: `allowAll`, `promptUnmatched`, `onRequest`, and
 `denyUnmatched`. A client selects a server-minted choice with a scope of `once`,
-`session`, or `locally-persistent`. Approvals are durable in v1 and do not
-expire. MCP tools are not sandboxed: an approval governs whether a call may run,
-not what the tool can reach.
+`session`, or `localPersistent`. Approvals are durable in v1 and do not expire.
+MCP tools are not sandboxed: an approval governs whether a call may run, not what
+the tool can reach.
+
+The scope depends on the approval subject. A shell command-prefix grant carries
+`workspaceRoot` and applies only inside that root; the Muse UI labels it “Always
+allow in this workspace.” A `tool` grant carries `toolName` but no
+`workspaceRoot`, and `localPersistent` means “saved in the local policy store.”
+E57 observed that store applying an MCP tool rule in a second workspace. The
+vendor text and E57 agree only because the two subjects have different scopes.
+
+## What “Always allow” means
+
+| Grant | Scope | Evidence |
+|---|---|---|
+| Muse shell command prefix | Workspace root, per the installed SDK | `ApprovalSubject` carries `workspaceRoot`; vendor label is “Always allow in this workspace” |
+| Muse MCP tool name | User-local policy store; observed across workspaces | `tool` subject has `toolName` and no `workspaceRoot`; E57 |
+| opencode saved approval | Durable project-scoped `allow` rule | opencode permissions docs |
+| opencode `deny` | Always wins over a saved approval | opencode permissions docs |
+
+The approval labels hide the first two scopes: “Always allow this MCP tool” does
+not say “in every workspace.” Do not describe a Muse `localPersistent` grant as
+an opencode saved approval.
 
 ## What opencode provides
 
 opencode has its own ordered permission engine. Rules are `allow`, `ask`, or
 `deny`; the last match wins, and no match means `ask`. MCP tools are named
-`<server>_<tool>` for rules. A saved approval is a durable, project-scoped allow
-rule and never overrides a configured `deny`. The bridge emits ordinary
+`<server>_<tool>` for rules. An opencode saved approval is a durable,
+project-scoped `allow` rule and never overrides a configured `deny`. It is a
+different object from a Muse `localPersistent` grant. The bridge emits ordinary
 `tool-call` events into opencode, which executes them under those rules.
 
 ## What E48 measured
@@ -34,20 +55,35 @@ asking for `:ask-me`. The approval menu offered:
 
 Choosing `allow_local_mcp_tool` wrote a `schema_version: 2` store with a
 `tool_action` rule for `mcp__opencode__bash`. A second `denyUnmatched` session
-then ran the same tool with no approval request. E57 repeated that rule after
-closing the host and in a second workspace; both sessions ran the tool with no
-approval. The rule was seeded from E48's recorded store, so this is durability
-at name level, not a new approval-menu run. The evidence is
+then ran the same tool with no approval request. E57 repeated that Muse
+`localPersistent` rule after closing the host and in a second workspace; both
+sessions ran the tool with no approval. The rule was seeded from E48's recorded
+store, so this is durability at name level, not a new approval-menu run. It is
+not evidence that shell command-prefix grants cross workspaces. The evidence is
 [`evidence/2026-11-25-e48.json`](evidence/2026-11-25-e48.json) and
 [`evidence/2026-11-26-r30-e57.json`](evidence/2026-11-26-r30-e57.json).
 
+## Update caveat (round 31)
+
+E62 found that a plugin hook approval is not reliably re-checked across an
+update on Muse 1.4.25. After approving `e62-probe`, changing only its hook
+command, and running `muse plugins update`, `muse plugins inspect` reported the
+capability as `modified` with `modified_definition_hash`. The next `muse exec`
+still wrote the new marker and rewrote the trust record to the new hash with
+`legacy_hook_trust_amnesty_applied: true`.
+
+Treat a plugin hook approval as fresh-install evidence, not as durable across an
+update. The release is stopped until this is fixed or worked around; the record
+is [`evidence/2026-11-26-r31-e62.json`](evidence/2026-11-26-r31-e62.json). This
+is a Muse-side finding, not a claim that the plugin maps a Muse approval.
+
 ## Why the plugin still uses `allowAll`
 
-The saved rule removes a Muse refusal. It does not create a surface that shows a
-Muse approval to the opencode user. The plugin has no tool executor of its own;
-it emits a call into opencode's loop, where opencode already gates and runs it.
-Without a way to present Muse's prompt as the only gate, starting in `allowAll`
-avoids inventing a second, invisible policy layer.
+The Muse local persistent rule removes a Muse refusal. It does not create a
+surface that shows a Muse approval to the opencode user. The plugin has no tool
+executor of its own; it emits a call into opencode's loop, where opencode
+already gates and runs it. Without a way to present Muse's prompt as the only
+gate, starting in `allowAll` avoids inventing a second, invisible policy layer.
 
 ## The double gate
 
@@ -55,8 +91,11 @@ Presenting `approval/requested` through `ctx.permission.assert` would put a
 Muse gate in front of the opencode gate for the same call. A `once` choice at
 the first gate leaves no durable grant for the second, so the user can be asked
 twice. Choosing “always” may save an opencode rule and suppress the second
-prompt, but that maps a Muse scope onto opencode's saved approvals and silently
-persists a rule broader than the user may have understood.
+prompt, but that maps a Muse scope onto an opencode saved approval and silently
+persists a rule broader than the user may have understood. A Muse
+`localPersistent` MCP grant is broader still: it lives in the user's local policy
+store and was observed across workspaces, so mapping it would need a visible
+global-scope warning.
 
 The current API makes a one-prompt path harder than the old design assumed:
 
@@ -76,9 +115,10 @@ O16 B becomes implementable only after a measured one-prompt flow:
 
 1. Muse's approval is presented once, and the subsequent opencode execution for
    that call does not ask again.
-2. The mapping from `once` / `session` / `locally-persistent` to opencode's
+2. The mapping from `once` / `session` / `localPersistent` to opencode's
    `once` / `always` / `reject` is explicit and does not persist more than the
-   user saw.
+   user saw. A `localPersistent` MCP grant must not be mapped without a visible
+   global-scope warning.
 3. Denial and refusal are tested, including a host with no reviewer or no
    `:ask-me`.
 4. A test pins “no second prompt” rather than leaving it to prose.

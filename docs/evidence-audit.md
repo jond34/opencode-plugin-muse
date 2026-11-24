@@ -101,6 +101,24 @@ landed, what is blocked, and what was explicitly not run.
 | E60. Stage rehearsal | not run | D239-D; no push/stage authorization |
 | F. Final checks and commit | done | 452 pass / 0 fail / 41 files; claims 17/17; repro PASS; diff check clean |
 
+## Round 31 status (2026-11-23)
+
+The live table is in `docs/round-31-status.md`. This table records only what
+landed or was blocked; experiments still running are not counted as done.
+
+| Item | Status | Where |
+|---|---|---|
+| A1. E55 baseline | **done** | addendum `docs/evidence/2026-11-26-r31-e55-baseline-addendum.json`; 3 sources, 6 provider policies; retained and fresh SHA-256 equal |
+| A2. Approval scope | **done** | `docs/approval.md`; E57 is cross-workspace for the MCP `tool` subject, not shell prefixes; opencode saved approvals are a separate project-scoped object |
+| A3. Console docs | **done** | `docs/policy-remote.md`; round-23 build marked superseded; E36/E37 current; E55 baseline status added |
+| A4. Platform wording | **done** | `docs/decision-coverage.md`; `0600` is POSIX-only and Windows uses inherited ACLs; EOF/reaping row qualified |
+| A5. Release gate | **done** | `scripts/check-release.sh`; workflow step; strict claims 20/20, pack 165, audit 25/0/0, installed import pass; package now publishes `dist/` only |
+| A6. Provenance wording | **done** | `docs/release.md`, `docs/provenance.md`; locally reproducible, independent rebuild pending |
+| E62. Changed hook | **security finding** | `docs/evidence/2026-11-26-r31-e62.json`; changed hook ran after `muse plugins update` without re-approval; release stopped |
+| E63. Runtime trace | **done** | `docs/evidence/2026-11-26-r31-e63.json`; no traced path to the vulnerable package subtree |
+| E55a/E55b. Console | blocked | no owner-authenticated browser; no claim |
+| E61, E64, E60 | not run | stopped at E62 B2; no stage, approval, publish, tag, or push |
+
 ---
 
 ## Round 27 status (2026-11-24)

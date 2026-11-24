@@ -51,14 +51,17 @@ source in `debug config` rather than a remote decision. A denial that comes from
 it names the workspace (`Blocked by Acme's policy`), where a local statement does
 not.
 
-The surface, as observed in round 23, is a **Controls** page with three groups:
-*Reservations* (a provider, model or extension reserved to named members, which
-nobody else may use), *Policies* (a member or group restricted to certain models,
-spend caps, or tools), and *Control templates*. A policy targets *members tagged
-with* a tag, and a workspace with no tags has no way to scope one. The Models
-page is separate: a per-model switch decides what members may use at all. None of
-this is a Providers/Tools editor in the shape round 22's research described, so
-treat that description as the documented model rather than the observed UI.
+**Superseded (round 23 Console build, before E36).** That build had a
+**Controls** page with three groups: *Reservations* (a provider, model or
+extension reserved to named members, which nobody else may use), *Policies* (a
+member or group restricted to certain models, spend caps, or tools), and
+*Control templates*. Its visible policy target was *members tagged with* a tag,
+and a workspace with no tags had no way in the UI to scope one. The Models page
+was separate: a per-model switch decided what members could use at all. That
+build had no per-model control on the Providers/Tools table, and it was not a
+Providers/Tools editor in the shape round 22's research described. E36 later
+found the hand-picked-member target in the builder, so this paragraph is
+historical, not the current route.
 
 | Event | Effect on the host |
 |---|---|
@@ -66,6 +69,10 @@ treat that description as the documented model rather than the observed UI.
 | Another workspace connected | The new workspace's statements replace the old set |
 | Disconnected | The workspace's statements are cleared |
 | Console outage | The last fetched statements stay in effect |
+
+**Current status:** E55's retained baseline has three local sources (`document`,
+`directory`, `directory`) and six provider policies. Console source attribution
+remains unproven (E55a/E55b).
 
 ## Remote: unobservable
 
@@ -114,13 +121,13 @@ active credential labelled with exactly one workspace id, and no second binding
 record**; it does not prove the token is refused in another workspace, which would
 need a second workspace to test (`docs/evidence-audit.md` F2).
 
-E26 then tried to create the Providers/Tools policy that would test compilation.
-The Controls page reads "No policies yet. Every member can use all 76 enabled
-models", and `/policies/new` offers one target, "Members tagged with…", whose
-`Add tag` is disabled because no member tags exist. This build has no member page
-carrying Controls (Settings → Members offers only View and Invite), no per-model
-control on the Models table, and no tag affordance anywhere — `Tag` appears only
-as a table filter.
+E26 then tried to create the Providers/Tools policy that would test compilation
+on the 2026-11-24 build. The Controls page read "No policies yet. Every member
+can use all 76 enabled models", and `/policies/new` offered one target, "Members
+tagged with…", whose `Add tag` was disabled because no member tags existed. That
+build had no member page carrying Controls (Settings → Members offered only View
+and Invite), no per-model control on the Models table, and no tag affordance
+anywhere — `Tag` appeared only as a table filter.
 
 The changelog's hand-picked-member route exists in this build; E31 read only the collapsed trigger. This Console build (`index-OIWtun4R.js`, 2026-11-24) renders "Members tagged with…" for its default audience mode, and with no tags the Add tag and Save controls were disabled. E36 read the builder chunk (`controls-Bf3Y4t9I.js`): its audience menu groups tag modes with `members`/`except-members` ("These members, picked by hand"), `workspace`/`everyone`/`all-service-accounts`, and service-account modes. The hand-picked route therefore needs no tag and was available; E31 recorded the closed control, not the menu. Tag creation through the API is untested. It is not on the measured route: E36 found the hand-picked member target, and E37 created the policy without a tag. No tag API is needed for the documented path. The compile question is now measured (E37): a policy targeting the sole member with a Providers deny for `mistral` was created through the builder, and `opencode debug config` gained `info.policies: [{action: "provider.use", resource: "mistral", effect: "deny"}]` — inside the existing `document` source, not a source with a Console type. `opencode models` stayed at 112 lines and still listed `mistral`. The policy was then deleted; the statement disappeared, Controls returned to "No policies yet", and the workspace baseline policy set (deny `*`, allow five providers) remained cached in the document. E26 left the account as found; E37 did too.
 

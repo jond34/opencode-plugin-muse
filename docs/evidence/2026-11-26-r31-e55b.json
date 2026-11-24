@@ -1,0 +1,31 @@
+{
+  "experiment": "E55b",
+  "date": "2026-11-23",
+  "status": "blocked",
+  "question": "Does a Console tool deny produce a workspace-named denial?",
+  "precondition": {
+    "ownerAuthenticatedConsoleBrowser": false,
+    "reason": "No owner-authenticated Console browser session or UI automation is available in this environment.",
+    "reversiblePolicyAttempted": false
+  },
+  "baseline": {
+    "opencodeVersion": "v2.4.1",
+    "sourceCount": 3,
+    "sourceTypes": ["document", "directory", "directory"],
+    "configSha256": "ec275b6df40561e61041f61281c3e13d35fba3a58c24ed68455cb390f5cfc2a9",
+    "source": "docs/evidence/2026-11-26-r31-e55-baseline-addendum.json"
+  },
+  "notMeasured": [
+    "No Console tool-deny policy was added or deleted.",
+    "No tool call was run against a Console-delivered deny.",
+    "No workspace-named sentence or attribution is claimed."
+  ],
+  "commands": [
+    "jq 'length' scratch/r30-e55/before-config.json",
+    "sha256sum scratch/r30-e55/before-config.json"
+  ],
+  "limits": [
+    "This is a blocked record, not a result.",
+    "Unblock with an owner-authenticated Console browser and one reversible tool-deny policy."
+  ]
+}

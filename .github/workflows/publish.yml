@@ -5,6 +5,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
   id-token: write
 
 jobs:
@@ -28,4 +30,8 @@ jobs:
       - run: npm ci
       - run: bash scripts/repro.sh
       - run: npm run check:offline
+      - name: Release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-release.sh
       - run: npm stage publish

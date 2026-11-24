@@ -18,6 +18,30 @@
       "check": { "kind": "http" }
     },
     {
+      "id": "muse-approvals-durable",
+      "claim": "Muse remembers permission selections across sessions",
+      "url": "https://dev.meta.ai/docs/muse-code/permissions",
+      "quote": "Muse Code remembers your permission selections and applies them to new sessions.",
+      "version": "1.4.25",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "muse-mcp-unsandboxed",
+      "claim": "MCP tools are outside Muse's sandbox",
+      "url": "https://dev.meta.ai/docs/muse-code/extending",
+      "quote": "MCP tools are not sandboxed.",
+      "version": "1.4.25",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "opencode-saved-approval",
+      "claim": "An opencode saved approval is project-scoped and cannot override a deny",
+      "url": "https://opencode.ai/docs/permissions",
+      "quote": "Saved approvals are durable, project-scoped allow rules. They never override a configured deny.",
+      "version": "2.4.1",
+      "check": { "kind": "http" }
+    },
+    {
       "id": "console-targets",
       "claim": "The Console documents hand-picked members as a policy target",
       "url": "https://opencode.ai/console/changelog/budgets-in-policies",

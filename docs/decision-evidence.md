@@ -1478,3 +1478,53 @@ issue and not on a probe. Whether a source-file change re-enters the loader
 paid turn would not have made the row or the clause different. The JSONC reader
 is only exercised against the fixtures in `test/doctor.test.ts`, not against
 every config file in the wild.
+
+## Round 31 — evidence integrity, then a stopped release
+
+**Why this round.** The record had a wrong E55 baseline summary, two approval
+scopes described as one, a Console page with superseded present-tense claims, an
+unqualified Windows mode claim, a release page that listed more gates than the
+workflow ran, and provenance wording that called one builder reproducible. The
+round repaired those first, then tested the approval and dependency claims.
+
+**D241 — E55 baseline corrected, no Console claim.** The retained
+`scratch/r30-e55/before-config.json` is a three-element array (`document`,
+`directory`, `directory`) with six `provider.use` statements, and it is
+byte-identical to a fresh `opencode debug config --standalone` on 2.4.1. The
+original artifact's `sourceCount: 0` / `sources: []` was wrong. The addendum
+corrects the baseline only; Console attribution and effect timing remain
+unmeasured.
+
+**D242 — approval scopes separated.** A Muse shell command-prefix grant is
+workspace-root scoped; a Muse `tool` grant has `toolName` and no `workspaceRoot`
+and was observed across workspaces in E57. An opencode saved approval is a
+different, project-scoped object and never overrides a configured `deny`. The
+approval page and ledger now say that, and no sentence maps one to the other.
+
+**D246 — E62 B2: release stopped.** A fresh project-scoped hook install required
+approval and its first echo turn fired the marker. Changing only the hook command
+and running `muse plugins update` produced inspect status `modified` with
+`modified_definition_hash`; the next `muse exec` still wrote the new marker and
+rewrote the trust record to the new hash, with
+`legacy_hook_trust_amnesty_applied: true`. That is a changed hook running
+without re-approval on Muse 1.4.25. The release stops; E61, E64, and E60 were not
+run. P5 moves from H to P.
+
+**D249 — E63 B1: no runtime path found.** `@vercel/nft` 1.11.12 traced 371
+unique files from `dist/index.js`. The list contains `@opencode/plugin`'s
+promise/schema entry and `@opencode/schema`, but no `@opencode/util`, glob,
+minimatch, gaxios, gcp-metadata, or rimraf. The installed tree still audits at 25
+moderate / 0 high / 0 critical, with gaxios, gcp-metadata, and rimraf fixable.
+This supports O25 A with a review date; it is not a claim that the modules are
+unreachable on every path.
+
+**D247/D248/D250/D251 — not reached.** E55a/E55b are blocked on an
+owner-authenticated Console browser, so no effect, timing, or attribution claim
+was added. E64 and E60 were not run after the E62 stop. No stage was created,
+nothing was approved or published, and no tag or push occurred.
+
+**Verification.** `bash scripts/check-release.sh` passed with strict claims
+20/20, a 165-file pack, a 25 moderate / 0 high / 0 critical audit, and an
+installed-package import. The first `npm test` run after removing two ignored
+scratch test trees was 458 pass / 1 fail; the single conformance test passed on
+rerun. The final full run is recorded in `docs/round-31-status.md`.

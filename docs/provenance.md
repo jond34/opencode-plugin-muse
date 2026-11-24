@@ -42,10 +42,12 @@ hash. The candidate is local only: the latest npm tarball is 0.1.12, patches 3â€
 exist only in this checkout, and publishing is a separate owner action (O15).
 
 Round 30 repacked the tarball after moving four unshipped README doc links to
-absolute GitHub URLs. The `dist/` hash above is unchanged; this file is itself
-packaged, so the tarball digest is recorded in
-[`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json) instead of
-being repeated here.
+absolute GitHub URLs. The `dist/` hash above is unchanged. Round 31 then changed
+the package to ship the built `dist/` entry only; the candidate is 165 files
+with tarball SHA-256
+`b1b8fde031aa6797e2d174433d8736edbadc8eb252423f69d2870ec37052b0c1`. The old
+208-file digest remains in [`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json).
+The second clean builder (E64) was not run because the release stopped at E62.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, not published:
 
@@ -201,7 +203,7 @@ would reuse, but it is not transcript parity and is not recorded as such.
 - **One reproducer.** A reproducible build is a property of verification, and
   independent verification requires two or more separate builders. This record is from
   a single machine and toolchain. Anyone can re-run `scripts/repro.sh`; until someone
-  does, treat this as reproducible-in-principle.
+  does, treat this as locally reproducible; independent rebuild pending.
 - **Nothing about source authorship.** The build hash shows the artifact corresponds
   to this source. It says nothing about whether the source is safe, and nothing about
   who wrote upstream's code. Upstream has no verified npm-to-GitHub identity link.
