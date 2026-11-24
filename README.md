@@ -18,6 +18,13 @@ OpenCode 2.x and Muse Code CLI 1.4.20 or newer, already logged in.
 3. Restart opencode and pick a Muse model, for example
    `opencode run -m muse/muse-ember-1.0 "hello"`.
 
+The same pin in a config file, without the CLI step:
+
+```jsonc
+// opencode.jsonc
+{ "plugins": ["@jonathand34/opencode-plugin-muse@1.0.0"] }
+```
+
 Tested pair: opencode 2.4.1 with Muse Code CLI 1.4.25. MIT. Unofficial: not
 affiliated with, endorsed by, or supported by Meta or opencode.
 
