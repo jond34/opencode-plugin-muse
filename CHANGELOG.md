@@ -2,17 +2,18 @@
 
 ## 1.0.0
 
-First stable release of the cleaned public tree. The package name, `.` and
-`./tui` exports, provider id `muse`, documented `MUSE_*` variables, and the
-install command are the compatibility promise; model ids and vendor behavior
-remain data.
+First stable release of the cleaned public tree, published on 2026-11-24. The
+package name, `.` and `./tui` exports, provider id `muse`, documented `MUSE_*`
+variables, and the install command are the compatibility promise; model ids and
+vendor behavior remain data.
 
 X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: a simple turn,
-a bridged `shell` call, and a resumed turn all returned the expected nonce. The
-package compiles against `@opencode/plugin` 2.3.2 and `@muse-code/sdk` 1.4.24;
-that pair was not live-run in this pass. On 2.4.1, `opencode models` does not
-list the plugin-injected `muse/*` provider, but a direct `opencode run -m
-muse/...` resolves it.
+a bridged `shell` call, and a resumed turn all returned the expected nonce. X9b
+then installed the published `1.0.0` and returned an exact nonce from a run that
+loaded only that package. The package compiles against `@opencode/plugin` 2.3.2
+and `@muse-code/sdk` 1.4.24; that pair was not live-run in this pass. On 2.4.1,
+`opencode models` does not list the plugin-injected `muse/*` provider, but a
+direct `opencode run -m muse/...` resolves it.
 
 ### Containment and private host configuration
 

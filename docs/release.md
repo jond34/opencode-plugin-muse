@@ -1,24 +1,27 @@
 # Release gates
 
-This page is the operational release record: what is published, what the local
-candidate must prove, and how a version reaches npm. It does not itself
-authorize a publish, a staged upload, a tag, or a push.
+This page is the operational release record: what is published, what the release
+tree must prove, and how a version reaches npm. It does not itself authorize a
+publish, a staged upload, a tag, or a push.
 
 ## Current public state
 
-- npm `latest` is `0.1.12`, published 2026-11-18. The only tag is `v0.1.12`;
-  there is no GitHub Release.
-- X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: the candidate
-  completed a simple turn, a bridged tool call, and a resumed turn. See
-  [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json). No stage,
-  tag, or GitHub Release exists.
-- The tree is the `1.0.0` candidate. Its build identity and candidate hashes are
-  recorded in [`provenance.md`](provenance.md).
+- npm `latest` is `1.0.0`, published 2026-11-24 from commit
+  `af503fdc4462f035caa1a68300764522cdae2c83`. The tags are `v0.1.12` and
+  `v1.0.0`; `v1.0.0` has an immutable GitHub Release.
+- X9a passed on 2026-11-24 with opencode 2.4.1 and Muse CLI 1.4.25: a simple
+  turn, a bridged tool call, and a resumed turn all returned the expected nonce.
+  X9b then installed the published `1.0.0` and returned an exact nonce from a
+  run that loaded only that package. See
+  [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json).
+- The stage was downloaded and matched the release tree byte for byte before
+  approval. Its record is [`evidence/2026-11-24-r36-release.json`](evidence/2026-11-24-r36-release.json).
+- The build identity and published hashes are recorded in
+  [`provenance.md`](provenance.md).
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The version is `1.0.0`; see the public API below. A candidate is not a release
-  until npm and the GitHub tag both verify. X9b, the published install command,
-  is not proven until a public version exists.
+- The version is `1.0.0`; see the public API below. npm, the tag, the provenance
+  attestation, and the immutable Release all name the same commit.
 
 ## Watch item
 
@@ -38,12 +41,12 @@ a patch for fixes and narrow compatible changes, and a minor for substantial
 compatible work. Never reuse a published version; npm does not allow overwriting
 one.
 
-The candidate version must agree in `package.json`, `package-lock.json`, the
-tag name if one is later created, and the release notes.
+The release version agrees in `package.json`, `package-lock.json`, the tag name,
+and the release notes.
 
-## Candidate gates
+## Pre-release gates
 
-All of these run before the candidate is called ready. `bash
+All of these run before the release is called ready. `bash
 scripts/check-release.sh` is the executable contract; `publish.yml` runs it
 before `npm stage publish`.
 
@@ -67,8 +70,8 @@ workflow, the registry, or a model turn.
 
 | Object | How it is verified | When |
 |---|---|---|
-| Candidate tarball | `npm pack` plus SHA-256 of the `.tgz` | Before any stage |
-| Staged tarball | `npm stage download <stage-id>` plus SHA-256; compare with the candidate | While the stage is pending |
+| Release tarball | `npm pack` plus SHA-256 of the `.tgz` | Before any stage |
+| Staged tarball | `npm stage download <stage-id>` plus SHA-256; compare with the release tarball | While the stage is pending |
 | Provenance | Generated at public publish by trusted publishing; not verifiable from a staged package | After approval only |
 | Public version | `npm view <pkg> versions --json` and `dist-tags --json` | After approval only |
 
@@ -86,7 +89,7 @@ this checkout. The release rule is:
   review date;
 - **low or none:** record the result and proceed.
 
-Do not run `npm audit fix --force` as part of a release. The current candidate
+Do not run `npm audit fix --force` as part of a release. The current release
 result is in `docs/evidence/2026-11-26-r30-dep.json`.
 
 ## Publish flow
@@ -94,16 +97,16 @@ result is in `docs/evidence/2026-11-26-r30-dep.json`.
 The workflow uses GitHub OIDC trusted publishing, so no long-lived npm token is
 stored. Under O22 A the flow is:
 
-1. CI checks out the candidate, runs the gates, then runs `npm stage publish`.
+1. CI checks out the release tree, runs the gates, then runs `npm stage publish`.
 2. The owner reads the stage ID from `npm stage list --json`.
 3. The owner inspects it, downloads it, and compares its digest with the
-   candidate:
+   release tarball:
 
    ```bash
    npm stage list --json
    npm stage view <stage-id>
    npm stage download <stage-id>
-   # inspect the tarball and compare its sha256 with the candidate
+   # inspect the tarball and compare its sha256 with the release tarball
    ```
 
 4. The owner approves that exact ID with `npm stage approve <stage-id>` and 2FA.

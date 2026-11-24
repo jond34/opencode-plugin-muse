@@ -5,10 +5,13 @@ already have. Muse appears in the model picker as the `muse` provider, and
 requests go through the signed-in `muse` CLI, so no Muse credential reaches
 opencode or your config.
 
-X9a on 2026-11-24 passed on opencode 2.4.1 with Muse CLI 1.4.25: the plugin
-answered a simple turn, a bridged shell call, and a resumed turn. The package
-compiles against `@opencode/plugin` 2.3.2 and `@muse-code/sdk` 1.4.24; that
-compile pair is not a live-tested pair in this run. On 2.4.1, `opencode models`
+`1.0.0` is published on npm with an immutable `v1.0.0` GitHub Release. X9a on
+2026-11-24 passed on opencode 2.4.1 with Muse CLI 1.4.25: the plugin answered a
+simple turn, a bridged shell call, and a resumed turn. X9b then installed the
+published `1.0.0` and returned an exact nonce from a run that loaded only that
+package. The package compiles against `@opencode/plugin` 2.3.2 and
+`@muse-code/sdk` 1.4.24; that compile pair is not a live-tested pair in this
+run. On 2.4.1, `opencode models`
 does not list the plugin-injected `muse/*` provider even though `opencode run -m
 muse/...` resolves it. See [compatibility](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/compatibility.md). This is a
 republished build of
@@ -305,7 +308,7 @@ the wire contract is in
 ## Install
 
 ```bash
-opencode plugin add @jonathand34/opencode-plugin-muse
+opencode plugin add @jonathand34/opencode-plugin-muse@1.0.0
 ```
 
 If that fails (some opencode builds currently error in their embedded installer

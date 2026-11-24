@@ -30,7 +30,7 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-1.0.0 candidate (base + patches 1-5):
+Published 1.0.0 (base + patches 1-5):
 
 ```text
 3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669
@@ -38,27 +38,30 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 160 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
-hash. The latest published npm tarball is 0.1.12; publishing 1.0.0 is a separate
-owner action.
+hash. The published npm tarball is `1.0.0`, and its provenance attestation names
+commit `af503fd`. The GitHub Release `v1.0.0` is immutable and attaches the X9
+evidence; `npm audit signatures` verified the installed package's signatures and
+attestations.
 
 Round 30 repacked the tarball after moving four unshipped README doc links to
 absolute GitHub URLs. The `dist/` hash above is unchanged. Round 31 then changed
-the package to ship the built `dist/` entry only; the candidate is 165 files.
-The raw `.tgz` SHA-256 is not a stable identity: the current `npm pack` and the
-X9a pack both reported
-`35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2`, while the
-previous candidate reported `0cd241a2…` and an earlier pack reported
-`e1b707f4…`. Compare the extracted file list and per-file hashes, not the raw
-archive header. The normalized content digest is
+the package to ship the built `dist/` entry only; the published tarball is 165 files.
+The published `.tgz` SHA-256 is
+`35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2`; the registry
+copy has the same raw hash. A fresh `npm pack` from a later docs-only commit
+changes the archive because the packaged README or CHANGELOG changed, while
+`dist/` stays the same. The published artifact is fixed. Compare the extracted
+file list and per-file hashes, not the raw archive header. The published
+artifact's normalized content digest is
 `54cc6eef776e806b581cfe992b78316c9fded90404231bdee91ed021114757c4`. The old
 208-file digest remains in the local archive. Round 33 added the advisory doctor
-detail; round 36 fixed the Windows host teardown before the final candidate. Two
+detail; round 36 fixed the Windows host teardown before the 1.0.0 build. Two
 clean builders (E64, branch B1) produced the same `dist/` and the same 165-file
 content; the record is
 [`evidence/2026-11-24-r36-e64.json`](evidence/2026-11-24-r36-e64.json). The
 previous E64 record at
 [`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json) covers the
-superseded candidate.
+superseded build.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 
@@ -66,8 +69,8 @@ Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 ```
 
-100 files. That hash is kept for the older record; it is not the candidate and
-`repro.sh` does not compare against it.
+100 files. That hash is kept for the older record; it is not the 1.0.0 artifact
+and `repro.sh` does not compare against it.
 
 ## Inputs
 
@@ -81,7 +84,7 @@ d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
 | Patch 5 (effort, prompt, and rewritten-history boundaries) | sha256 `8283f7f5f9b168230d9085f3cc7834971c7e1d3237ac97f40fc9c545bba74fdd` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
-| Candidate | `1.0.0`, 160 files, hash `3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669` |
+| Published artifact | `1.0.0`, 160 files, hash `3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669` |
 | Dependency graph | `package-lock.json`, 275 packages |
 
 `evidence/` holds the raw inputs behind this record. It lives in the repository.
@@ -212,7 +215,7 @@ would reuse, but it is not transcript parity and is not recorded as such.
 
 ## What this does not prove
 
-- **Two clean builders, one machine.** E64 rebuilt the candidate twice with separate
+- **Two clean builders, one machine.** E64 rebuilt the release tree twice with separate
   HOME, cache, and temporary directories and got identical output, but both builders
   used the same machine and toolchain. This is locally reproducible, not an
   independent rebuild on another machine.

@@ -1,5 +1,5 @@
 {
-  "experiment": "X9a",
+  "experiment": "X9a/X9b",
   "date": "2026-11-24",
   "status": "pass",
   "candidate": {
@@ -55,17 +55,27 @@
     "warning": "Muse schema fingerprint differs from the SDK pin; tools.bridge-only-observed=degraded prompt.instructions=unknown",
     "strictHost": "not-tested"
   },
+  "x9b": {
+    "status": "pass",
+    "command": "opencode plugin add @jonathand34/opencode-plugin-muse@1.0.0",
+    "install": "Plugin installed and added to the redirected opencode config",
+    "loadedPlugin": "@jonathand34/opencode-plugin-muse@1.0.0",
+    "reply": "X9B-OK-x9b-1795516437-485",
+    "exact": true,
+    "note": "The run loaded only the published 1.0.0 plugin. `opencode plugin list` prints \"No plugins found\" on this host even while the log shows the plugin loading; direct model resolution is the proof."
+  },
   "support": {
     "x9aPair": "opencode 2.4.1 / Muse CLI 1.4.25",
+    "x9bPair": "same pair; published install",
     "x9c": "same run; no separate pair",
     "pinnedPairLive": false
   },
-  "conclusion": "Candidate content loaded from the local directory and completed all three turns on opencode 2.4.1 / Muse 1.4.25. X9b is not-run until a published version exists.",
+  "conclusion": "Candidate content loaded from the local directory and completed all three turns on opencode 2.4.1 / Muse 1.4.25. The published 1.0.0 install command also loaded and completed an exact-nonce turn on the same pair.",
   "limits": [
     "One machine, one host version, one model id.",
     "The pinned compile pair (opencode 2.3.2 / Muse 1.4.24) was not live-run in this pass.",
     "The schema-drift warning is recorded; strict-host behavior was not tested.",
-    "X9b, the published install command, is not proven by this run.",
+    "The published install command was proven on the same machine and pair; it was not tested on a second machine.",
     "This does not prove Windows desktop parity, sandboxing, or a cost cap."
   ]
 }
