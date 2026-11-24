@@ -15,6 +15,8 @@ const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 
 describe("the test:offline list", () => {
   test("every listed file exists, except the declared local-only three", () => {
+    expect(pkg.scripts.test).toMatch(/--path-ignore-patterns=(['"])scratch\/\*\*\1/);
+    expect(pkg.scripts["test:offline"]).toMatch(/--path-ignore-patterns=(['"])scratch\/\*\*\1/);
     expect(missingFromSuite(pkg)).toEqual([]);
     // A list that shrank to nothing would also be "consistent".
     expect(suitePaths(pkg).length).toBeGreaterThan(30);
