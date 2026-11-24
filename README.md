@@ -47,33 +47,13 @@ project is synthetic and no credential appears.
   immutable. The build hash and what it does and does not prove are in
   [docs/provenance.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/provenance.md).
 
+Those three are also why this is a separate package and not a patch request. The
+first is a disagreement with upstream's default rather than a defect, and the
+third cannot be added to bytes that already shipped.
+[CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md)
+argues both.
+
 ![opencode's model picker, showing Muse Ember under the Muse Code provider](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/v1.0.0/media/opencode-model-picker.png)
-
-## Why a separate package, not a patch
-
-The disagreement is a default, not a bug. Upstream keeps Muse's own tools,
-workflows, and subagents on, with presets to narrow them. This package turns
-them off and makes opencode the only executor, because I want one permission
-system and one transcript. That is a change to somebody else's default, so it is
-a fork request rather than a patch, and I forked instead of arguing.
-
-The published artifact could not be checked. 0.1.9 declares no repository,
-carries no attestation, and nothing public links its npm account to a GitHub
-account; the source in its tarball does not match the `master` of the repository
-it appears to come from. Those properties cannot be patched into bytes that
-already shipped, so the tarball was rebuilt under a repository that builds it.
-
-Pace decided the rest. Five patches, each with its own diff and evidence, landed
-between 2026-11-18 and 2026-11-21, and `1.0.0` shipped on 2026-11-24. In a tree I
-do not own, those five are five threads about defaults, and the author is
-entitled to protect their default. Either way works; this one matched the speed
-I wanted.
-
-The mechanisms are not mine. The Muse-side containment keys and the effort
-mapping were ported from [pgquiles/opencode-muse](https://github.com/pgquiles/opencode-muse)
-1.1.0 and `pi-muse-subscription`, both credited in [CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md).
-The fork is about where the loop lives; whoever proved a mechanism gets the
-credit for it.
 
 ## What `1.0.0` means
 
@@ -91,10 +71,9 @@ The package starts from
 0.1.9. Two of its five patches reproduce that tarball byte for byte; the others
 contain Muse to inference, hand the context to opencode, and finish the effort,
 prompt, and rewritten-history boundaries. [CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md)
-has each diff, [docs/provenance.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/provenance.md)
-the build hash and what it does and does not prove, and
-[why a separate package](#why-a-separate-package-not-a-patch) the reasons it is
-one.
+has each diff and the reasoning for a separate package;
+[docs/provenance.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/provenance.md)
+has the build hash and what it does and does not prove.
 
 Best-effort maintenance by one person, with no support commitment. It never holds
 Muse credentials and writes one file of its own (the token ledger); everything
@@ -537,6 +516,23 @@ media/      README screenshots
 ```
 
 Local-only records are kept out of this tree; see `AGENTS.md`.
+
+## Credit
+
+MIT throughout. The base is
+[`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
+0.1.9, rebuilt so it can be checked from outside;
+[CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md)
+records the base commit, each of the five diffs, and why the differences live in
+a separate package.
+
+- `@rasyid_rafi/opencode-agent-harness-core` 0.1.0 — `src/contract/` and the
+  test harness.
+- [pgquiles/opencode-muse](https://github.com/pgquiles/opencode-muse) 1.1.0 —
+  the effort handling; the containment keys follow the settings
+  `pi-muse-subscription` established.
+- [muse-code-sdk](https://github.com/meta-models/muse-code-sdk) — the session
+  protocol this package and upstream both drive.
 
 ## Licence
 
