@@ -17,8 +17,8 @@ the native-history default are not promised.
 
 | Surface | Version | Role |
 | --- | --- | --- |
-| opencode host | 2.4.1 | live X9a, 2026-11-24 |
-| Muse Code CLI | 1.4.25 | live X9a, 2026-11-24 |
+| opencode host | 2.4.1 | live X9a/X9b, 2026-11-24 |
+| Muse Code CLI | 1.4.25 | live X9a/X9b, 2026-11-24 |
 | `@opencode/plugin` | 2.3.2 | compile pin |
 | `@muse-code/sdk` | 1.4.24 | compile pin |
 
@@ -28,7 +28,9 @@ resumed turn all returned the expected nonce. The 2.3.2/1.4.24 pair is a compile
 pin, not a live-tested pair in that run. On 2.4.1, `opencode models` did not list
 the plugin-injected `muse/*` provider, but `opencode run -m muse/muse-ember-1.0`
 resolved it and completed the turns; the models command is a display gap there,
-not the provider proof. The record is
+not the provider proof. X9b then ran `opencode plugin add
+@jonathand34/opencode-plugin-muse@1.0.0` in a redirected config directory and
+returned an exact nonce from a run that loaded only that package. The record is
 [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json).
 
 The `SessionRequest.messages` metadata field added in 2.3.2 is additive and

@@ -1,0 +1,97 @@
+{
+  "experiment": "Release 1.0.0",
+  "date": "2026-11-24",
+  "status": "published",
+  "version": "1.0.0",
+  "sourceCommit": "af503fdc4462f035caa1a68300764522cdae2c83",
+  "tag": {
+    "name": "v1.0.0",
+    "object": "4af0db44d4deccacfd16ff51662701bf689dc954",
+    "commit": "af503fdc4462f035caa1a68300764522cdae2c83"
+  },
+  "npm": {
+    "publishedAt": "2026-11-24T10:25:51.225Z",
+    "distTags": {
+      "latest": "1.0.0"
+    },
+    "tarballSha256": "35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2",
+    "tarballFiles": 165,
+    "shasum": "c302effa5c7919738f4795fa1eadf1ab7b0cb317",
+    "integrity": "sha512-QcaKkFjsuuG+hKNZSsr/tzibJX/5cDmYoDMhV0aCZsKn0utpj6SD6uk+BrYM4AYdlMtoQNTpB8QUwufJqm6mrQ==",
+    "attestationUrl": "https://registry.npmjs.org/-/npm/v1/attestations/@jonathand34%2fopencode-plugin-muse@1.0.0",
+    "attestationSubjectSha512": "41c68a9058ecbae1be84a3594acaffb7389b257ff9703998a0332157468266c2a7d2eb698fa483eae93e06b60ce0061d94cb6840d4e907c414c2e7c9aa6ea6ad",
+    "provenanceCommit": "af503fdc4462f035caa1a68300764522cdae2c83",
+    "signatureAudit": "273 packages have verified registry signatures; 104 have verified attestations"
+  },
+  "stage": {
+    "id": "70d3da9a-2787-41c7-905b-f520ed302de7",
+    "status": "approved",
+    "parity": "exact",
+    "tarballSha256": "35645c2224c2a64d5ef3292739a346cb97dd2b32324e9c4a5b1cc8ce15dc77f2",
+    "contentDigest": "54cc6eef776e806b581cfe992b78316c9fded90404231bdee91ed021114757c4"
+  },
+  "workflow": {
+    "stageRun": "https://github.com/jond34/opencode-plugin-muse/actions/runs/45373292181",
+    "mainMatrixRun": "https://github.com/jond34/opencode-plugin-muse/actions/runs/45372364804",
+    "sourceCommit": "af503fdc4462f035caa1a68300764522cdae2c83"
+  },
+  "githubRelease": {
+    "id": 456613163,
+    "url": "https://github.com/jond34/opencode-plugin-muse/releases/tag/v1.0.0",
+    "publishedAt": "2026-11-24T10:35:59Z",
+    "immutable": true,
+    "asset": {
+      "name": "2026-11-24-r36-x9.json",
+      "size": 3467,
+      "sha256": "be7be9d4224fb843b9e15988c68e202e297ecf6d994a62de284d68b40d37d508"
+    }
+  },
+  "build": {
+    "distSha256": "3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669",
+    "distFiles": 160,
+    "toolchain": "node v24.22.1, npm 11.19.1, tsc 5.9.3",
+    "e64Branch": "B1",
+    "e64Evidence": "docs/evidence/2026-11-24-r36-e64.json"
+  },
+  "tests": {
+    "cleanMatrix": {
+      "tests": 423,
+      "files": 38,
+      "failures": 0,
+      "platforms": [
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest"
+      ],
+      "windowsSkipped": 3
+    },
+    "localFrame": {
+      "nominally": "456 tests across 41 files",
+      "note": "The three additional files are gitignored and reference the removed bench/ directory; clean CI is authoritative."
+    }
+  },
+  "checks": {
+    "docs": "pass",
+    "claims": "23/23 current",
+    "strictClaims": "pass",
+    "repro": "pass",
+    "releaseGate": "pass",
+    "audit": "25 moderate, 0 high, 0 critical",
+    "pack": "165 files, 200191 bytes",
+    "diffCheck": "pass"
+  },
+  "x9": {
+    "x9a": "pass: three turns on the candidate tarball",
+    "x9b": "pass: published 1.0.0 install and exact-nonce turn",
+    "x9c": "pass: same run on opencode 2.4.1 / Muse CLI 1.4.25",
+    "pair": "opencode 2.4.1 / Muse CLI 1.4.25",
+    "pinnedPairLive": false,
+    "evidence": "docs/evidence/2026-11-24-r36-x9.json"
+  },
+  "limits": [
+    "One machine, one host pair, one model id.",
+    "The compile pin (opencode 2.3.2 / Muse SDK 1.4.24) was not live-run.",
+    "No Windows desktop parity, sandbox behind the bridge, per-turn cost cap, offline path, or Muse-config plugin hook execution.",
+    "E64 is two clean builders on one machine, not an independent cross-machine rebuild."
+  ]
+}

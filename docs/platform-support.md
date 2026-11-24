@@ -1,20 +1,19 @@
 # Platform support: what is tested, inferred, and unmeasured
 
 Linux and macOS are the long-tested surfaces, and Windows joined them on
-2026-11-24 (run 45302817218): 419 tests declared, 0 failures on `ubuntu-latest`,
+2026-11-24 (run 45372364804): 423 tests declared, 0 failures on `ubuntu-latest`,
 `macos-latest` (arm64; the log resolves git at `/opt/homebrew/bin/git`) and
-`windows-latest` — Windows ran 416 of them and skipped 3 (2 POSIX-only mode
-tests and the transport-EOF arm, named below). That 419 was the frame on the
-2026-11-24 runner: the public list runs 38 test files, while a local checkout
-runs 41 and reports 456, because three local-only test files
-(`test/bench.test.ts`, `test/bench-stats.test.ts`, and
-`test/native-history-harness.test.ts`) are gitignored (33 tests, local-only
-records). The current clean checkout reports 423 across those 38 files; the
-hosted matrix has not been re-run since the cleanup. The public list includes
-`test/suite-list.test.ts`, the guard that keeps the list honest (E28). Every count
-below says which frame it comes from, because comparing the two silently produced
-a phantom gap (D149); the counts are committed in
-`docs/evidence/2026-11-24-791840c.json` so they outlive the artifacts. The earlier cancellation was capacity, not
+`windows-latest` — Windows ran 420 of them and skipped 3 (2 POSIX-only mode
+tests and the transport-EOF arm, named below). That 423/38 is the clean frame:
+the public list runs 38 test files, while a local checkout also sees three
+gitignored test files (`test/bench.test.ts`, `test/bench-stats.test.ts`, and
+`test/native-history-harness.test.ts`), a nominal 456 across 41 files. Those
+three reference the removed `bench/` directory and are not a release gate; the
+last local run could not load them, so clean CI is authoritative. The public
+list includes `test/suite-list.test.ts`, the guard that keeps the list honest
+(E28). Every count below says which frame it comes from, because comparing the
+two silently produced a phantom gap (D149); the current counts are in
+`docs/evidence/2026-11-24-r36-release.json` so they outlive the artifacts. The earlier cancellation was capacity, not
 configuration — that job queued fifteen minutes with zero steps — and the retry
 was acquired at once. It also found a real bug: three `hook-gate` tests failed
 because `os.tmpdir()` on macOS is `/var/folders/...`, a symlink into
