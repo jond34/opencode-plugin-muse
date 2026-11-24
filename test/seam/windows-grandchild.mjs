@@ -17,10 +17,12 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnMspConnection } from "@muse-code/sdk";
 
-const FIXTURE = join(import.meta.dir, "..", "fixtures", "fake-msp-host.mjs");
+const HERE = dirname(fileURLToPath(import.meta.url));
+const FIXTURE = join(HERE, "..", "fixtures", "fake-msp-host.mjs");
 
 function processTable() {
   const script =
