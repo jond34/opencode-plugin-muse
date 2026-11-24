@@ -377,6 +377,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   private closed = false;
   /** Set once the host died; a later close must not ask it to leave. */
   private hostGone = false;
+  /** The watchdog's interrupt/close ladder, so a reopen can wait for it. */
+  private hostEndingPromise: Promise<void> | undefined;
   /** The clocks for the running turn, and whose turn they belong to. */
   private watchdog: TurnWatchdog | null = null;
   private watchdogTurnId: string | null = null;
@@ -1022,33 +1024,36 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   }
 
   /** The abort ladder: interrupt with a budget, then close, then report gone. */
-  private async endWedgedHost(nativeTurnId: string): Promise<void> {
-    // The watchdog has already failed this turn. Mark the host gone before the
-    // interrupt/close ladder so a concurrent reopen does not receive this dying
-    // session and report `started` instead of resuming the stored native id.
-    this.handleHostExit("exited");
-    try {
-      await Promise.race([
-        this.host.connection.command("turn/interrupt", {
-          sessionId: this.nativeId,
-          turnId: nativeTurnId,
-        }),
-        new Promise<void>((_, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error("interrupt budget expired")),
-            WATCHDOG_INTERRUPT_BUDGET_MS,
-          );
-          timer.unref?.();
-        }),
-      ]);
-    } catch {
-      // A wedged host answers nothing; that is the case this ladder is for.
-    }
-    try {
-      await this.host.close?.();
-    } catch {
-      // Closing is best-effort; the turn is already retired.
-    }
+  private endWedgedHost(nativeTurnId: string): Promise<void> {
+    if (this.hostEndingPromise !== undefined) return this.hostEndingPromise;
+    this.hostEndingPromise = (async () => {
+      try {
+        await Promise.race([
+          this.host.connection.command("turn/interrupt", {
+            sessionId: this.nativeId,
+            turnId: nativeTurnId,
+          }),
+          new Promise<void>((_, reject) => {
+            const timer = setTimeout(
+              () => reject(new Error("interrupt budget expired")),
+              WATCHDOG_INTERRUPT_BUDGET_MS,
+            );
+            timer.unref?.();
+          }),
+        ]);
+      } catch {
+        // A wedged host answers nothing; that is the case this ladder is for.
+      }
+      try {
+        await this.host.close?.();
+      } catch {
+        // Closing is best-effort; the turn is already retired.
+      }
+      // Only after the connection is closed is this session safe to replace;
+      // a concurrent reopen waits on `hostEnding` instead of receiving it.
+      this.handleHostExit("exited");
+    })();
+    return this.hostEndingPromise;
   }
 
   /**
@@ -1310,6 +1315,11 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
   /** True once the host died under this session; it cannot serve a turn again. */
   get hostExited(): boolean {
     return this.hostGone;
+  }
+
+  /** The watchdog is still tearing this host down; wait before reopening. */
+  get hostEnding(): Promise<void> | undefined {
+    return this.hostEndingPromise;
   }
 
   /**

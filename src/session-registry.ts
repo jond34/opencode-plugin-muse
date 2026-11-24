@@ -889,6 +889,13 @@ export class MuseSessionRegistry {
         // what the reopen resumes. Closing here only releases local state.
         this.sessions.delete(openCodeSessionId);
         void existing.close();
+      } else if (existing.muse.hostEnding !== undefined) {
+        // The watchdog has failed the turn but is still closing the host. Wait
+        // for that ladder before reopening; replacing it early can resume on the
+        // old, already-closed connection and fail instead of starting a host.
+        this.sessions.delete(openCodeSessionId);
+        await existing.muse.hostEnding.catch(() => undefined);
+        void existing.close();
       } else {
         if (tools !== undefined) existing.setTools(tools);
         if (model !== undefined) await existing.setModel(model);
