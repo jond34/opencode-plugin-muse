@@ -1023,6 +1023,10 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
 
   /** The abort ladder: interrupt with a budget, then close, then report gone. */
   private async endWedgedHost(nativeTurnId: string): Promise<void> {
+    // The watchdog has already failed this turn. Mark the host gone before the
+    // interrupt/close ladder so a concurrent reopen does not receive this dying
+    // session and report `started` instead of resuming the stored native id.
+    this.handleHostExit("exited");
     try {
       await Promise.race([
         this.host.connection.command("turn/interrupt", {
@@ -1045,10 +1049,6 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     } catch {
       // Closing is best-effort; the turn is already retired.
     }
-    // The session cannot serve another turn on a closed host. Marking it gone
-    // is what makes the registry reopen it, and the stored native id is what
-    // that reopen resumes.
-    this.handleHostExit("exited");
   }
 
   /**
