@@ -120,6 +120,22 @@
       "quote": "package universal-opencode-sandbox, version 0.4.1",
       "version": "0.4.1",
       "check": { "kind": "http" }
+    },
+    {
+      "id": "codex-doctor",
+      "claim": "codex doctor exits 1 only when the overall status is Fail",
+      "url": "https://github.com/openai/codex/blob/main/codex-rs/cli/src/doctor.rs",
+      "quote": "if report.overall_status == CheckStatus::Fail",
+      "version": "main",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "vue-doctor",
+      "claim": "Vue Doctor's --strict exits 3 on an analyzer failure or skip",
+      "url": "https://remylagerweij.github.io/vue-doctor/reference/cli",
+      "quote": "Exit with code 3 if any analyzer fails or is skipped.",
+      "version": "current",
+      "check": { "kind": "http" }
     }
   ]
 }

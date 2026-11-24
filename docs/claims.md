@@ -22,8 +22,11 @@ would make it stale. `scripts/check-claims.ts` reads the JSON mirror and, with
 | taskkill-t | `taskkill /T` walks child processes from the parent id | [taskkill](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill) | "`/T` terminates the specified process and any child processes which were started by it" | 2026-11-24 | Windows Server docs | http |
 | node-signals | Windows signal termination is forceful and abrupt | [Node process](https://nodejs.org/api/process.html#signal-events) | "`SIGTERM`, `SIGKILL`, and `SIGINT` … terminate the process forcefully and abruptly" | 2026-11-24 | Node 24 | http |
 | mxc-plugin | An MXC sandbox plugin ships for opencode | [npm registry](https://registry.npmjs.org/universal-opencode-sandbox/latest) | package `universal-opencode-sandbox`, version 0.4.1 | 2026-11-24 | 0.4.1 | http |
+| codex-doctor | `codex doctor` exits 1 only when the overall status is `Fail` | [doctor.rs](https://github.com/openai/codex/blob/main/codex-rs/cli/src/doctor.rs) | `if report.overall_status == CheckStatus::Fail` | 2026-11-24 | main | http |
+| vue-doctor | Vue Doctor's `--strict` exits 3 on an analyzer failure or skip | [CLI reference](https://remylagerweij.github.io/vue-doctor/reference/cli) | "Exit with code 3 if any analyzer fails or is skipped." | 2026-11-24 | current | http |
 
-The rows the wider audit did not reopen (brew, codex, a4, Vue Doctor) are not
-repeated here; they live in the ledger's Basis cells with their own dates. Add a
-row when a decision starts depending on a new outside sentence, not when a
+The older `brew doctor` and `a4 doctor` rows are **not reopened**: no primary
+source was re-located in round 27, and no product sentence depends on either.
+They stay in the ledger as historical comparisons, with their original dates.
+Add a row when a decision starts depending on a new outside sentence, not when a
 sentence is merely quoted.

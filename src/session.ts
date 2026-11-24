@@ -427,8 +427,11 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     // the only fence. Only `allowAll` works, and that is measured rather than
     // assumed (E-D24, round 6): under `denyUnmatched` a bridged call reaches
     // `tool.started` and is then refused with `deny_unmatched: no policy rule
-    // allows this action`, because Muse's saved rules are command-prefix scoped
-    // and cannot name an MCP tool. `onRequest` and `promptUnmatched` were not
+    // allows this action`, because no rule matches: Muse's shell rules are
+    // argv-prefix scoped, the plugin cannot pre-seed a `tool` approval, and the
+    // local policy store is unpublished. Muse can save MCP tool approvals
+    // (1.4.0), so this is a pre-seeding limit, not a missing capability.
+    // `onRequest` and `promptUnmatched` were not
     // run (E-D25/E-D26 skipped): nothing in this plugin answers a Muse approval,
     // so a request they raised would have no one to settle it.
     if (
