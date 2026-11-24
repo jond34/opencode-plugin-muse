@@ -1,8 +1,16 @@
 # Compatibility
 
-The architecture and subscription-boundary record is an internal document, not
-published. This file tracks the wire and version contract only. The pins below are
-the last tested pair (the internal W2 record, not published).
+This file tracks the wire and version contract. The pins below are the last
+tested pair. The architecture and subscription-boundary record stays in the
+local archive rather than the public tree.
+
+## Public API at 1.0
+
+The promise is deliberately narrow: the package name, the `.` default export,
+the `./tui` export, provider id `muse`, the documented `MUSE_*` environment
+variables, and the install command. Model ids follow Muse's catalog and are data,
+not API. Vendor SDK behavior, Windows desktop parity, remote Console policy, and
+the native-history default are not promised.
 
 ## Tested versions
 
@@ -100,7 +108,8 @@ a package directory with `index.ts`.
 is the 2.1.4 name and is ignored.
 - A compaction that fires mid-turn (last prompt message is a tool result) gets
 the summary only, no native window, and the next turn reseeds. In a tool-heavy
-session this is the common case; see `docs/native-history.md` open items.
+session this is the common case; the open items are recorded in
+[`native-history-evidence.md`](native-history-evidence.md).
 - With `keep.tokens` far below the retained view, the retained view can sit on
 the threshold and compact repeatedly. The W1 runs used `keep.tokens: 0` in the
 clamped window to avoid that artifact; 400 looped 26 times on the old arm.
@@ -168,8 +177,8 @@ Five seam decisions: what the plugin does where the wire leaves a choice, or
 where the adapter is deliberately more defensive than the wire. Each names the
 failure it avoids and the evidence behind it. The wider client-side review —
 turn ordering, queueing, tool errors, server requests, approvals, grants, and
-the model catalog — is `seam-review.md`; this section keeps only the choices
-that change observable behaviour at the seam.
+the model catalog — stays in the local archive; this section keeps only the
+choices that change observable behaviour at the seam.
 
 1. **A turn ack without `turnId`.** The ack's `turnId` is authoritative
    (`msp.d.ts:3883-3884`); the command id is registered as the turn's native id
@@ -184,7 +193,7 @@ that change observable behaviour at the seam.
    `turn/interrupt`. The two-unconfirmed-assumptions ambiguity cannot arise from a
    serialized caller: `startTurn` refuses while a turn is non-terminal (see item
    3). That refusal is check-before-await, so two concurrent starts both pass it
-   and send two `turn/start` commands (`product-gaps.md` G3); the `size === 1`
+   and send two `turn/start` commands (product gap G3); the `size === 1`
    check is defence only. Covered by `test/lifecycle.test.ts` ("a
    turn/started before the ack binds by command id", "a turn ack without an id
    is reconciled when the host names the turn"). `turnId == commandId` for a

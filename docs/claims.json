@@ -7,7 +7,13 @@
       "url": "https://dev.meta.ai/docs/muse-code/changelog",
       "quote": "/plugins install accepts --scope user or --scope project",
       "version": "1.4.25",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "Muse changelog",
+      "quote_md": "\"`/plugins install` accepts `--scope user` or `--scope project`, so a local plugin can be installed for the project instead of only for you\"",
+      "claim_md": "A Muse plugin can be installed with a project scope"
     },
     {
       "id": "muse-hooks-approve",
@@ -15,7 +21,13 @@
       "url": "https://meta-models.github.io/muse-code-sdk/latest/guides/plugins/reference/cli/",
       "quote": "hooks, MCP servers, reminders and agent definitions wait for approve",
       "version": "1.4.25",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "Muse plugin CLI",
+      "quote_md": "\"hooks, MCP servers, reminders and agent definitions wait for approve\"",
+      "claim_md": "A plugin's hooks wait for an explicit approve"
     },
     {
       "id": "muse-approvals-durable",
@@ -23,7 +35,13 @@
       "url": "https://dev.meta.ai/docs/muse-code/permissions",
       "quote": "Muse Code remembers your permission selections and applies them to new sessions.",
       "version": "1.4.25",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "Muse permissions",
+      "quote_md": "\"Muse Code remembers your permission selections and applies them to new sessions.\"",
+      "claim_md": "Muse remembers permission selections across sessions"
     },
     {
       "id": "muse-mcp-unsandboxed",
@@ -31,7 +49,13 @@
       "url": "https://dev.meta.ai/docs/muse-code/extending",
       "quote": "MCP tools are not sandboxed.",
       "version": "1.4.25",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "Muse extending",
+      "quote_md": "\"MCP tools are not sandboxed.\"",
+      "claim_md": "MCP tools are outside Muse's sandbox"
     },
     {
       "id": "opencode-saved-approval",
@@ -39,7 +63,13 @@
       "url": "https://opencode.ai/docs/permissions",
       "quote": "Saved approvals are durable, project-scoped allow rules. They never override a configured deny.",
       "version": "2.4.1",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "opencode permissions",
+      "quote_md": "\"Saved approvals are durable, project-scoped allow rules. They never override a configured deny.\"",
+      "claim_md": "An opencode saved approval is project-scoped and cannot override a deny"
     },
     {
       "id": "console-targets",
@@ -47,7 +77,13 @@
       "url": "https://opencode.ai/console/changelog/budgets-in-policies",
       "quote": "These members, picked by hand, or everyone except them.",
       "version": "2026-10-10 entry",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "Console changelog",
+      "quote_md": "\"These members, picked by hand, or everyone except them.\"",
+      "claim_md": "The Console documents hand-picked members as a policy target"
     },
     {
       "id": "opencode-54806",
@@ -55,7 +91,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/54806",
       "quote": "state closed, reason not_planned",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 54806, "state": "closed" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 54806,
+        "state": "closed"
+      },
+      "as_of": "2026-11-24",
+      "label": "#54806",
+      "quote_md": "state `closed`, reason `not_planned`",
+      "claim_md": "The turn-cap request was declined"
     },
     {
       "id": "opencode-53356",
@@ -63,7 +108,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/53356",
       "quote": "state open",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 53356, "state": "open" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 53356,
+        "state": "open"
+      },
+      "as_of": "2026-11-24",
+      "label": "#53356",
+      "quote_md": "state `open`",
+      "claim_md": "The turn-cap request is still open"
     },
     {
       "id": "opencode-63257",
@@ -71,7 +125,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/63257",
       "quote": "state open",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 63257, "state": "open" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 63257,
+        "state": "open"
+      },
+      "as_of": "2026-11-24",
+      "label": "#63257",
+      "quote_md": "state `open`",
+      "claim_md": "opencode's MCP client sends no progress token"
     },
     {
       "id": "opencode-49929",
@@ -79,7 +142,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/49929",
       "quote": "state open",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 49929, "state": "open" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 49929,
+        "state": "open"
+      },
+      "as_of": "2026-11-24",
+      "label": "#49929",
+      "quote_md": "state `open`",
+      "claim_md": "A second thread on the same missing progress token"
     },
     {
       "id": "opencode-28186",
@@ -87,7 +159,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/28186",
       "quote": "state closed, reason duplicate",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 28186, "state": "closed" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 28186,
+        "state": "closed"
+      },
+      "as_of": "2026-11-24",
+      "label": "#28186",
+      "quote_md": "state `closed`, reason `duplicate`",
+      "claim_md": "The earlier duplicate was closed"
     },
     {
       "id": "opencode-60252",
@@ -95,7 +176,16 @@
       "url": "https://github.com/anomalyco/opencode/issues/60252",
       "quote": "state open",
       "version": "2.4.1",
-      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 60252, "state": "open" }
+      "check": {
+        "kind": "github-issue",
+        "repo": "anomalyco/opencode",
+        "number": 60252,
+        "state": "open"
+      },
+      "as_of": "2026-11-24",
+      "label": "#60252",
+      "quote_md": "state `open`",
+      "claim_md": "A Console policy is decoded with no diagnostic"
     },
     {
       "id": "opencode-63599",
@@ -103,7 +193,17 @@
       "url": "https://github.com/anomalyco/opencode/pull/63599",
       "quote": "state closed, draft false, merged false",
       "version": "2.4.1",
-      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 63599, "state": "closed", "draft": false }
+      "check": {
+        "kind": "github-pr",
+        "repo": "anomalyco/opencode",
+        "number": 63599,
+        "state": "closed",
+        "draft": false
+      },
+      "as_of": "2026-11-24",
+      "label": "#63599",
+      "quote_md": "state `closed`, draft `false`, `merged: false`",
+      "claim_md": "A core sandbox PR closed unmerged"
     },
     {
       "id": "opencode-64093",
@@ -111,7 +211,17 @@
       "url": "https://github.com/anomalyco/opencode/pull/64093",
       "quote": "state open, draft true",
       "version": "2.4.1",
-      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 64093, "state": "open", "draft": true }
+      "check": {
+        "kind": "github-pr",
+        "repo": "anomalyco/opencode",
+        "number": 64093,
+        "state": "open",
+        "draft": true
+      },
+      "as_of": "2026-11-24",
+      "label": "#64093",
+      "quote_md": "state `open`, draft `true`",
+      "claim_md": "A second core sandbox PR is open and draft"
     },
     {
       "id": "sep-2663",
@@ -119,7 +229,13 @@
       "url": "https://modelcontextprotocol.io/seps/2663-tasks-extension",
       "quote": "three methods: tasks/get, tasks/update, and tasks/cancel; ... Task creation is server-directed",
       "version": "Final, created 2026-04-27",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "SEP-2663",
+      "quote_md": "\"three methods: `tasks/get`, `tasks/update`, and `tasks/cancel` … Task creation is server-directed\"",
+      "claim_md": "Tasks are an extension with polling and server-elected creation"
     },
     {
       "id": "taskkill-t",
@@ -127,7 +243,13 @@
       "url": "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill",
       "quote": "/T terminates the specified process and any child processes which were started by it",
       "version": "Windows Server docs",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "taskkill",
+      "quote_md": "\"`/T` terminates the specified process and any child processes which were started by it\"",
+      "claim_md": "`taskkill /T` walks child processes from the parent id"
     },
     {
       "id": "node-signals",
@@ -135,7 +257,13 @@
       "url": "https://nodejs.org/api/process.html#signal-events",
       "quote": "SIGTERM, SIGKILL, and SIGINT ... terminate the process forcefully and abruptly",
       "version": "Node 24",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "Node process",
+      "quote_md": "\"`SIGTERM`, `SIGKILL`, and `SIGINT` … terminate the process forcefully and abruptly\"",
+      "claim_md": "Windows signal termination is forceful and abrupt"
     },
     {
       "id": "mxc-plugin",
@@ -143,7 +271,13 @@
       "url": "https://registry.npmjs.org/universal-opencode-sandbox/latest",
       "quote": "package universal-opencode-sandbox, version 0.4.1",
       "version": "0.4.1",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "npm registry",
+      "quote_md": "package `universal-opencode-sandbox`, version 0.4.1",
+      "claim_md": "An MXC sandbox plugin ships for opencode"
     },
     {
       "id": "codex-doctor",
@@ -151,7 +285,13 @@
       "url": "https://github.com/openai/codex/blob/main/codex-rs/cli/src/doctor.rs",
       "quote": "if report.overall_status == CheckStatus::Fail",
       "version": "main",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "doctor.rs",
+      "quote_md": "`if report.overall_status == CheckStatus::Fail`",
+      "claim_md": "`codex doctor` exits 1 only when the overall status is `Fail`"
     },
     {
       "id": "muse-hook-definition-hash",
@@ -159,7 +299,13 @@
       "url": "https://meta-models.github.io/muse-code-sdk/1.4/guides/plugins/concepts/hooks/",
       "quote": "a modified hook does not run until you approve it again",
       "version": "1.4",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "Muse hooks",
+      "quote_md": "\"a modified hook does not run until you approve it again\"",
+      "claim_md": "A modified Muse plugin hook does not run until approved again"
     },
     {
       "id": "codex-hook-trust",
@@ -167,7 +313,13 @@
       "url": "https://developers.openai.com/codex/hooks",
       "quote": "Codex records trust against the hook’s current hash, so new or changed hooks are marked for review and skipped until trusted.",
       "version": "current",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "Codex hooks",
+      "quote_md": "\"Codex records trust against the hook’s current hash, so new or changed hooks are marked for review and skipped until trusted.\"",
+      "claim_md": "Codex binds hook trust to the current hash and skips changed plugin hooks"
     },
     {
       "id": "npm-stage-reject-2fa",
@@ -175,7 +327,13 @@
       "url": "https://docs.npmjs.com/cli/v12/commands/npm-stage",
       "quote": "npm stage reject | Yes | Prompts for 2FA to permanently remove the staged package",
       "version": "npm 11.19.1 / CLI v12 docs",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-23",
+      "label": "npm stage CLI",
+      "quote_md": "\"npm stage reject | Yes | Prompts for 2FA to permanently remove the staged package\"",
+      "claim_md": "`npm stage reject` requires 2FA"
     },
     {
       "id": "vue-doctor",
@@ -183,7 +341,13 @@
       "url": "https://remylagerweij.github.io/vue-doctor/reference/cli",
       "quote": "Exit with code 3 if any analyzer fails or is skipped.",
       "version": "current",
-      "check": { "kind": "http" }
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-24",
+      "label": "CLI reference",
+      "quote_md": "\"Exit with code 3 if any analyzer fails or is skipped.\"",
+      "claim_md": "Vue Doctor's `--strict` exits 3 on an analyzer failure or skip"
     }
   ]
 }

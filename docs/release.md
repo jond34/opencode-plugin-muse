@@ -4,37 +4,17 @@ This page is the operational release record: what is published, what a local
 candidate must prove, and how a version reaches npm. It does not authorize a
 publish, a staged upload, a tag, or a push.
 
-## Current state
+## Current public state
 
 - npm `latest` is `0.1.12`, published 2026-11-18. The only tag is `v0.1.12`;
   there is no GitHub Release.
-- The tree carries patches 3 through 5, which no published tarball contains.
-  Its `dist/` is rebuilt for the candidate and recorded in
-  [`provenance.md`](provenance.md).
+- The tree is the `1.0.0` candidate. Its build identity and candidate hashes are
+  recorded in [`provenance.md`](provenance.md). That record does not authorize a
+  publish, a staged upload, a tag, or a push.
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The next version is `0.1.13` (O21 A). It is prepared locally; locally
-  reproducible from the lockfile, independent rebuild pending. It is not
-  published by the preparation round. The candidate hash is recorded in
-  [`provenance.md`](provenance.md).
-- Round 30 repacked the candidate after moving four README doc links to absolute
-  GitHub URLs: tarball shasum `caf36bb5…`, 208 files. The dependency gate records
-  25 moderate and no high/critical; O25 A accepts them with a 2027-02-28 review.
-- Round 31 changed the package to publish the built `dist/` entry only, not
-  `src/` or `docs/`. The candidate tarball is now 165 files, SHA-256
-  `b1b8fde031aa6797e2d174433d8736edbadc8eb252423f69d2870ec37052b0c1`. The
-  `dist/` hash is unchanged. Release is **stopped for round 31**: E62 found a
-  changed plugin hook can run after `muse plugins update` without re-approval.
-  Round 32 bounded that to the one-time legacy migration (E65) and chose P1 A /
-  P2 A: keep the `plugin`-origin allow, document that a user-approved Muse plugin
-  hook is inert in this host, and resume after E61/F1/E64/E60. E55a/E55b remain
-  blocked on the owner browser; E60 needs `npm login` and reject 2FA.
-- Round 33 implemented the advisory doctor detail and the known-limitation
-  wording. E61 measured B1: a Muse `tool` grant crossed workspaces with no second
-  prompt and no `workspace_root` in the rule. E64 measured B1: two clean builders
-  produced identical `dist/` and byte-identical tarballs. The rebuilt candidate is
-  165 files, `dist/` `3470ecc9…`, tarball SHA-256 `67c66300…`. E60 is blocked on
-  the owner's reject 2FA, so the release holds before staging.
+- The version is `1.0.0`; see the public API below. A candidate is not a release
+  until npm and the GitHub tag both verify.
 
 ## Watch item
 
@@ -47,10 +27,12 @@ page carry the caveat.
 
 ## Version policy
 
-`0.y.z` is initial development under SemVer: the public API is not declared
-stable. Use a patch for fixes and narrow compatible changes, a minor for
-substantial compatible work, and `1.0.0` only when stability is a real promise.
-Never reuse a published version; npm does not allow overwriting one.
+`1.0.0` declares the narrow API in [`compatibility.md`](compatibility.md): the
+package name, `.` and `./tui` exports, provider id `muse`, documented `MUSE_*`
+variables, and the install command. Model ids and vendor behavior remain data. Use
+a patch for fixes and narrow compatible changes, and a minor for substantial
+compatible work. Never reuse a published version; npm does not allow overwriting
+one.
 
 The candidate version must agree in `package.json`, `package-lock.json`, the
 tag name if one is later created, and the release notes.
@@ -179,6 +161,5 @@ name the same commit as the published artifact.
   does not prove.
 - [`platform-support.md`](platform-support.md) — per-surface platform claims and
   their runs.
-- [`evidence-audit.md`](evidence-audit.md) — where the record is thinner than a
-  decision.
+- [`claims.md`](claims.md) — the external statements this record depends on.
 - [`../CHANGELOG.md`](../CHANGELOG.md) — user-visible changes.

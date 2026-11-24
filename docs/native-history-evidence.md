@@ -74,7 +74,7 @@ and those pins refer to the run that produced them.
 
 The public tree keeps the analyzer and host launcher. The preregistration,
 append-only execution log, decision record, and the local gate that needs them
-stay in the local archive and are not published:
+stay in the local archive, outside this public tree:
 
 - `scripts/native-history-analyze.zsh` — the analyzer that recomputes verdicts.
 - `scripts/native-history-server.zsh` — the isolated host launcher.

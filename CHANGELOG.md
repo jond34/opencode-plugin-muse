@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.1.13 — local candidate, not published
+## 1.0.0
 
-This entry describes the candidate built from the current tree. It is not a
-published release.
+First stable release of the cleaned public tree. The package name, `.` and
+`./tui` exports, provider id `muse`, documented `MUSE_*` variables, and the
+install command are the compatibility promise; model ids and vendor behavior
+remain data.
 
 ### Containment and private host configuration
 
@@ -54,6 +56,3 @@ published release.
 - No containment behind the bridge. opencode's permission rules are the gate,
   and `allowAll` remains the Muse-side mode.
 - No per-turn cost cap, no offline path, and no native-history default change.
-
-See [`docs/release-notes/0.1.13.md`](docs/release-notes/0.1.13.md) for the
-GitHub release-body draft.

@@ -18,6 +18,9 @@ npm run build
 echo "== strict claims =="
 bun scripts/check-claims.ts --strict
 
+echo "== public docs and claims =="
+npm run check:docs
+
 echo "== packed file list =="
 npm pack --dry-run --json > scratch/r31-pack.json
 node --input-type=module - scratch/r31-pack.json <<'NODE'

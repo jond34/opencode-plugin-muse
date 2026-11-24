@@ -13,8 +13,8 @@ byte for byte by the base tree recorded below plus patches 1 and 2.
 
 This repository's current tree adds patch 3 (containment), patch 4
 (harness-owned context), and patch 5 (effort, prompt, and rewritten-history
-boundaries), which no published tarball carries. Its build is recorded separately
-below; the 0.1.9 identity check above applies to the tree before those patches.
+boundaries). Its build is recorded separately below; the 0.1.9 identity check
+above applies to the tree before those patches.
 
 ## Canonical build hash
 
@@ -30,7 +30,7 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-0.1.13 local candidate (base + patches 1-5), not published:
+1.0.0 candidate (base + patches 1-5):
 
 ```text
 3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120
@@ -38,21 +38,21 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 160 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
-hash. The candidate is local only: the latest npm tarball is 0.1.12, patches 3–5
-exist only in this checkout, and publishing is a separate owner action (O15).
+hash. The latest published npm tarball is 0.1.12; publishing 1.0.0 is a separate
+owner action.
 
 Round 30 repacked the tarball after moving four unshipped README doc links to
 absolute GitHub URLs. The `dist/` hash above is unchanged. Round 31 then changed
 the package to ship the built `dist/` entry only; the candidate is 165 files
 with tarball SHA-256
-`67c66300921138281f06ba3626ca2658f1325fde5ddc4aa3559a579e96aafd60`. The old
-208-file digest remains in [`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json).
-Round 33 added the advisory doctor detail, which changed `dist/` to 160 files /
+`e1b707f4da6fa7202cb58694023d4f7d75d8be3d35d657837f19def85a1aa3f7`. The old
+208-file digest remains in the local archive. Round 33 added the advisory doctor
+detail, which changed `dist/` to 160 files /
 `3470ecc9…`. Two independent clean builders (E64, branch B1) produced the same
 `dist/` and byte-identical 165-file tarballs; the record is
 [`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json).
 
-Historical tree (base + patches 1-5) at `bcfabcb`, not published:
+Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 
 ```text
 d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
@@ -73,12 +73,13 @@ d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
 | Patch 5 (effort, prompt, and rewritten-history boundaries) | sha256 `8283f7f5f9b168230d9085f3cc7834971c7e1d3237ac97f40fc9c545bba74fdd` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
-| Candidate | `0.1.13`, 160 files, hash `3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120`; not published |
+| Candidate | `1.0.0`, 160 files, hash `3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120` |
 | Dependency graph | `package-lock.json`, 275 packages |
 
-`evidence/` holds the raw inputs behind this record. It lives in the repository and is
-not published in the npm tarball, which carries this file and the source it describes;
-the hashes above are enough to check that tarball on their own.
+`evidence/` holds the raw inputs behind this record. It lives in the repository.
+The npm tarball carries `dist/`, README, LICENSE, CREDITS, CHANGELOG, and
+package.json; it does not carry `evidence/` or `docs/`. The hashes above are
+enough to check the tarball on their own.
 
 The base tarball is not committed; fetch it by commit:
 
@@ -118,7 +119,7 @@ Patch 3 is this repository's own change and is not in any published tarball:
 - `src/language-model.ts`, `src/index.ts`: pass the step's tools through and export the
   new module.
 
-Patch 4 makes opencode own the context around the model, and is also unpublished:
+Patch 4 makes opencode own the context around the model and is part of this release:
 
 - `src/host-config.ts`: turns Muse's skills, observer reminders, workflow triggers,
   context-usage message, context slimming, and foreign personal skills off, using the

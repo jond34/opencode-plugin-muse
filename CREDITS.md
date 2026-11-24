@@ -8,8 +8,8 @@ from it; this repository adds five patches and the record describing them. The f
 two reconcile the base tree with the published 0.1.9 tarball; the third contains Muse
 to inference, the fourth makes opencode own the context (effort, titles, compaction,
 transcript reconciliation, and approvals), and the fifth finishes the effort,
-developer-prompt, empty-toolset, and rewritten-history boundaries. None of the last
-three has a published counterpart yet.
+developer-prompt, empty-toolset, and rewritten-history boundaries. This 1.0.0
+release is the first public counterpart for the last three.
 
 Credit stops at the npm publisher on purpose. A GitHub repository presents itself as the
 source of that package, nothing public connects it to the npm account, so it is not

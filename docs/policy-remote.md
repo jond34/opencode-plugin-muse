@@ -119,7 +119,7 @@ contains `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6` (367 characters, last written
 39-character opaque strings with no readable scope. So the read proves **one
 active credential labelled with exactly one workspace id, and no second binding
 record**; it does not prove the token is refused in another workspace, which would
-need a second workspace to test (`docs/evidence-audit.md` F2).
+need a second workspace to test (local evidence audit F2).
 
 E26 then tried to create the Providers/Tools policy that would test compilation
 on the 2026-11-24 build. The Controls page read "No policies yet. Every member

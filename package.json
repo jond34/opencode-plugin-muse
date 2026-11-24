@@ -1,6 +1,6 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
-  "version": "0.1.13",
+  "version": "1.0.0",
   "description": "Use Muse models in opencode through the signed-in muse CLI. Republished build of @rasyid_rafi/opencode-muse with five patches.",
   "license": "MIT",
   "repository": {
@@ -41,6 +41,9 @@
     "repro": "bash scripts/repro.sh",
     "check:claims": "bun scripts/check-claims.ts",
     "check:claims:strict": "bun scripts/check-claims.ts --strict",
+    "claims:render": "bun scripts/render-claims.ts",
+    "claims:check": "bun scripts/render-claims.ts --check",
+    "check:docs": "bun scripts/check-docs.ts",
     "release:check": "bash scripts/check-release.sh"
   },
   "dependencies": {
