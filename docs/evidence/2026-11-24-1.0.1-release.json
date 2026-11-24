@@ -28,6 +28,25 @@
       "containsDemoGif": true,
       "containsQuickstart": true,
       "note": "The printed npm page renders this README; before 1.0.1 it rendered the 1.0.0 tarball's 26,137-byte README without the demo or quickstart."
+    },
+    "pageRender": {
+      "checkedAt": "2026-11-24T19:05:00Z",
+      "method": "headless Chrome (real user agent, to clear the npm challenge) on the package page, reading the rendered DOM",
+      "versionShown": "1.0.1",
+      "quickstartShown": true,
+      "configPinShown": "@jonathand34/opencode-plugin-muse@1.0.1",
+      "whyThisOneShown": true,
+      "demoImage": {
+        "loaded": true,
+        "naturalSize": "1000x633",
+        "src": "https://raw.githubusercontent.com/jond34/opencode-plugin-muse/main/media/muse-bridge-demo.gif"
+      },
+      "sidebarLinks": [
+        "https://github.com/jond34/opencode-plugin-muse",
+        "https://github.com/jond34/opencode-plugin-muse#readme"
+      ],
+      "provenanceBadge": "Built and signed on GitHub Actions, Source Commit b15ba82",
+      "note": "A first load served a cached 1.0.0 view; the versioned URL and a cache-busted reload showed 1.0.1."
     }
   },
   "stage": {
@@ -69,7 +88,7 @@
   },
   "limits": [
     "No live turn was run against 1.0.1; the docs-only claim rests on the unchanged dist hash and the byte-exact stage parity.",
-    "The npm page content was confirmed through the registry packument and the packed tarball, not a rendered browser screenshot.",
+    "The page was checked in a headless browser against the rendered DOM, not by a human eye; the screenshots live in the local distribution scratch directory and are not committed.",
     "One machine, one host pair, one model id, as for 1.0.0."
   ]
 }
