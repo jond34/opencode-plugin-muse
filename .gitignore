@@ -18,3 +18,6 @@ bench/
 test/bench.test.ts
 test/bench-stats.test.ts
 test/native-history-harness.test.ts
+
+# npm is canonical; a local bun.lock is not tracked
+bun.lock
