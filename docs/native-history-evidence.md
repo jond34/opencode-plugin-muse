@@ -72,15 +72,14 @@ and those pins refer to the run that produced them.
 
 ## Where the rest of it is
 
-Kept with the project, not in this package:
+The public tree keeps the analyzer and host launcher. The preregistration,
+append-only execution log, decision record, and the local gate that needs them
+stay in the local archive and are not published:
 
-- `bench/prereg/native-history.md` — the preregistration: arms, validity checks,
-  decision rule, pinned versions, and the hashes.
-- `scripts/native-history-gate.zsh` — the gate that drives a real opencode server.
 - `scripts/native-history-analyze.zsh` — the analyzer that recomputes verdicts.
 - `scripts/native-history-server.zsh` — the isolated host launcher.
-- `bench/execution-log.md` — the append-only ledger, one row per step.
-- `bench/decision-plan.md` — the W0-W5 gate record and the decisions taken.
+- `scratch/archive/round-35/` — the local preregistration, gate, execution log,
+  and decision record.
 
 The pinned hashes describe the run, not the current tree: the scripts changed
 after the frozen run, and the bytes that produced the pinned hashes are not

@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 
 /**
  * Entries in `test:offline` that are deliberately absent from a runner checkout:
- * three gitignored bench/harness files (`.gitignore:25-27`). They are excused by
+ * three gitignored local harness files. They are excused by
  * name, not by absence, so any other missing entry is still reported — and the
  * accompanying test requires each one to be both untracked and ignored, so a
  * published test cannot be excused and the list cannot widen silently.
