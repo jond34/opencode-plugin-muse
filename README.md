@@ -14,7 +14,7 @@ through the signed-in `muse` CLI.
 OpenCode 2.x and Muse Code CLI 1.4.20 or newer, already logged in.
 
 1. `muse login`
-2. `opencode plugin add @jonathand34/opencode-plugin-muse@1.0.0`
+2. `opencode plugin add @jonathand34/opencode-plugin-muse@1.0.1`
 3. Restart opencode and pick a Muse model, for example
    `opencode run -m muse/muse-ember-1.0 "hello"`.
 
@@ -22,7 +22,7 @@ The same pin in a config file, without the CLI step:
 
 ```jsonc
 // opencode.jsonc
-{ "plugins": ["@jonathand34/opencode-plugin-muse@1.0.0"] }
+{ "plugins": ["@jonathand34/opencode-plugin-muse@1.0.1"] }
 ```
 
 Tested pair: opencode 2.4.1 with Muse Code CLI 1.4.25. MIT. Unofficial: not
@@ -351,7 +351,7 @@ the wire contract is in
 ## Install
 
 ```bash
-opencode plugin add @jonathand34/opencode-plugin-muse@1.0.0
+opencode plugin add @jonathand34/opencode-plugin-muse@1.0.1
 ```
 
 If that fails (some opencode builds currently error in their embedded installer
