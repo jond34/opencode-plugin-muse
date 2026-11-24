@@ -117,11 +117,7 @@ models", and `/policies/new` offers one target, "Members tagged with…", whose
 `Add tag` is disabled because no member tags exist. This build has no member page
 carrying Controls (Settings → Members offers only View and Invite), no per-model
 control on the Models table, and no tag affordance anywhere — `Tag` appears only
-as a table filter. So the changelog's hand-picked-member route is not in this
-build, a tag cannot be created to use the route that is, and a policy cannot be
-created on this account at all. The compile question is therefore **unmeasured
-rather than negative**, which is weaker than round 23 implied: a model toggle
-never tested a policy, and a policy could not be made to test. The Console was
+as a table filter.The changelog's hand-picked-member route did not appear in this build, and the one target it did offer could not be used. This Console build (`index-OIWtun4R.js`, 2026-11-24) offered one target, "Members tagged with…", for a one-member personal workspace, and its Add tag and Save were disabled. The Console changelog documents four other targets, including "These members, picked by hand"; none appeared in this build's builder. Whether a tag can be created through the API is untested (E36/E37). The compile question is therefore **unmeasured rather than negative**, which is weaker than round 23 implied: a model toggle never tested a policy, and a policy could not be made to test. The Console was
 left exactly as found — no policy, no reservation, no tag; `debug config` still
 one `document` and two `directory` sources; `opencode models` unchanged at
 112 lines.
@@ -142,10 +138,7 @@ opened in round 24) offers only "View details" and "Remove…", and the builder'
 "Tag members first" link points at that page — so the control is absent from the
 one page the builder sends you to. But the client bundle does carry a tag model:
 the member schema includes `tags` and the members list accepts a `tags` filter, so
-tags exist server-side and only the UI cannot make one. The claim is therefore
-**"this Console build cannot create a member tag, so a policy cannot be created"**
-— not "tags are not supported". A write through the API might still work; that is
-an owner decision (E32), not something a read can settle.
+tags exist server-side and only the UI cannot make one.The claim is therefore the narrower one above: this build's builder cannot create the tag it needs, not that tags are unsupported. A write through the API is untested (E36/E37); E32 was not taken because E31 found no route, not because a read settled the API question.
 
 What that leaves untested is still the wording of a denial: the vendor says a
 Console-derived denial names the workspace, while a local statement does not.

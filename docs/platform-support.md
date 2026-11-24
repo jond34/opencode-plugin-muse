@@ -1,9 +1,10 @@
 # Platform support: what is tested, inferred, and unmeasured
 
 Linux and macOS are the long-tested surfaces, and Windows joined them on
-2026-11-24 (run 45296080862): 410 tests, 0 failures on `ubuntu-latest`,
+2026-11-24 (run 45296080862): 410 tests declared, 0 failures on `ubuntu-latest`,
 `macos-latest` (arm64; the log resolves git at `/opt/homebrew/bin/git`) and
-`windows-latest`. That 410 is the *published* frame: a runner checks out the repo
+`windows-latest` — but Windows ran 405 of them and skipped 5 (2 POSIX-only mode
+tests and 3 behaviour tests, named below). That 410 is the *published* frame: a runner checks out the repo
 and runs 36 test files, while a local checkout runs 39 and reports 443, because
 `.gitignore:25-27` deliberately keeps `test/bench.test.ts`,
 `test/bench-stats.test.ts` and `test/native-history-harness.test.ts` out of the
@@ -18,6 +19,14 @@ because `os.tmpdir()` on macOS is `/var/folders/...`, a symlink into
 `/private/var/folders/...`, and the trust record was written under the unresolved
 form while every reader canonicalized it, so an accepted hook would have been
 refused forever. `recordHookTrust` now canonicalizes on write (`src/hooks.ts`).
+
+The five Windows skips are: `host config > keeps the directory and file private`
+and `platform > POSIX reports the mode the plugin writes` (POSIX mode tests),
+plus `host config > links the user's login instead of copying it`,
+`host process > a transport EOF leaves the process alive until something closes
+it`, and `host process > a frozen host settles nothing, including an interrupt`
+(behaviour). The last three are E34's work; each is in the skip ledger with its
+reason, and a new skip without one fails `check:offline`.
 
 The matrix proves the suite, not the seam: its hosts are `.mjs` fixtures under
 node, so a green run says nothing about `muse.cmd`, the ledger mode, UAC, or a
@@ -53,7 +62,7 @@ download; this one proves the resolver against the real thing.
 | Offline suite (`bun run check:offline`) | Tested: 410 published, 0 fail; 443 in a local checkout (39 files, three of them gitignored) | Tested: 410, 0 fail on `macos-15`, arm64 | Tested: 410, 0 fail. Was 405/1 (`resume after a watchdog kill`, no turn terminal in 15 s) until E30 showed the fixture could not freeze on Windows — `SIGSTOP` is not a Windows signal, so the child exited 100 ms in and the turn was never announced. With a portable freeze the terminal arrives at 260 ms (run 45295871849) and the 4 s budget passes (run 45296080862). Not informational (D147) — the suite is a support claim on a runner, and the seam job still owns the CLI behaviour | Runs 45296080862 (all three), 45295871849 (Windows E30), 45289611552 (previous), JUnit artifacts per OS; `docs/evidence/2026-11-24-791840c.json`; local run 2026-11-24; D126, D147 |
 | Spawn resolution | `muse` on `PATH`, tested | POSIX path: the launcher script on `PATH`; the suite passes, a real launch is unmeasured | Resolved: `MUSE_BIN`, then `muse.exe` on PATH, then `muse-bin-<version>.exe` named by `.muse-version` beside the shim, then the newest `muse-bin-*.exe`. Observed on `windows-latest` with a stub: bare name `ENOENT`, explicit `.cmd` `EINVAL`, resolved binary spawns | E11 (run 45270085792); `src/host.ts`; E-R22-01, E-R22-03 |
 | Shutdown / close | Drain, then `SIGTERM`, then `SIGKILL` | Same code path; the suite passes, no real launch | No graceful rung (Node documents `SIGTERM` as forceful there), and the SDK's Windows path is **child-only**: `ownsProcessGroup` is false on `win32` and it has no `taskkill` route. Measured on a real host (E16c): `muse serve` itself recorded `exit reason recorded: stdin_closed` and the process was gone after `close()` | `src/watchdog.ts`; E16c (run 45281586619); E-R21-07; E-D135 |
-| Orphaned process after close | Not observed | Not observed | No survivor at any sample across three cycles: a real `muse serve` was alive and visible in each (`1428|muse-bin-1.4.25-R9361.1.exe|1056`, then 5540, then 8844), `close()` returned, and the whole process table was read every 250 ms for 60 s, then 20 s twice, every sample succeeded (E29: a failed read is now a failed assertion), and neither the image-matched list nor the linked-descendant list held anything. The host's own stderr says it ended on stdin EOF. Bounded, not a guarantee: `TerminateProcess` names one pid, libuv's job object carries `SILENT_BREAKAWAY_OK`, and `anomalyco/opencode#62602` documents the same leak class — so the claim is "none observed in the measured case", not "cannot happen". A stub `.cmd` under `child.kill()` did leak a grandchild (E12) | E16c/E27 (run 45289291661), E29 (run 45295160232, `failed=0`); E12; E-R21-07, E-R21-08; Paseo #6193; #62602 |
+| Orphaned process after close | Not observed | Not observed | No survivor of the child the fixture spawned at any sample across three cycles: a real `muse serve` was alive and visible in each (`1428|muse-bin-1.4.25-R9361.1.exe|1056`, then 5540, then 8844), `close()` returned, and the whole process table was read every 250 ms for 60 s, then 20 s twice, every sample succeeded (E29: a failed read is now a failed assertion), and neither the image-matched list nor the linked-descendant list held anything. The host's own stderr says it ended on stdin EOF. Bounded, not a guarantee: `TerminateProcess` names one pid, libuv's job object carries `SILENT_BREAKAWAY_OK`, and `anomalyco/opencode#62602` documents the same leak class — so the claim is "none observed in the measured case", not "cannot happen". A stub `.cmd` under `child.kill()` did leak a grandchild (E12) | E16c/E27 (run 45289291661), E29 (run 45295160232, `failed=0`); E12; E-R21-07, E-R21-08; Paseo #6193; #62602 |
 | Token ledger mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`: Node's `chmod` changes only the write bit, and ACLs are not modeled | `src/usage-ledger.ts`; Node `fs` docs; E-D134 |
 | Hook trust-record mode | `0600` on POSIX | Same code path; unmeasured | Inherited ACL, not `0600`; same write-bit limit | `src/hooks.ts`; Node `fs` docs; E-D134 |
 | UAC on a headless spawn | Not applicable | Not applicable | The vendor documents a UAC prompt when the sandbox initialises; a headless spawn cannot answer it, and it surfaces 900 s later as `host_idle_timeout`, which names the wrong cause. No Windows host here | Vendor Windows list; `scripts/doctor.ts` `platform()`; E-D136 |
@@ -97,8 +106,11 @@ exited 100 ms in: the "frozen host" never existed, the turn was never announced,
 and the 15 s budget was measuring a crash, not a slow start. The freeze now blocks
 the main thread on a shared buffer there — no stdin read, no timer. Measured on
 run 45295871849: terminal at 260 ms, host gone at 2.275 s, resume at 2.32 s. With
-the budget back at 4 s, run 45296080862 is 410/0 on all three systems, so the
-`host_idle_timeout` path is measured on Windows rather than assumed.
+the budget back at 4 s, run 45296080862 is 405 ran / 0 failed / 5 skipped on
+Windows (410/0 on Ubuntu and macOS), so the `host_idle_timeout` path is measured
+on Windows rather than assumed. The five skips are listed in the claims table;
+they are not a pass. E34 ports the three behaviour tests and narrows the count to
+the two mode tests, which Windows genuinely cannot run.
 
 ## Claims, one owner each (D151)
 
@@ -110,12 +122,12 @@ restating it, which is what stops a count from drifting in three sentences.
 | Offline suite passes on Linux | 443/0, 39 files | `bun run test:offline`, JUnit `scratch/local.xml` | 2026-11-24 | local checkout | re-run locally; the count moves with the three local-only files |
 | Offline suite passes on `ubuntu-latest` | 410/0, 36 files | run 45296080862, artifact `junit-ubuntu-latest`; snapshot `2026-11-24-791840c.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; re-run the workflow |
 | Offline suite passes on `macos-15` (arm64) | 410/0 | run 45296080862, artifact `junit-macos-latest`; snapshot `2026-11-24-791840c.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; re-run the workflow |
-| Offline suite on `windows-latest` | 410/0 | run 45296080862, artifact `junit-windows-latest`; snapshot `2026-11-24-791840c.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; E30 named and closed the 15 s |
+| Offline suite on `windows-latest` | 405 ran / 0 failed / 5 skipped (410 declared) | run 45296080862, artifact `junit-windows-latest`; snapshot `2026-11-24-791840c.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; E30 named and closed the 15 s; E34 ports the 3 behaviour skips |
 | Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner | a vendor installer release; re-read `.muse-version` |
 | `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner | re-run `ci/real`; sampler hardened in E29 |
 | The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account | re-read after any `opencode auth login` |
 | A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account | re-read after a Console build change |
-| A Console policy cannot be created here | target requires a member tag; no tag UI in this build (member menu: View details / Remove only) | Console `/policies/new`, Settings → Members, build `index-OIWtun4R.js` | 2026-11-24 | this account | Console build pinned in E31; recheck if the builder gains a tag control |
+| A Console policy could not be created through this build's UI | target requires a member tag; no tag UI in this build (member menu: View details / Remove only); API write untested | Console `/policies/new`, Settings → Members, build `index-OIWtun4R.js` | 2026-11-24 | this account | Console build pinned in E31; E36/E37 test the API route |
 
 ## What a Windows user is consenting to
 

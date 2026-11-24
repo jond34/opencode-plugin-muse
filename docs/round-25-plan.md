@@ -469,6 +469,12 @@ keeps "names exactly one workspace id; refusal in another workspace unmeasured".
 - **Q3:** no second workspace; E32 stays at Arm C.
 - **Q4:** implemented.
 - **Q5:** the audit stays its own file, linked from the ledger.
+
+**Correction (2026-11-24, round 26).** The Windows cell is 405 ran + 5 skipped,
+not 410/0. The JUnit attributes are `tests="410" skipped="5"`: two skips are
+POSIX-only mode tests, and three are behaviour tests (login link, transport EOF,
+frozen host). E30 fixed the fixture, not the coverage; E34 ports the three, and
+the skip ledger now names each one and the row it leaves unmeasured.
 - **Q6:** pending for this round, with the wording "unverified until an
   owner-supplied machine exists"; retire to runner-verified-only if the next round
   ends without one.

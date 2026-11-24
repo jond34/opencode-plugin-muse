@@ -14,6 +14,9 @@ Verdict: the decisions themselves hold. Three pieces of *evidence* do not, one
 count is wrong, and two instruments can fail open. None of it reverses a decision;
 two sentences currently claim more than the measurement shows.
 
+A wider re-review of every decision's evidence, including the fifteen claims that
+do not carry as written, is in `docs/evidence-review-2026-11-24.md`.
+
 ## Round 25 status (2026-11-24)
 
 | Item | Status | Where |
@@ -32,6 +35,24 @@ Two findings changed shape under measurement rather than argument: F8's cause wa
 an instrument that could not express "frozen" on Windows, and F9's absence is
 narrower than written — tags exist in the Console's data model, only this build's
 UI cannot create one. The rest closed as the audit proposed.
+
+## Round 26 status (2026-11-24)
+
+The live table is in `docs/round-26-plan.md` §Status; this one records only what
+landed, so the two cannot disagree about counts.
+
+| Item | Status | Where |
+|---|---|---|
+| A. Claim corrections | in progress | `policy-remote.md`, `decision-coverage.md`, `platform-support.md`, `round-25-plan.md` |
+| B1. JUnit summary | todo | `scripts/junit-summary.ts` |
+| B2. Skip ledger | todo | `test/skip-ledger.test.ts` |
+| B4. `runner.arch` | todo | `.github/workflows/test.yml` |
+| B5. Claims table | todo | `docs/claims.md` |
+| E34. Windows coverage | todo | round-26 plan |
+| E35. Hook scope | todo | round-26 plan |
+| E36/E37. Console route | todo | round-26 plan |
+| E38. Grandchild | todo | round-26 plan |
+| E39. `denyUnmatched` wildcard | todo | round-26 plan |
 
 ---
 
