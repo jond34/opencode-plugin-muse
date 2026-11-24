@@ -1,9 +1,42 @@
-# opencode-plugin-muse
+# Muse Bridge for OpenCode
 
-Use Muse models in [opencode](https://opencode.ai) with the `muse` CLI login you
-already have. Muse appears in the model picker as the `muse` provider, and
-requests go through the signed-in `muse` CLI, so no Muse credential reaches
-opencode or your config.
+Use your Muse Code subscription inside [opencode](https://opencode.ai): Muse
+appears in the model picker as the `muse` provider, and every request runs
+through the signed-in `muse` CLI.
+
+[![npm version](https://img.shields.io/npm/v/@jonathand34/opencode-plugin-muse?label=npm)](https://www.npmjs.com/package/@jonathand34/opencode-plugin-muse)
+[![test](https://github.com/jond34/opencode-plugin-muse/actions/workflows/test.yml/badge.svg)](https://github.com/jond34/opencode-plugin-muse/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jond34/opencode-plugin-muse/blob/main/LICENSE)
+![tested pair](https://img.shields.io/badge/tested-opencode%202.4.1%20%C2%B7%20muse%201.4.25-lightgrey)
+
+## Quickstart
+
+OpenCode 2.x and Muse Code CLI 1.4.20 or newer, already logged in.
+
+1. `muse login`
+2. `opencode plugin add @jonathand34/opencode-plugin-muse@1.0.0`
+3. Restart opencode and pick a Muse model, for example
+   `opencode run -m muse/muse-ember-1.0 "hello"`.
+
+Tested pair: opencode 2.4.1 with Muse Code CLI 1.4.25. MIT. Unofficial: not
+affiliated with, endorsed by, or supported by Meta or opencode.
+
+## Why this one
+
+- **OpenCode owns the turn.** opencode executes every tool call and keeps the
+  permissions, transcript, and history; Muse supplies inference. The plugin
+  turns Muse's own tools, workflows, and subagents off.
+- **No Muse credential leaves the CLI.** The plugin spawns the signed-in
+  `muse serve` host and holds no token; the API key opencode sees is a
+  placeholder that is never sent to Muse.
+- **Signed `1.0.0`, fixed bytes.** The npm tarball carries a SLSA provenance
+  attestation naming this repository, and the `v1.0.0` GitHub Release is
+  immutable. The build hash and what it does and does not prove are in
+  [docs/provenance.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/provenance.md).
+
+![opencode's model picker, showing Muse Ember under the Muse Code provider](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/v1.0.0/media/opencode-model-picker.png)
+
+## What `1.0.0` means
 
 `1.0.0` is published on npm with an immutable `v1.0.0` GitHub Release. X9a on
 2026-11-24 passed on opencode 2.4.1 with Muse CLI 1.4.25: the plugin answered a
@@ -23,12 +56,9 @@ reconcile the published 0.1.9 tarball; the third contains Muse to inference, the
 fourth makes opencode own the context, and the fifth finishes the effort, prompt,
 and rewritten-history boundaries.
 
-Unofficial: not affiliated with, endorsed by, or supported by Meta or opencode.
 Best-effort maintenance by one person, with no support commitment. It never holds
 Muse credentials and writes one file of its own (the token ledger); everything
 else it keeps is in memory.
-
-![opencode's model picker, showing Muse Ember under the Muse Code provider](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/v1.0.0/media/opencode-model-picker.png)
 
 ## What it does
 
