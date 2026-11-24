@@ -64,6 +64,41 @@ function alive(pid) {
   }
 }
 
+function jobMembership(hostPid, grandchildPid) {
+  const script = `
+    $code = @"
+using System;
+using System.Runtime.InteropServices;
+public static class JobProbe {
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool IsProcessInJob(IntPtr hProcess, IntPtr hJob, out bool result);
+}
+"@
+    Add-Type -TypeDefinition $code
+    $out = @{}
+    foreach ($id in @(${hostPid}, ${grandchildPid})) {
+      try {
+        $p = Get-Process -Id $id -ErrorAction Stop
+        $inJob = $false
+        $ok = [JobProbe]::IsProcessInJob($p.Handle, [IntPtr]::Zero, [ref]$inJob)
+        $out[$id] = @{ ok = $ok; inJob = $inJob; error = $null }
+      } catch {
+        $out[$id] = @{ ok = $false; inJob = $null; error = $_.Exception.Message }
+      }
+    }
+    $out | ConvertTo-Json -Compress
+  `;
+  try {
+    const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    return { ok: true, raw: out.trim() };
+  } catch (error) {
+    return { ok: false, error: String(error).split("\n")[0] };
+  }
+}
+
 const dir = mkdtempSync(join(tmpdir(), "muse-grandchild-"));
 const pidFile = join(dir, "host.pid");
 const connection = await spawnMspConnection({
@@ -95,6 +130,7 @@ if (grandchildPid === undefined) {
   process.exit(1);
 }
 
+const job = jobMembership(hostPid, grandchildPid);
 const before = processTable();
 const beforeRow = before.rows.find((row) => row.pid === grandchildPid);
 console.log(
@@ -104,6 +140,7 @@ console.log(
     grandchildSeenBeforeClose: beforeRow !== undefined,
     grandchildCreated: beforeRow?.created ?? null,
     tableOk: before.ok,
+    jobMembership: job,
   }),
 );
 
