@@ -9,9 +9,9 @@
  *   answer            — stay alive; answer nothing else.
  *   eof-alive         — end stdout after the handshake and keep running: the
  *                       shape a dead transport with a live process has.
- *   freeze            — SIGSTOP itself on the first line after the handshake:
+ *   freeze            — stop responding on the first line after the handshake:
  *                       alive, reading nothing, so no request can ever settle.
- *   freeze-after-start — answer `session/start` and `turn/start`, then SIGSTOP:
+ *   freeze-after-start — answer `session/start` and `turn/start`, then freeze:
  *                       the turn is admitted and no frame ever arrives.
  *   resume-answer     — answer `session/resume`, and a `turn/start` with a
  *                       started item, a delta, and a completion.
@@ -29,6 +29,25 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
+
+/**
+ * Stop responding without exiting.
+ *
+ * POSIX has SIGSTOP; Windows has no such signal, and `process.kill(pid,
+ * "SIGSTOP")` throws `ERR_UNKNOWN_SIGNAL` there. That throw killed the fixture
+ * 100 ms into the Windows resume test, turning "frozen host" into "host exited"
+ * and leaving the turn unannounced — which is why that cell never produced a
+ * terminal (E30). Blocking the main thread on a shared buffer is the portable
+ * equivalent: no further stdin is read, no timer fires, and the process is still
+ * there to be terminated.
+ */
+function freezeForever() {
+  if (process.platform === "win32") {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+    return;
+  }
+  process.kill(process.pid, "SIGSTOP");
+}
 
 const modeFile = process.env.FAKE_MSP_MODE_FILE;
 const mode =
@@ -107,7 +126,7 @@ process.stdin.on("data", (chunk) => {
     if (mode === "freeze") {
       // Stopped with the request still in the pipe: the promise for it can
       // never settle, and neither can anything else sent afterwards.
-      process.kill(process.pid, "SIGSTOP");
+      freezeForever();
     }
     record(message.method);
     const params = message.params ?? {};
@@ -116,9 +135,9 @@ process.stdin.on("data", (chunk) => {
       respond(message.id, { session: { sessionId, modelId: params.modelId ?? null } });
       if (mode === "freeze-after-start") {
         // Admitted, then silent: the shape the watchdog exists for. The delay
-        // lets the ack above flush through the pipe first; a SIGSTOP in the
-        // same tick would freeze the process with the ack still buffered.
-        setTimeout(() => process.kill(process.pid, "SIGSTOP"), 100);
+        // lets the ack above flush through the pipe first; freezing in the same
+        // tick would leave the ack buffered and the turn unannounced.
+        setTimeout(freezeForever, 100);
       }
       continue;
     }

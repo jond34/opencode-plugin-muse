@@ -159,7 +159,14 @@ describe("resume after a watchdog kill", () => {
     const goneAt = await gone;
     if (goneAt === null) mark("host.alive-at-budget");
     else trace.push({ at: goneAt, label: "host.gone" });
-    if (!terminalSeen || process.platform === "win32") printTrace(trace);
+    if (!terminalSeen || process.platform === "win32") {
+      printTrace(trace);
+      // E30: what the adapter did see, for the case where it retired the turn
+      // without a terminal (a turn whose `turn/started` never arrived).
+      console.error(
+        `[E30] events=[${events.map((event) => event.type).join(",")}] hostExited=${live.muse.hostExited}`,
+      );
+    }
     expect(terminalSeen).toBe(true);
     const terminal = events.find((event) => event.type === "turn.terminal");
     expect(terminal && "failure" in terminal ? terminal.failure?.code : undefined).toBe(
