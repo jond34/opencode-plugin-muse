@@ -21,6 +21,12 @@ OpenCode 2.x and Muse Code CLI 1.4.20 or newer, already logged in.
 Tested pair: opencode 2.4.1 with Muse Code CLI 1.4.25. MIT. Unofficial: not
 affiliated with, endorsed by, or supported by Meta or opencode.
 
+![opencode's model picker filtered to Muse Code, then a Muse Ember turn that reads notes.md, runs ./count.sh through opencode's shell tool, and answers "notes.md has 7 lines"](https://raw.githubusercontent.com/jond34/opencode-plugin-muse/main/media/muse-bridge-demo.gif)
+
+Recorded 2026-11-24 with opencode 2.4.1, Muse CLI 1.4.25, and the published
+`1.0.0`: `/models` → Muse Ember, one prompt, one `opencode_bash` call. The
+project is synthetic and no credential appears.
+
 ## Why this one
 
 - **OpenCode owns the turn.** opencode executes every tool call and keeps the
