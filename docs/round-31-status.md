@@ -18,7 +18,7 @@ table; the plan and research files are not rewritten when a result differs.
 | E63 | Runtime dependency trace | done | `docs/evidence/2026-11-26-r31-e63.json`; no path to `@opencode/util`, glob/minimatch, gaxios, gcp-metadata, or rimraf |
 | E64 | Second clean builder | not run | release stopped at E62 B2 |
 | E60 | Stage and reject | not run | release stopped at E62 B2 |
-| F | Reconcile, check, commit | pending | — |
+| F | Reconcile, check, commit | done | `f1fd11f` on `round-31`; owner file left unstaged |
 
 ## A5 packaging note
 
