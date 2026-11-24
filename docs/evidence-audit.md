@@ -54,6 +54,21 @@ landed, so the two cannot disagree about counts.
 | E38. Grandchild | done | `docs/evidence/2026-11-24-e38.json`; no survivor, no reaper |
 | E39. `denyUnmatched` wildcard | blocked | needs a bridged call and a turn; O4 did not fire |
 
+## Round 28 status (2026-11-25)
+
+The live table is in `docs/round-28-plan.md` §Status; this one records what
+landed and what remains thin.
+
+| Item | Status | Where |
+|---|---|---|
+| A. Premise and release corrections | done | `69c6dfc`; `decision-coverage.md`, `provenance.md` |
+| E48. Saved MCP rule | done | `docs/evidence/2026-11-25-e48.json`; `:ask-me` approval, persistent `mcp__opencode__bash` rule, second `denyUnmatched` session ran |
+| E49. Console denial sentence | done | `docs/evidence/2026-11-25-e49.json`; generic `Model unavailable`, unpathed `document` source |
+| E50. Windows desktop | blocked | owner-assisted; no desktop JSON, O17 A |
+| R1. Release readiness | done | `docs/evidence/2026-11-25-r1.json`; version/npm agree, dist hash stale, no rebuild |
+
+---
+
 ## Round 27 status (2026-11-24)
 
 The live table is in `docs/round-27-plan.md` §Status; this one records what

@@ -1000,7 +1000,7 @@ describe("MuseHarnessSession approvals", () => {
           callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
         },
       }),
-    ).rejects.toThrow(/matches no policy rule/);
+    ).rejects.toThrow(/no path that presents a Muse approval/);
     expect(commands).toHaveLength(0);
   });
 

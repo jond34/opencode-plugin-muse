@@ -20,9 +20,9 @@ sentence, or a release gate.
 | E48. Saved MCP rule under `:ask-me` | done | `docs/evidence/2026-11-25-e48.json` | D194; 4 turns across 3 attempts (selector repair) |
 | E49. Console denial sentence | done | `docs/evidence/2026-11-25-e49.json` | D201; generic `Model unavailable`; no Console-typed source |
 | E50. Windows desktop | blocked | | owner-assisted; no desktop JSON yet |
-| R1. Release readiness audit | doing | | no build, no publish, no tag |
-| C. Results and choices | todo | | §8, §9 |
-| O. Owner choices | todo | | defaults in §6; only O15/O17 may need a reply |
+| R1. Release readiness audit | done | `docs/evidence/2026-11-25-r1.json` | D208; dist hash stale, no rebuild |
+| C. Results and choices | done | final commit | §8, §9 |
+| O. Owner choices | done | defaults applied | O15/O16/O17 A; O18–O20 A; no live reply required |
 
 ---
 
@@ -436,7 +436,7 @@ ships and a reader needs one page that says what is supported.
 - E48/E49/R1 each run or blocked with a reason and the sentence it leaves
   standing; E50 blocked unless the owner's JSON exists.
 - D194–D210 applied where their trigger fired.
-- O15–O20 have a default applied; only O15/O17 may need a reply.
+- O15–O20 have a default applied; only O15/O16/O17 have a live alternative, and none needs a reply for the default.
 - `npm run check:offline` green; `bun scripts/check-claims.ts` current;
   `git diff --check`; `git status` clean except
   `docs/integration-landscape.md`.
@@ -450,10 +450,22 @@ column, not only in the prose.
 
 | Item | Command / run | Result | Branch applied | Cost |
 |---|---|---|---|---|
-| A1 | | | | free |
-| A2 | | | | free |
-| E48 | | | | 2–3 turns |
-| E49 | | | | 0 turns |
-| E50 | | | | owner |
-| R1 | | | | free |
-| C | | | | — |
+| A1 | `git show 69c6dfc` | E44 premise corrected: Auto-review default, not an absent capability; saved-rule half left open until E48 | `69c6dfc` | free |
+| A2 | `git show 69c6dfc` | Unreleased-tree sentence added; npm latest 0.1.12; 0.1.13 is O15 | `69c6dfc` | free |
+| E48 | `node test/seam/muse-approval-rule.mjs` | D194: both sessions committed `:ask-me`; approval offered `allow_local_mcp_tool` / `approvedPolicyAmendment` / `localPersistent` with preview `tool \`mcp__opencode__bash\``; store schema_version 2 wrote `tool_action`; second `denyUnmatched` ran with no approval | `e817cdb` | 4 turns across 3 attempts (attempt 1 blocked before a turn; attempt 2 selector bug; attempt 3 result) |
+| E49 | Console browser + `opencode debug config` | D201: policy compiled into an unpathed `document`, deepseek left `opencode models`, `opencode run` exited 1 with `Error: Model unavailable: deepseek/deepseek-flash`; no workspace name | `579da92` | 0 Muse turns; one reversible Console policy |
+| E50 | no owner JSON | blocked: owner-assisted; O17 A, no platform claim changed | — | owner |
+| R1 | `git status`, `npm view`, read-only dist hash | D208: version 0.1.12 agrees with npm; tree unreleased; dist is 160 files / `0cd9abf…`, not the recorded 100-file `d2d50a4…`; no rebuild | final commit | free |
+| C | this table | Results written; O15/O16/O17 defaults applied; O18–O20 defaults applied | final commit | — |
+
+**Deviation:** E48's 2–3 turn estimate became 4 turns because attempt 2 selected
+`Allow once` (the host labels the persistent choice `approvedPolicyAmendment`, not
+`allow`). Attempt 3 was the third and final attempt; no further turn was spent.
+The $0.50 cap was not separately metered because this is a flat Muse tier.
+
+**Choices applied:** O15 A (prepare 0.1.13 only in a later, separately authorized
+release pass; nothing was bumped, built, packed or published here); O16 A (keep
+`allowAll` even though D194 makes B technically available); O17 A (best-effort,
+E50 blocked); O18 A (no vendor contact); O19 A (native history stays opt-in);
+O20 A (evidence stays repo-side). Only O15/O16/O17 have a live alternative, and
+none was selected by this round.
