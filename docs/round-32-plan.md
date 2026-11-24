@@ -450,7 +450,8 @@ and in `docs/decision-evidence.md`.
 ### P2. Release under E62 (owner risk; after E65)
 
 - **A. Resume with a documented caveat** if E65 H1/H2/H4 and E64/E60 pass.
-- **B. Hold for a vendor fix** if E65 H2/H3 without a code gate.
+- **B. Hold for a vendor fix** if E65 H2 and the caveat is not acceptable, or
+  E65 H3 without a code gate.
 - **C. Resume only with a code gate** if E65 H3 and P1 B.
 
 ### P3. Provenance proof (release/trust; after E60)

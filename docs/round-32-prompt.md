@@ -46,6 +46,29 @@ file.
 - Every experiment records versions, commands, start/end time, turns, cost,
   raw output paths, observations, and limits.
 
+## Defaults already chosen
+
+Do not re-ask these unless the named result changes the branch. Record the
+result and the changed branch in `docs/round-32-status.md`.
+
+| Choice | Default |
+|---|---|
+| P1. `plugin`-origin hook posture | A (keep allow, correct the claim, warn) unless E65 H3; H3 stops the run and makes B the recommended next choice, not a pre-approved code change. |
+| P2. Release under E62 | Resume only if E65 H1/H2/H4 and E64/E60 pass. H2 needs the documented caveat and a watch item; H3 holds unless P1 B is chosen. |
+| P3. Provenance proof | A (accept “not verifiable before approval”); B is a separate release decision. |
+| P4. Console claim | A if E55a/E55b pass; otherwise D (vendor-doc note), then C (no claim). |
+| O31. Approval posture | A pending E61 B1; B only with E61 B2 plus a one-prompt spike. |
+| O32. Console wording | D/C until E55a/E55b; A/B only with those results. |
+| O33. Release-gate strictness | A, including the A5 negative tests. |
+| O34. Reproducibility claim | B if E64 B1; A otherwise. |
+| O35. Dependency risk | A. |
+| O36. Windows desktop | A, retire the desktop claim. |
+| O37. Stage proof | A, stage/reject with owner 2FA at reject; B is a separate release decision. |
+
+If a result changes a default, do not silently pick a new product posture. Record
+the measured branch, mark the affected choice open, and report the minimum
+decision. The only automatic stop is a stop condition below.
+
 ## Work order
 
 ### 1. A1–A5 documentation and gate corrections
