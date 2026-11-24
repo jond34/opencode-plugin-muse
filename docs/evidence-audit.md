@@ -67,6 +67,20 @@ landed and what remains thin.
 | E50. Windows desktop | blocked | owner-assisted; no desktop JSON, O17 A |
 | R1. Release readiness | done | `docs/evidence/2026-11-25-r1.json`; version/npm agree, dist hash stale, no rebuild |
 
+## Round 29 status (2026-11-25)
+
+The live table is in `docs/round-29-plan.md` §Status; this one records what
+landed and what remains thin.
+
+| Item | Status | Where |
+|---|---|---|
+| A1–A5. Claims and posture | done | `d745975`; release page, approval page, vendor drafts, changelog |
+| R2. Published artifact | done | `docs/evidence/2026-11-25-r2.json`; D211, digest and signatures agree |
+| E51. 0.1.13 candidate | done | `d05446f`; `docs/evidence/2026-11-25-e51.json`; 160-file hash, pack clean |
+| E52. Isolated load | done | `docs/evidence/2026-11-25-e52.json`; install/import pass, opencode model listing inconclusive (D220) |
+| E53. Windows desktop | blocked | no owner JSON; D221, O17 A, desktop row retired |
+| E54. Two-gate spike | not run | O16 A; double gate remains recorded in `docs/approval.md` |
+
 ---
 
 ## Round 27 status (2026-11-24)

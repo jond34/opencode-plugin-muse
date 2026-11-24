@@ -157,19 +157,21 @@ suite never touches. Neither job proves the handshake. The doctor's `platform`
 row prints the ladder and the permission mode the current machine actually has,
 which is the read a user can rely on.
 
-## Condition that changes this record
+## Windows desktop status: unmeasured, not pending
 
-A Windows *desktop* — and only a desktop. A hosted Windows runner cannot stand in
-for one: it cannot answer UAC or SmartScreen, cannot complete the interactive
-sign-in, and has no subscription credential to spend a turn with (`muse auth`
-stores provider keys, and `src/host-config.ts` deletes `META_API_KEY` from the
-child environment, so a key would test a route the plugin does not ship — round
-23, E16b withdrawn). An owner-supplied signed-in Windows 11 machine, one hour,
-with the doctor and one turn, settles the desktop questions — no one else can take
-that step, which is why it is written as a supply condition rather than a task. A
-runner settles only the suite, which is what D147 does with it. Until then the
-honest status is "tested on Linux and macOS; Windows spawn, install, configure,
-handshake, close and the offline suite measured on a hosted Server runner; best
-effort on a desktop" — not parity, and no Windows desktop claim. Round 25's Q6
-answer keeps this pending for one round and retires the desktop row to
-runner-verified-only if the next round ends without a machine.
+Round 25's Q6 kept the desktop row for one round and said it would retire to
+runner-verified-only if that round ended without a machine. Round 28 ended
+without one, and round 29 found no owner-supplied desktop JSON (E53). The row is
+retired: the runner evidence above stands, and the honest status is "tested on
+Linux and macOS; Windows spawn, install, configure, handshake, close and the
+offline suite measured on a hosted Server runner; best effort on a desktop" —
+not parity, and no Windows desktop claim. No further round is reserved for it.
+
+A hosted Windows runner cannot stand in for a desktop: it cannot answer UAC or
+SmartScreen, cannot complete the interactive sign-in, and has no subscription
+credential to spend a turn with (`muse auth` stores provider keys, and
+`src/host-config.ts` deletes `META_API_KEY` from the child environment, so a key
+would test a route the plugin does not ship — round 23, E16b withdrawn). An
+owner-supplied signed-in Windows 11 machine, one hour, with the doctor and one
+turn, would reopen the row and settle the desktop questions. Until then, the
+claim stays best-effort and no desktop support is promised.

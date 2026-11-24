@@ -1,0 +1,61 @@
+{
+  "experiment": "R2",
+  "date": "2026-11-25",
+  "scope": "read-only audit of the published 0.1.12 artifact; no publish, login, or global npm config change",
+  "tag": {
+    "name": "v0.1.12",
+    "commit": "df123716b82e15a83d9ef74e08cbb25110ca5e25",
+    "package": {
+      "name": "@jonathand34/opencode-plugin-muse",
+      "version": "0.1.12"
+    }
+  },
+  "registry": {
+    "latest": "0.1.12",
+    "version": "0.1.12",
+    "integrity": "sha512-yjyU9C3NrPfk8W5PVdyoQurke1b9fj6sZKpU+RBd/HO+DHEBRy9B2tyx9kQJLePAOsadqDUIUB2S0IjJmZQvtg==",
+    "tarball": "https://registry.npmjs.org/@jonathand34/opencode-plugin-muse/-/opencode-plugin-muse-0.1.12.tgz",
+    "gitHead": "df123716b82e15a83d9ef74e08cbb25110ca5e25"
+  },
+  "tarball": {
+    "file": "scratch/r29-r2/jonathand34-opencode-plugin-muse-0.1.12.tgz",
+    "bytes": 93657,
+    "sha256": "05246a968eaba5e557c4fc25ceea00e3f06c3f2dde4ca518ea071d73425c807a",
+    "sha512Base64": "yjyU9C3NrPfk8W5PVdyoQurke1b9fj6sZKpU+RBd/HO+DHEBRy9B2tyx9kQJLePAOsadqDUIUB2S0IjJmZQvtg==",
+    "sha512Hex": "ca3c94f42dcdacf7e4f16e4f55dca842eae47b56fd7e3eac64aa54f9105dfc73be0c7101472f41dadcb1f644092de3c03ac69da83508501d92d088c999942fb6",
+    "files": 109,
+    "topLevel": {
+      "LICENSE": 1,
+      "README.md": 1,
+      "dist": 84,
+      "docs": 1,
+      "package.json": 1,
+      "src": 21
+    }
+  },
+  "attestation": {
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "buildType": "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+    "invocation": "https://github.com/jond34/opencode-plugin-muse/actions/runs/44397911705/attempts/1",
+    "subjectDigestSha512": "ca3c94f42dcdacf7e4f16e4f55dca842eae47b56fd7e3eac64aa54f9105dfc73be0c7101472f41dadcb1f644092de3c03ac69da83508501d92d088c999942fb6"
+  },
+  "checks": {
+    "tagPackageMatchesTarball": true,
+    "gitHeadMatchesTag": true,
+    "registryIntegrityMatchesTarball": true,
+    "attestationDigestMatchesTarball": true,
+    "signatureAudit": {
+      "exit": 0,
+      "packagesAudited": 272,
+      "verifiedSignatures": 272,
+      "verifiedAttestations": 103
+    }
+  },
+  "decision": "D211",
+  "result": "Release path viable. The published 0.1.12 tag, registry integrity, tarball, gitHead, and SLSA provenance agree; the signature audit passes. No candidate was built in R2.",
+  "notes": [
+    "npm pack and audit ran in scratch/r29-r2; the repository and global npm config were not modified.",
+    "The tarball's package/package.json name and version match the v0.1.12 tag.",
+    "npm's local auth token is stale; this audit needed no authenticated write and did not log in."
+  ]
+}

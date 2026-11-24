@@ -1,9 +1,10 @@
 # Round 29 plan: ship a candidate, settle the posture
 
-**Written** 2026-11-25, on branch `round-29` off `round-28` (`e53d792`). The
-owner approved every experiment. This file is the execution target and the
-resume state. Update the status table after every item and write results in §9
-before moving on.
+**Written** 2026-11-25, on branch `round-29` off `round-28` (`e53d792`).
+Planning commits `e4c6eea` and `f6ac154` precede execution; `f6ac154` adds the
+search-coverage and stage-only corrections. The owner approved every experiment.
+This file is the execution target and the resume state. Update the status table
+after every item and write results in §9 before moving on.
 
 The round has one rule: **a measurement may change a sentence or a release gate;
 it may not silently change a product promise.** The only product choices that can
@@ -14,25 +15,26 @@ release mechanics, or a draft.
 
 | Item | State | Commit / run | Note |
 |---|---|---|---|
-| A1. Claim drift | todo | | README test counts, watchlist rows, test workflow header |
-| A2. Release page | todo | | `docs/release.md`; gates, staged flow, rollback |
-| A3. Approval page | todo | | `docs/approval.md`; one gate vs two |
-| A4. Vendor drafts | todo | | `docs/vendor-issues.md`; no submission |
-| A5. Changelog | todo | | `CHANGELOG.md` and GitHub release-body draft |
-| R2. Published-artifact audit | todo | | read-only 0.1.12 provenance/tarball |
-| E51. Release candidate | todo | | 0.1.13 build, hash, pack |
-| E52. Isolated load smoke | todo | | installed tarball, no owner config |
-| E53. Windows desktop | blocked | | owner-assisted; no JSON yet |
-| E54. Approval two-gate spike | conditional | | only if O16 B is chosen |
-| F. Final checks and commit | todo | | |
-| C. Results and choices | todo | | §9 |
+| A1. Claim drift | done | `d745975` | README test counts (410/443), watchlist rows, platform claim, workflow header |
+| A2. Release page | done | `d745975` | `docs/release.md`; gates, staged flow, rollback |
+| A3. Approval page | done | `d745975` | `docs/approval.md`; one gate vs two |
+| A4. Vendor drafts | done | `d745975` | `docs/vendor-issues.md`; no submission |
+| A5. Changelog | done | `d745975` | `CHANGELOG.md`, release-body draft, package `files` |
+| R2. Published-artifact audit | done | `docs/evidence/2026-11-25-r2.json` | D211: tag, integrity, tarball, gitHead, SLSA digest agree; 272 signatures verified |
+| E51. Release candidate | done | `d05446f` | 0.1.13, 160 files, hash `15a64cdd…f6b274b`; repro PASS; pack clean; no publish |
+| E52. Isolated load smoke | done | `docs/evidence/2026-11-25-e52.json` | install/import pass; isolated opencode loaded plugin but no Muse auth, model listing inconclusive |
+| E53. Windows desktop | blocked | no owner JSON | D221: O17 A; desktop row retired |
+| E54. Approval two-gate spike | not run | O16 A | Double gate remains; no code changed |
+| F. Final checks and commit | done | final commit | 452/0/41; claims 17/17; diff check clean |
+| C. Results and choices | done | final commit | §9 |
 
 ---
 
 ## 0. State at handoff
 
-- Branch `round-29`, HEAD `e53d792`. `main` is untouched. `v0.1.12` is the only
-  tag; there is no GitHub Release.
+- Branch `round-29`; execution starts at `f6ac154` (planning commits `e4c6eea`
+  and `f6ac154`). `main` is untouched. `v0.1.12` is the only tag; there is no
+  GitHub Release.
 - `docs/integration-landscape.md` is the owner's uncommitted file: never stage
   or edit it. `git status` is expected to show it.
 - Baseline: `npm run check:offline` is 452 pass / 0 fail / 41 files;
@@ -549,18 +551,30 @@ column, not only in prose.
 
 | Item | Command / run | Result | Branch applied | Cost |
 |---|---|---|---|---|
-| A1 | | | | |
-| A2 | | | | |
-| A3 | | | | |
-| A4 | | | | |
-| A5 | | | | |
-| R2 | | | | |
-| E51 | | | | |
-| E52 | | | | |
-| E53 | | | | |
-| E54 | | | | |
-| F | | | | |
+| A1 | `git show d745975` | Corrected the 410/443 counts, macOS 406, the stale Console policy row, and the test-workflow header; README now states 419/416/452 frames | `d745975` | free |
+| A2 | `git show d745975` | Added `docs/release.md` with candidate gates, staged flow, rollback, and limits | `d745975` | free |
+| A3 | `git show d745975` | Added `docs/approval.md` with E48, `allowAll`, and the double-gate/API constraint | `d745975` | free |
+| A4 | `git show d745975` | Added `docs/vendor-issues.md`; both drafts marked not submitted | `d745975` | free |
+| A5 | `git show d745975` | Added `CHANGELOG.md` and `docs/release-notes/0.1.13.md`; added changelog to package `files` | `d745975` | free |
+| R2 | `docs/evidence/2026-11-25-r2.json` | D211: tag `v0.1.12` at `df12371`; npm integrity, tarball, gitHead and SLSA subject all agree; 272 signatures and 103 attestations verified | read-only | free |
+| E51 | `d05446f`; `docs/evidence/2026-11-25-e51.json` | D214: 0.1.13 build reproduced at 160 files / `15a64cdd…f6b274b`; pack 208 files, required present, forbidden none; checks 452/0/41 and 17/17 | `d05446f` | free, local |
+| E52 | `docs/evidence/2026-11-25-e52.json` | Install and import pass (`MusePlugin`, default object); isolated opencode loaded the plugin but had no Muse auth, so `muse/*` listing is inconclusive (D218 + D220) | final commit | free, local |
+| E53 | `ls scratch/windows-desktop-*.json` | No owner JSON: D221 applied; O17 A; desktop row retired to runner-verified-only | final commit | owner time not spent |
+| E54 | O16 A | Not run; approval remains the opencode gate and the double-gate risk is recorded in `docs/approval.md` | — | free |
+| F | `npm run check:offline`; `bun scripts/check-claims.ts`; `git diff --check` | Final gates green; commit contains only plan, audit, platform, and evidence files | final commit | free |
 
-**Choices applied:**
+**Choices applied:** O15 A (0.1.13 local candidate, not published); O16 A
+(`allowAll` unchanged); O17 A (best-effort, desktop row retired); O18 A (drafts
+only, no submission); O19 A (native history opt-in); O20 A (evidence repo-side);
+O21 A (0.1.13); O22 A (staged `npm stage publish`, npm 11.19.1 pin, stage-only
+recorded as owner-side); O23 A (`CHANGELOG.md` + release-body draft); O24 A
+(README + `SECURITY.md`, no support file or templates).
 
-**Deviations:**
+**Deviations:** The execution started from `f6ac154`, the planning commit that
+added the search-coverage and stage-only corrections, rather than `e4c6eea`; the
+files the prompt requires are otherwise the same plus those corrections. A1
+found two additional stale claims not named in the plan — README's `443 tests`
+and “Windows is where the suite fails” — and fixed both. E52's optional isolated
+opencode run loaded the plugin but did not list `muse/*` because the throwaway
+environment had no usable Muse auth; it is recorded inconclusive, not a pass.
+E53 is blocked because no owner JSON exists; no desktop result was inferred.
