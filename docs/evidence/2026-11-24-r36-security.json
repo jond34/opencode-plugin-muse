@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-24",
+  "commit": "83e36e13c48be63d1bb1c01b861f56007be36499",
+  "repository": "jond34/opencode-plugin-muse",
+  "visibility": "public",
+  "settings": {
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled",
+    "secret_scanning_non_provider_patterns": "disabled",
+    "secret_scanning_validity_checks": "disabled",
+    "dependabot_security_updates": "enabled",
+    "private_vulnerability_reporting": "enabled",
+    "delete_branch_on_merge": true,
+    "merge_commit": true,
+    "squash_merge": false,
+    "rebase_merge": false
+  },
+  "ruleset": {
+    "id": 27577874,
+    "name": "protect-main",
+    "enforcement": "active",
+    "required_status_check": "offline (ubuntu-latest)",
+    "strict_status_checks": false,
+    "bypass_actors": 0
+  },
+  "codeql": {
+    "state": "configured",
+    "languages": [
+      "actions",
+      "javascript",
+      "javascript-typescript",
+      "typescript"
+    ],
+    "query_suite": "default",
+    "schedule": "weekly",
+    "setup_run": 45366315595,
+    "latest_analysis_commit": "83e36e13c48be63d1bb1c01b861f56007be36499",
+    "alert": {
+      "number": 1,
+      "rule": "js/insecure-randomness",
+      "severity": "high",
+      "path": "src/session-registry.ts",
+      "line": 1019,
+      "disposition": "dismissed",
+      "reason": "false positive",
+      "rationale": "The value is a locally generated one-off session id, not an authentication or authorization token. Predictability does not grant access; the bridge uses a separate per-start bearer token."
+    },
+    "open_alerts_after_review": 0
+  },
+  "exceptions": [
+    "secret_scanning_non_provider_patterns and secret_scanning_validity_checks stayed disabled after two API patch attempts; no release gate depends on them.",
+    "CodeQL default setup was enabled after the merge; the one high alert is dismissed with the recorded false-positive rationale."
+  ],
+  "limits": [
+    "Settings were applied through the owner-authenticated gh session, not a second reviewer.",
+    "The required check applies to future PRs; the release PR was merged before the rule was added, after its Ubuntu check passed.",
+    "CodeQL does not replace the offline suite or a model turn."
+  ]
+}
