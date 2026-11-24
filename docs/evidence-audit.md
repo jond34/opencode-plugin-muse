@@ -14,6 +14,25 @@ Verdict: the decisions themselves hold. Three pieces of *evidence* do not, one
 count is wrong, and two instruments can fail open. None of it reverses a decision;
 two sentences currently claim more than the measurement shows.
 
+## Round 25 status (2026-11-24)
+
+| Item | Status | Where |
+|---|---|---|
+| F1 count 13 vs 14 | **closed** in `ae8306c`; recurrence guarded | `test/suite-list.test.ts` (E28) |
+| F2 "scoped" label | **closed** as wording; scope still unmeasured | `docs/policy-remote.md`; E32 Arm C, owner said no |
+| F3 #54806 citation | **closed** | `docs/decision-coverage.md` §B, turn-cap row |
+| F4 #28186 duplicate | **closed** | same file, MCP Tasks row and §C prose |
+| F5 gh truncation tense | **closed**, now versioned to gh ≤ 2.102.0 | `docs/platform-support.md`, E22 section |
+| F6 suite can shrink | **closed**; renaming a listed file now fails | `scripts/suite-list.ts`, `test/suite-list.test.ts` |
+| F7 orphan sampler fails open | **closed**; failed samples fail the run, descendants counted | `test/seam/windows-real.mjs`; E29 run 45295160232 |
+| F8 15 s unnamed | **closed**; cause was the fixture's `SIGSTOP`, budget back to 4 s | `test/fixtures/fake-msp-host.mjs`; E30 runs 45294979663, 45295871849 |
+| F9 E26 unpinned | **closed**; build `index-OIWtun4R.js`, request list recorded | `docs/policy-remote.md`; E31 |
+
+Two findings changed shape under measurement rather than argument: F8's cause was
+an instrument that could not express "frozen" on Windows, and F9's absence is
+narrower than written — tags exist in the Console's data model, only this build's
+UI cannot create one. The rest closed as the audit proposed.
+
 ---
 
 ## F1 — The Windows failure count is wrong: 13, not 14

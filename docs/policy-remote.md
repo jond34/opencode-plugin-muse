@@ -126,6 +126,27 @@ left exactly as found — no policy, no reservation, no tag; `debug config` stil
 one `document` and two `directory` sources; `opencode models` unchanged at
 112 lines.
 
+E31 pinned that observation to a build and read the page's own requests instead of
+its buttons. The build has no footer version and no `x-…-version` header; the pin
+is the bundle hash `/console/assets/index-OIWtun4R.js`, observed 2026-11-24, and
+the builder lives at `/console/<wrk-id>/policies/new` (the workspace id is part of
+the path — `/console/policies/new` without it is a 404). The page called
+`/console/api/policies`, `/console/api/members?page=1&pageSize=100`,
+`/console/api/orgs/current`, `/console/api/orgs?expect=<wrk-id>` and
+`/console/api/auth/session`; no tag endpoint, because no tag exists to read. The
+activity here is GET-only by construction: `Add tag` and `Save` are disabled, so
+there is nothing to submit.
+
+Two things sharpened the absence claim. The members page's per-member menu (never
+opened in round 24) offers only "View details" and "Remove…", and the builder's
+"Tag members first" link points at that page — so the control is absent from the
+one page the builder sends you to. But the client bundle does carry a tag model:
+the member schema includes `tags` and the members list accepts a `tags` filter, so
+tags exist server-side and only the UI cannot make one. The claim is therefore
+**"this Console build cannot create a member tag, so a policy cannot be created"**
+— not "tags are not supported". A write through the API might still work; that is
+an owner decision (E32), not something a read can settle.
+
 What that leaves untested is still the wording of a denial: the vendor says a
 Console-derived denial names the workspace, while a local statement does not.
 Reproducing it needs a member tag and a Providers or Tools deny; the tag half is

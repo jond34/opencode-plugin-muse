@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-24",
+  "commit": "791840cef46470d235c0a3a60a0b9cedfa39e125",
+  "workflow": "test",
+  "run": 45296080862,
+  "published": {
+    "files": 36,
+    "command": "bun run check:offline on a fresh checkout",
+    "results": [
+      { "os": "ubuntu-latest", "artifact": "junit-ubuntu-latest", "tests": 410, "failures": 0 },
+      { "os": "macos-latest", "artifact": "junit-macos-latest", "tests": 410, "failures": 0 },
+      { "os": "windows-latest", "artifact": "junit-windows-latest", "tests": 410, "failures": 0 }
+    ]
+  },
+  "local": {
+    "files": 39,
+    "command": "bun run check:offline",
+    "tests": 443,
+    "failures": 0
+  },
+  "notes": "Counts are the testsuites attributes of the JUnit artifacts, not a hand count. The local frame is larger because .gitignore:25-27 keeps three bench/harness files out of the repository. The artifact expires 2027-02-21; this file does not."
+}

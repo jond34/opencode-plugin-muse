@@ -227,7 +227,7 @@ percentages rather than a per-turn cost.
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
 - **Platforms.** Built and tested on Linux and macOS: the offline suite passes on
-  both (macOS `macos-15`, 406 tests, 2026-11-23), and that run caught a real
+  all three (`ubuntu-latest`, `macos-latest`, `windows-latest` — 410 tests each, 2026-11-24), and that run caught a real
   macOS-only bug in hook trust, now fixed. Windows is where the suite fails, on
   path and home-directory fixtures rather than plugin code. On Windows the plugin
   does not spawn the `muse` on PATH, because that is a `muse.cmd` shim and Node
@@ -595,7 +595,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 439 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 443 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a

@@ -350,3 +350,132 @@ which is what produced the current unnamed 15 s.
    gate, cost, and the decision it moved.
 6. `git diff --check` clean; `git status` shows only round-25 files plus the owner's
    uncommitted `docs/integration-landscape.md`.
+
+---
+
+## 12. Results
+
+Branch `round-25`, stacked on `round-24`. Four dispatches, no paid turns, no new
+dependency. Runs: 45294979663 (E30, first), 45295160232 (E29), 45295871849 (E30,
+second), 45296080862 (final matrix at 4 s).
+
+### E28 — suite-list guard (free, local)
+
+`scripts/suite-list.ts` + `test/suite-list.test.ts`, added to `test:offline`.
+Result: 4 cases pass. Gate reproduced — renaming `test/version.test.ts` fails the
+guard with that path in the message; restored, green again. Suite is 443/0 across
+39 files locally.
+
+Deviation from the plan: the planned "exactly the untracked subset" assertion
+cannot hold before the guard file itself is committed, and an `exists` that rejects
+local-only paths returns `[]` because the allowlist excuses them regardless. The
+test now asserts each `LOCAL_ONLY` entry is **both untracked and gitignored**, and
+that the list has three entries, which is the property that matters: a published
+test can never be excused.
+
+Also corrected: the gitignored trio is `.gitignore:25-27`, not 24-26 (the plan and
+the platform doc both said 24-26).
+
+### E33 — citations and the Recheck column (free)
+
+F3/F4/F5 applied. Turn-cap row cites E-D52 and records that the vendor declined
+#54806; MCP Tasks rows point at open #63257/#49929; the `gh` rule is versioned to
+gh ≤ 2.102.0 with #15019 closed 2026-11-18. `platform-support.md`'s claims table
+gained a `Recheck` column on all nine rows.
+
+### E30 — where the 15 s went (two dispatches)
+
+First run 45294979663, Windows job 138112958152: kill observed at **+131 ms**, no
+terminal at 15 s. That ruled out "slow cold start" and put the failure in the
+fixture: `freeze-after-start` calls `process.kill(pid, "SIGSTOP")`, which Windows
+does not support — the throw killed the child, the turn's `turn/started` never
+arrived, and the adapter deliberately retires an unannounced turn without a
+terminal (contract rule, not a bug).
+
+Fix: `freezeForever()` — `Atomics.wait` on a shared buffer on win32, `SIGSTOP`
+elsewhere. Second run 45295871849, Windows job 138115971364: terminal at **260 ms**,
+host gone at 2.275 s, `reopen.resumed` at 2.32 s, events
+`turn.updated,turn.terminal,session.updated`. With the budget returned to 4 s,
+run 45296080862 is green on all three systems.
+
+Gate outcome: the middle row of the table — kill fires, nothing after it — but the
+cause was the instrument, not the plugin. The `host_idle_timeout` path is now
+measured on Windows, and the 15 s budget is gone rather than documented.
+
+### E29 — sampler hardening (one dispatch)
+
+Run 45295160232, real-windows job 138113568167: `PASS E16c baseline sample
+succeeded`, `3/3` handshakes, `probe saw the live host`, `every sample succeeded —
+failed=0`, `survivors=[]`, no survivor in either list. The full-table query with
+`CreationDate` and the descendant walk cost no measurable time (three cycles still
+60 + 20 + 20 s, dominated by the sampling windows).
+
+Gate outcome: D150 stands with the sharper sentence — image `muse*` **or a linked
+descendant**, every 250 ms, every sample successful. The instrument now states its
+blind spot: a child whose parent has already left the table is unattributable and
+counted by neither list.
+
+### E31 — Console build pin and request capture (free, read-only)
+
+Build pin: `/console/assets/index-OIWtun4R.js`, observed 2026-11-24 (no footer
+version, no `x-…-version` header). The builder is at
+`/console/<wrk-id>/policies/new`; `/console/policies/new` without the workspace
+segment is a 404, which is worth knowing before quoting a URL.
+
+Requests (GET only, cookies and email never recorded): `/console/api/policies`,
+`/console/api/members?page=1&pageSize=100`, `/console/api/orgs/current`,
+`/console/api/orgs?expect=<wrk-id>`, `/console/api/auth/session`,
+`/console/api/invites`. No tag endpoint, because no tag exists to read.
+
+The find: the members page's per-member menu (never opened in round 24) has only
+"View details" and "Remove…", and the builder's "Tag members first" link points at
+that page — so the control is absent from the page the builder sends you to. But
+the client bundle carries a tag model: the member schema includes `tags` and the
+members list accepts a `tags` filter. So tags exist server-side; only the UI cannot
+create one.
+
+Gate outcome: no tag-create endpoint observed, so E32 is not unlocked and E26 is
+pinned. The claim narrows to "this build cannot create a member tag", not "tags are
+unsupported".
+
+### E32 — not run (Arm C)
+
+The owner's answer on Q3 was no unless E31 unlocked a route; it did not. The doc
+keeps "names exactly one workspace id; refusal in another workspace unmeasured".
+
+### Q4 — committed snapshot
+
+`docs/evidence/2026-11-24-791840c.json`: 410/0 on each of three hosted systems,
+36 published files, 443/0 local across 39. Read from the JUnit artifacts'
+`testsuites` attributes, not counted by hand.
+
+### Decision table, as taken
+
+| ID | Taken | Because |
+|---|---|---|
+| D153 | Guard test; published frame is 410/36 | Renaming a file now fails, and the allowlist cannot excuse a tracked test |
+| D154 | Orphan claim: image or linked descendant, every sample succeeded | E29 measured both lists and zero failed samples |
+| D155 | Windows resume row: 4 s budget, green, `host_idle_timeout` measured | E30 showed the 15 s measured a `SIGSTOP` crash |
+| D156 | E26: UI gap in build `index-OIWtun4R.js`; tags exist server-side | E31's request list and bundle schema |
+| D157 | Scope wording unchanged, scope unmeasured | Q3 = no; E31 found no API route |
+| D158 | Counts live in the table + a committed JSON snapshot | The artifact expires 2027-02-21; the docs outlive it |
+| D159 | Cadence unchanged | The Windows cell is green; no known-failure lane needed |
+
+### Owner answers, recorded
+
+- **Q1:** red while E30 was pending — and it stayed red, which is how the fixture
+  bug was found; no known-failure lane is needed now.
+- **Q2:** the narrow claim (image + linked descendant), implemented in E29.
+- **Q3:** no second workspace; E32 stays at Arm C.
+- **Q4:** implemented.
+- **Q5:** the audit stays its own file, linked from the ledger.
+- **Q6:** pending for this round, with the wording "unverified until an
+  owner-supplied machine exists"; retire to runner-verified-only if the next round
+  ends without one.
+
+### Costs
+
+Four dispatches (~$0.76 at ~$0.19 each), zero paid Muse turns, no new dependency.
+Two more than the plan: the second E30 measurement the gate table asked for, and
+one confirmation run after the budget returned to 4 s. Both happened because a
+measurement contradicted the plan, which is the case the plan says to follow.
