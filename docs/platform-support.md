@@ -25,8 +25,10 @@ and `platform > POSIX reports the mode the plugin writes` (POSIX mode tests),
 plus `host process > a transport EOF leaves the process alive until something
 closes it`. E34 ported the other two behaviour tests — the frozen host and the
 login link — and both pass on `windows-latest`. The EOF arm stays skipped because
-the pid dies but the SDK's close promise does not settle after the transport has
-already closed; E16c measures close of a live host. Each skip is in the ledger
+the SDK's transport `closed` promise does not settle after the fixture has
+already closed stdout; E42 (run 45315205129) measured `closed` still pending
+after 10 s while `close()` settled in 7 ms and killed the pid. E16c measures
+close of a live host. Each skip is in the ledger
 with its reason, and a new skip without one fails `check:offline`.
 
 The matrix proves the suite, not the seam: its hosts are `.mjs` fixtures under
@@ -124,7 +126,7 @@ restating it, which is what stops a count from drifting in three sentences.
 | Offline suite passes on Linux | 452/0, 41 files | `bun run test:offline`, local run | 2026-11-24 | local checkout | re-run locally; the count moves with the three local-only files and the round-26 instruments |
 | Offline suite passes on `ubuntu-latest` | 419/0, 38 files | run 45302817218, artifact `junit-ubuntu-latest`; snapshot `2026-11-24-ab5358f.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; re-run the workflow |
 | Offline suite passes on `macos-15` (arm64) | 419/0 | run 45302817218, artifact `junit-macos-latest`; snapshot `2026-11-24-ab5358f.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; re-run the workflow |
-| Offline suite on `windows-latest` | 416 ran / 0 failed / 3 skipped (419 declared) | run 45302817218, artifact `junit-windows-latest`; snapshot `2026-11-24-ab5358f.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; EOF close-promise gap recorded; re-run after an SDK close change |
+| Offline suite on `windows-latest` | 416 ran / 0 failed / 3 skipped (419 declared) | run 45302817218, artifact `junit-windows-latest`; snapshot `2026-11-24-ab5358f.json` | 2026-11-24 | published checkout | artifact expires 2027-02-21; EOF transport-`closed` gap recorded (E42); re-run after an SDK connection change |
 | Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner | a vendor installer release; re-read `.muse-version` |
 | `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner | re-run `ci/real`; sampler hardened in E29 |
 | The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account | re-read after any `opencode auth login` |

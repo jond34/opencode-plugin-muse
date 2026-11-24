@@ -92,10 +92,11 @@ afterEach(async () => {
 
 describe("the process behind the seam", () => {
   // E34 run 45302325853: this test passes on POSIX, but on Windows the SDK's
-  // close promise does not settle after the fixture has already closed stdout
-  // (the pid dies; the promise waits). E16c measures close of a live host, and
-  // the seam's own close path is not what this arm is for. Kept as a declared
-  // skip rather than a 15 s timeout.
+  // transport `closed` promise does not settle after the fixture has already
+  // closed stdout. E42 run 45315205129 measured the distinction: `closed` was
+  // still pending after 10 s, while `close()` settled in 7 ms and killed the
+  // pid. This arm awaits `closed` first, so it is kept as a declared skip
+  // rather than a 15 s timeout. E16c measures close of a live host.
   test.skipIf(process.platform === "win32")(
     "a transport EOF leaves the process alive until something closes it",
     async () => {

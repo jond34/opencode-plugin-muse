@@ -1,0 +1,37 @@
+{
+  "experiment": "E44",
+  "date": "2026-11-24",
+  "muse": "1.4.25 (1.4.25-R9361.1)",
+  "question": "Can a locally-persistent tool approval let the bridge's MCP call run under denyUnmatched?",
+  "setup": {
+    "client": "MuseClient.spawn, muse serve --trust-workspace, model muse-spark-1.3",
+    "mcp": "test/fixtures/fake-mcp-tool.mjs, one echo tool, stdio lineDelimitedJson, mode required",
+    "prompt": "Call the echo tool once with the text hi. Do not answer in text.",
+    "store_search": "~/.config/muse, ~/.local/share/muse, ~/.muse"
+  },
+  "turns": 2,
+  "sessions": [
+    {
+      "approvalMode": "onRequest",
+      "outcome": "completed",
+      "toolCall": { "tool": "echo", "status": "completed" },
+      "approvalRequested": false
+    },
+    {
+      "approvalMode": "denyUnmatched",
+      "outcome": "completed",
+      "toolCall": { "tool": "echo", "status": "rejected" },
+      "finalText": "Echo tool call with `hi` was denied by policy (`deny_unmatched`), so no output was returned.",
+      "approvalRequested": false
+    }
+  ],
+  "approvals": [],
+  "policyStore": {
+    "path": null,
+    "reading": "No approval-policy.json under the Muse config/data roots. No persistent rule was created."
+  },
+  "mcpRequests": 5,
+  "finding": "Under `onRequest` the bridge's MCP tool ran without an approval request, so no `localPersistent` choice was offered and no policy store was written. Under `denyUnmatched` the same call was rejected with `deny_unmatched` before any approval. The experiment cannot say whether a saved MCP tool rule would match the bridge, because Muse never offered to save one; it does show that `allowAll` remains the only mode that works without a per-user rule.",
+  "cost": "2 model turns, below the 3-turn / $0.50 cap; no approval-policy file to clean up",
+  "branch": "D186/D187 variant: A2 stands; O9 default A. The rule-survival half is unmeasured, not answered."
+}

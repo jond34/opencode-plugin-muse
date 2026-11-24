@@ -1,0 +1,30 @@
+{
+  "experiment": "E43",
+  "date": "2026-11-24",
+  "opencode": "2.4.1",
+  "question": "Which sentence does a Console provider denial show?",
+  "local_control": {
+    "config": "project opencode.json with provider.use deny for deepseek",
+    "debug_config": "the statement appeared in a `document` source",
+    "first_run": {
+      "exit": 1,
+      "stderr": "Error: Insufficient Balance (request_id: fc5775ae-b519-4101-b55c-787cb1e060d9)",
+      "reading": "the project deny was outranked by the broader user config, which allows deepseek; the request reached the provider"
+    },
+    "corrected_run": {
+      "setup": "isolated XDG_CONFIG_HOME with the same deny; debug config showed only document sources with the deny, and `opencode models` no longer listed deepseek",
+      "command": "opencode run --standalone --model deepseek/deepseek-flash \"say ok\"",
+      "exit": 1,
+      "stderr": "Error: Model unavailable: deepseek/deepseek-flash",
+      "model_turn": false,
+      "cost": "$0"
+    },
+    "finding": "A document-source `provider.use` deny removes the model from selection. The user sees `Model unavailable: <provider>/<model>`, not `Blocked by configuration policy`, and no workspace name is involved."
+  },
+  "console_arm": {
+    "status": "not run",
+    "reason": "No E37 browser session is available in this session, and there is no Console API or CLI route to recreate the policy. The account was not touched."
+  },
+  "finding": "For `provider.use`, the local document-source denial surfaces at model selection as `Model unavailable`, before any policy sentence. Whether a Console-compiled policy shows a different sentence is unmeasured; the local control gives no attribution path for this action.",
+  "branch": "D184 variant: no policy-denial sentence observed; record the selection error and keep the Console attribution question open."
+}

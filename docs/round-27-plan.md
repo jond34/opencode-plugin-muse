@@ -17,10 +17,10 @@ code, and only if their branches say so.
 |---|---|---|---|
 | A. Documentation corrections | done | 61a64c1 | E35 timing, policy store, tag API, codex/Vue claims |
 | E41. `SessionStart` on 1.4.25 | done | 2026-11-24-e41.json | fired after prompt, before run start; control none |
-| E42. Close after EOF | doing | | 1 dispatch, diagnostic |
-| E43. Console denial sentence | todo | | 1 run, no model turn if denied |
-| E44. MCP rule under `denyUnmatched` | todo | | 2–3 turns, capped; replaces E39 |
-| E45. E38 job membership | todo | | 1 dispatch |
+| E42. Close after EOF | done | run 45315205129 | `closed` pending; `close()` 7 ms; skip kept |
+| E43. Console denial sentence | done | local control | `Model unavailable`; Console arm unmeasured |
+| E44. MCP rule under `denyUnmatched` | done | 2 turns | no approval offered; store absent; rule half unmeasured |
+| E45. E38 job membership | doing | | 1 dispatch |
 | E46. Windows desktop kit | todo | | owner-assisted, 45 min |
 | E47. Older claim rows | todo | | free |
 | C. Results + decision table | todo | | final commit |
@@ -376,6 +376,7 @@ Run `bun scripts/check-claims.ts`; warn-only. Do not add a CI gate (O12).
 | D190 | E46 pass | O11 B for the named build | O11 |
 | D191 | E46 fail at close | O13 document + doctor warning; no reaper | O13 |
 | D192 | E47 stale row | Correct it in the same commit | no |
+| D193 | E42 `closed` pending, `close()` settled | Correct the comment and platform row to name `connection.closed`; keep the skip | no |
 
 ---
 
