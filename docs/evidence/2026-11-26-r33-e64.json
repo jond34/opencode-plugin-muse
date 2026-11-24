@@ -1,0 +1,61 @@
+{
+  "experiment": "E64",
+  "date": "2026-11-23",
+  "question": "Does a second clean builder produce the same dist/ and the same tarball as the candidate?",
+  "sourceCommit": "fb3dd94",
+  "method": {
+    "copies": [
+      "scratch/r33-e64/a",
+      "scratch/r33-e64/b"
+    ],
+    "source": "git archive HEAD | tar -x -C <copy> for each copy",
+    "isolation": "Each copy got its own HOME, npm_config_cache, and TMPDIR under its own directory.",
+    "commands": [
+      "npm ci --no-audit --no-fund",
+      "npm run build",
+      "npm pack --pack-destination <copy>/pkg"
+    ],
+    "comparison": "dist/index.js SHA-256, sorted dist/ path+hash digest, tarball SHA-256, file counts",
+    "toolchain": {
+      "node": "v24.22.1",
+      "npm": "11.19.1",
+      "bun": "1.4.4",
+      "uname": "Linux jonathanmainpc 6.18.58.1-microsoft-standard-WSL2 x86_64"
+    }
+  },
+  "a": {
+    "distIndexSha256": "a2e598c1fa4fdfa9b8d0f9cbbdb75467e87c8738c8f24f61e72a51bbfe79be17",
+    "distDigest": "3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120",
+    "distFiles": 160,
+    "tarballSha256": "67c66300921138281f06ba3626ca2658f1325fde5ddc4aa3559a579e96aafd60",
+    "tarballFiles": 165
+  },
+  "b": {
+    "distIndexSha256": "a2e598c1fa4fdfa9b8d0f9cbbdb75467e87c8738c8f24f61e72a51bbfe79be17",
+    "distDigest": "3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120",
+    "distFiles": 160,
+    "tarballSha256": "67c66300921138281f06ba3626ca2658f1325fde5ddc4aa3559a579e96aafd60",
+    "tarballFiles": 165
+  },
+  "finding": {
+    "branch": "B1",
+    "distMatch": true,
+    "tarballMatch": true,
+    "headerDrift": false,
+    "reading": "Two independent clean copies, each with a fresh HOME and cache, produced byte-identical tarballs. This is stronger than the B2 content-identical case: no mtime normalization was needed."
+  },
+  "result": "B1: dist and tarball both match. O34 B, strongest wording. O43 A not triggered.",
+  "branch": "B1",
+  "decisions": ["D264", "O34 B"],
+  "limits": [
+    "Both builders ran on the same machine and toolchain; this is not a cross-machine reproducibility claim.",
+    "The tarball contains only dist, README, LICENSE, CREDITS, and CHANGELOG; docs/ and scripts/ are not packaged.",
+    "No publish, stage, tag, or approval was performed."
+  ],
+  "artifacts": [
+    "scratch/r33-e64/a",
+    "scratch/r33-e64/b",
+    "scratch/r33-e64/a/pkg",
+    "scratch/r33-e64/b/pkg"
+  ]
+}

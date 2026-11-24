@@ -31,8 +31,10 @@ publish, a staged upload, a tag, or a push.
   blocked on the owner browser; E60 needs `npm login` and reject 2FA.
 - Round 33 implemented the advisory doctor detail and the known-limitation
   wording. E61 measured B1: a Muse `tool` grant crossed workspaces with no second
-  prompt and no `workspace_root` in the rule. The rebuilt candidate is 165 files,
-  `dist/` `3470ecc9…`, tarball SHA-256 `67c66300…`.
+  prompt and no `workspace_root` in the rule. E64 measured B1: two clean builders
+  produced identical `dist/` and byte-identical tarballs. The rebuilt candidate is
+  165 files, `dist/` `3470ecc9…`, tarball SHA-256 `67c66300…`. E60 is blocked on
+  the owner's reject 2FA, so the release holds before staging.
 
 ## Watch item
 

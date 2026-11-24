@@ -13,11 +13,11 @@ differs; update this file and add evidence.
 | A5 | E60 preflight | done | `docs/evidence/2026-11-26-r33-e60.json` |
 | E61 | Approval scope matrix | done (B1) | `docs/evidence/2026-11-26-r33-e61.json` |
 | F1 | Candidate checks and commit | done | commit on `round-33`; 430 pass, repro PASS, release gate PASS |
-| E64 | Second clean builder | pending | `docs/evidence/2026-11-26-r33-e64.json` |
-| E60 | Stage and reject | pending | `docs/evidence/2026-11-26-r33-e60.json` |
-| E55a | Console effect/timing | pending | `docs/evidence/2026-11-26-r33-e55a.json` |
-| E55b | Console attribution | pending | `docs/evidence/2026-11-26-r33-e55b.json` |
-| R | Reconcile, checks, report | pending | status + decision docs |
+| E64 | Second clean builder | done (B1) | `docs/evidence/2026-11-26-r33-e64.json`; identical dist and tarball |
+| E60 | Stage and reject | blocked (B4) | no stage; reject 2FA is owner-only |
+| E55a | Console effect/timing | blocked | no owner-authenticated browser; O42 B |
+| E55b | Console attribution | blocked | no owner-authenticated browser; O42 B |
+| R | Reconcile, checks, report | done | status + decision docs; this commit |
 
 ## Starting state
 
@@ -35,4 +35,15 @@ differs; update this file and add evidence.
 
 ## Result
 
-Not run.
+P1 A is implemented and E61/E64 pass. E60 is blocked at the owner's reject 2FA,
+so no stage was created and the release holds operationally. E55a/E55b stay
+blocked on the owner browser and use the labelled vendor-doc note (O42 B).
+
+- E61: **B1**, cross-workspace; rule is `tool_action` on `tool_name`, no
+  `workspace_root`; 2 turns. The opencode-deny arm was not measurable here.
+- E64: **B1**, identical `dist/` (`3470ecc9…`) and tarball (`67c66300…`), 160 /
+  165 files.
+- E60: **B4**, preflight authenticated, no 0.1.13 public, empty stage list; no
+  stage created because a pending stage needs the owner's 2FA to reject.
+- Checks: 430 pass / 0 fail across 44 tracked files; repro PASS; release gate
+  PASS (25 moderate / 0 high / 0 critical); claims 23/23; diff check clean.

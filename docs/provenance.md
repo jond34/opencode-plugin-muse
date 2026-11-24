@@ -48,7 +48,8 @@ with tarball SHA-256
 `67c66300921138281f06ba3626ca2658f1325fde5ddc4aa3559a579e96aafd60`. The old
 208-file digest remains in [`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json).
 Round 33 added the advisory doctor detail, which changed `dist/` to 160 files /
-`3470ecc9…`; the second clean builder (E64) run is recorded in
+`3470ecc9…`. Two independent clean builders (E64, branch B1) produced the same
+`dist/` and byte-identical 165-file tarballs; the record is
 [`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json).
 
 Historical tree (base + patches 1-5) at `bcfabcb`, not published:

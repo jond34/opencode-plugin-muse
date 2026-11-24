@@ -1,7 +1,7 @@
 {
   "experiment": "A5/E60",
   "date": "2026-11-23",
-  "status": "preflight-only",
+  "status": "blocked",
   "question": "What is the registry state before any stage, and can a stage/reject rehearsal run?",
   "versions": {
     "node": "v24.22.1",
@@ -47,8 +47,8 @@
   "stageView": null,
   "reject": null,
   "publicVersions": null,
-  "result": "Preflight only. No 0.1.13 is public, no stage is pending, and the local npm session is authenticated.",
-  "branch": "not run",
+  "result": "Blocked at reject 2FA. Preflight is green (no 0.1.13 public, no stage pending, authenticated), but a stage that cannot be rejected must not be created. No stage, approval, reject, publish, or tag occurred.",
+  "branch": "B4",
   "limits": [
     "No stage, approve, reject, publish, or tag was performed.",
     "The reject prompt requires the owner's one-time password; E60 cannot complete unattended even though the token is valid."

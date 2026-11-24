@@ -1576,3 +1576,47 @@ keeps P1 A (allow, corrected claim, documented limitation) and resumes under
 P2 A after E61/F1/E64/E60, with a watch item for a Muse change that makes the
 host read the user's approvals or exposes a per-plugin trust status. P3 A and
 P4 D stand. No gate code was added.
+
+## Round 33 (2026-11-23)
+
+**D263 — E61 B1: the grant crosses workspaces.** A fresh fixture and store in
+`scratch/r33-e61` approved `mcp__opencode__bash` with
+`allow_local_mcp_tool` in ws-a, closed the host, and opened a new host in ws-b.
+The ws-b turn ran the tool with no approval request. The store rule is
+`tool_action` on `tool_name` with no `workspace_root`. This confirms E57 with a
+newly created fixture. Arm C (an opencode `deny`) was not measurable in the
+Muse-only harness and is not claimed; no deny failure was observed. O31 A stands.
+
+**D264 — E64 B1: both builders agree.** Two `git archive HEAD` copies at
+`fb3dd94`, each with a fresh HOME, npm cache, and TMPDIR, produced the same
+`dist/` (160 files, `3470ecc9…`), the same `dist/index.js`, and byte-identical
+165-file tarballs (`67c66300…`). No header normalization was needed. O34 B, the
+strongest wording.
+
+**D265 — E60 B4: blocked at reject 2FA.** Preflight authenticated as
+`jonathand34`, the stage list was empty, and no 0.1.13 was public. A reject
+requires the owner's one-time password, so no stage was created: a pending stage
+that cannot be rejected is worse than no stage. No push, stage, approval,
+reject, publish, or tag occurred.
+
+**D266 — the release holds operationally, not on trust.** E61 is not B3 and E64
+is B1, so the trust and packaging paths pass. E60 is not B1, and the pre-committed
+rule resumes the release only when all three pass. The hold is the missing owner
+2FA, not a new product decision.
+
+**D267 — P1 A is implemented as an advisory doctor detail.** `hooksRow` marks a
+row `warn` when any handler has origin `plugin`, appends the limitation, and
+leaves the gate untouched. `plugin` rows remain non-blocking; `project`
+refusals keep their remediation. The caveat is in the changelog, README,
+`approval.md`, and `release.md`, with a watch trigger and a 2027-02-28 recheck.
+
+**E55a/E55b — blocked.** No owner-authenticated Console browser was available;
+O42 B keeps the vendor-doc wording. No local config test was substituted.
+
+**Verification.** The 44 tracked test files ran 430 pass / 0 fail / 1089
+expectations. A raw `npm test` also discovered three stale `scratch/r32-gate`
+copies and collided on a live Muse turn; the repo's own file passed in
+isolation. `bash scripts/repro.sh` PASS at `3470ecc9…`; `bash
+scripts/check-release.sh` PASS (165-file pack, 25 moderate / 0 high / 0
+critical, installed import); strict claims 23/23 after one transient 503 on the
+Codex docs URL; `git diff --check` clean.

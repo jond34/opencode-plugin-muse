@@ -57,7 +57,9 @@ Choosing `allow_local_mcp_tool` wrote a `schema_version: 2` store with a
 `tool_action` rule for `mcp__opencode__bash`. A second `denyUnmatched` session
 then ran the same tool with no approval request. E57 repeated that Muse
 `localPersistent` rule after closing the host and in a second workspace; both
-sessions ran the tool with no approval. The rule was seeded from E48's recorded
+sessions ran the tool with no approval. E61 B1 repeated it in round 33 with a
+fresh fixture and isolated store: the rule carries `tool_name` only, and a new
+host in a second workspace ran the tool with no approval request. The rule was seeded from E48's recorded
 store, so this is durability at name level, not a new approval-menu run. It is
 not evidence that shell command-prefix grants cross workspaces. The evidence is
 [`evidence/2026-11-25-e48.json`](evidence/2026-11-25-e48.json) and

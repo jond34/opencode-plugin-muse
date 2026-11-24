@@ -133,6 +133,27 @@ E61, E55, F1, E64, and E60 were not run.
 | A5. Stage preflight | **preflight** | `docs/evidence/2026-11-26-r32-e60.json`; no 0.1.13, 0.1.12 has an attestation, local npm token E401 |
 | E65. Amnesty + private host | **H3** | `docs/evidence/2026-11-26-r32-e65.json`; flag pair suppresses the migration; private host does not inherit the user's approval, but an approval inside the private config is bypassed on update |
 
+## Round 33 status (2026-11-23)
+
+The live table is in `docs/round-33-status.md`. This round implemented P1 A's
+documentation half and ran the remaining release gates.
+
+| Item | Status | Where |
+|---|---|---|
+| A1. Doctor warning | **done** | `scripts/doctor.ts`, `test/doctor.test.ts`; `hooksRow` warns on `plugin`, still non-blocking |
+| A2. Limitation wording | **done** | `CHANGELOG.md`, `README.md`, `docs/approval.md`, `docs/release.md` |
+| A3. Watch item | **done** | next Muse minor or 2027-02-28; re-run E65/E65b on a host or `hook/list` change |
+| A4. Claims | **done** | 23/23 current; no new row |
+| A5. E60 preflight | **done** | `docs/evidence/2026-11-26-r33-e60.json`; authenticated, no stage, no 0.1.13 |
+| E61. Approval scope | **B1** | `docs/evidence/2026-11-26-r33-e61.json`; grant crosses workspaces; no workspace root; deny arm unmeasured |
+| F1. Candidate | **done** | commit `fb3dd94`; 430 pass / 0 fail; repro PASS; release gate PASS |
+| E64. Second builder | **B1** | `docs/evidence/2026-11-26-r33-e64.json`; identical dist and tarball |
+| E60. Stage/reject | **blocked** | reject needs owner 2FA; no stage created |
+| E55a/E55b. Console | blocked | no owner-authenticated browser; O42 B vendor-doc note |
+
+**D266.** E61 B1 and E64 B1 pass; E60 is blocked, so the release holds for the
+missing owner step. That is an operational hold, not a trust finding.
+
 **The private host and the user's store are different evidence subjects.** E65
 Arm C reads a private `XDG_CONFIG_HOME` with a `trust.json` precondition and the
 plugin data dir. In that shape the plugin record is visible and `project-trusted`,
