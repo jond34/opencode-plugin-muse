@@ -141,7 +141,8 @@ percentages rather than a per-turn cost.
   tool" for `mcp__opencode__bash`, wrote a `localPersistent` rule, and a second
   `denyUnmatched` session ran the tool with no approval. This plugin still starts
   `allowAll` because it has no path that presents Muse's approval to the opencode
-  user; a saved rule removes the refusal, not the missing surface. Approval is
+  user; a saved rule removes the refusal, not the missing surface. The measured
+  posture and the double-gate constraint are in [`docs/approval.md`](docs/approval.md). Approval is
   not the only layer, but the layers are not stacked here. The stack is one gate
   and one allowlist. Every bridged call is emitted into opencode, which decides
   and runs it, so the gate is opencode's permission rules; the allowlist is
@@ -231,10 +232,14 @@ percentages rather than a per-turn cost.
 - **Attachments.** Images only. The wire's attachment vocabulary is `"image"` in
   v1, so a PDF or a text file has no surface to travel on and
   `acceptsFiles: false` is the wire, not a policy.
-- **Platforms.** Built and tested on Linux and macOS: the offline suite passes on
-  all three (`ubuntu-latest`, `macos-latest`, `windows-latest` — 410 tests each, 2026-11-24), and that run caught a real
-  macOS-only bug in hook trust, now fixed. Windows is where the suite fails, on
-  path and home-directory fixtures rather than plugin code. On Windows the plugin
+- **Platforms.** Built and tested on Linux, macOS, and Windows: the offline
+  suite passes on all three (`ubuntu-latest`, `macos-latest`, `windows-latest` —
+  419 declared; Ubuntu 419/0, macOS 419/0, Windows 416 ran / 0 failed / 3
+  skipped of 419; 2026-11-24), and that run caught a real macOS-only bug in hook
+  trust, now fixed. A local checkout reports 452 across 41 files because three
+  local-only suites are gitignored. The matrix proves the suite, not the Windows
+  seam: its hosts are `.mjs` fixtures, so it says nothing about `muse.cmd`, UAC,
+  or a close that leaves a process behind. On Windows the plugin
   does not spawn the `muse` on PATH, because that is a `muse.cmd` shim and Node
   refuses to spawn one without a shell (`EINVAL`; the bare name is `ENOENT`). It
   spawns the native `muse-bin-<version>.exe` the installer writes beside the shim
@@ -566,9 +571,9 @@ bash scripts/repro.sh
 
 It installs from the committed lockfile, compiles, and compares the resulting `dist/`
 against the hash recorded for this tree in `docs/provenance.md`. It prints `PASS` or
-exits non-zero; on this tree it currently exits non-zero, because the recorded hash
-predates patches 3 through 5 (see `docs/provenance.md`). The hash of the published
-0.1.9 tarball is recorded there too.
+exits non-zero. The reproducible build, package, and publish gates are in
+[`docs/release.md`](docs/release.md); the hash of the published 0.1.9 tarball and
+the candidate record are in `docs/provenance.md`.
 
 ```bash
 npm run check:offline   # typecheck plus the offline test suite
@@ -600,7 +605,7 @@ check.
 `--trust-hooks` accepts this workspace's `.muse/hooks.json` (the gate in
 `src/hooks.ts` then lets a session open) and `--forget-hooks` revokes that.
 
-`npm run check:offline` runs 443 tests that need no network or credentials. `bun test`
+`npm run check:offline` runs 452 tests that need no network or credentials. `bun test`
 adds six live suites (`tool-bridge`, `containment-live`, `fork-live`, `model-live`,
 `conformance`, `restart-live`) that spawn a real `muse serve` host, all needing a
 logged-in Muse Code CLI. One reuses a tool result on the next turn; another resumes a

@@ -1,8 +1,8 @@
 name: test
 
 # Manual only, like `publish.yml`: this matrix answers "does the offline suite
-# pass off Linux" (U16), and nobody has run it yet. Until it is dispatched, the
-# honest claim stays "tested on Linux, unmeasured elsewhere".
+# pass off Linux" (U16), and it has run (45302817218 and later). It proves the
+# suite on each runner, not the Windows seam or a desktop.
 on:
   workflow_dispatch:
     inputs:

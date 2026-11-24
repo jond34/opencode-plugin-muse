@@ -31,7 +31,8 @@
     "docs/provenance.md",
     "README.md",
     "LICENSE",
-    "CREDITS.md"
+    "CREDITS.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
