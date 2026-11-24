@@ -1,0 +1,832 @@
+{
+  "date": "2026-11-24",
+  "commit": "791840cef46470d235c0a3a60a0b9cedfa39e125",
+  "workflow": "test",
+  "run": 45296080862,
+  "frames": {
+    "published": {
+      "macos-latest": {
+        "tests": 410,
+        "assertions": 1023,
+        "failures": 0,
+        "skipped": 0,
+        "suites": [
+          {
+            "file": "test/allowance.test.ts",
+            "tests": 9,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/approval-failures.test.ts",
+            "tests": 4,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge-denial.test.ts",
+            "tests": 3,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge.test.ts",
+            "tests": 6,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/compaction.test.ts",
+            "tests": 5,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/containment.test.ts",
+            "tests": 14,
+            "assertions": 37,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/contributor-models.test.ts",
+            "tests": 12,
+            "assertions": 24,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/convert.test.ts",
+            "tests": 11,
+            "assertions": 20,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/doctor.test.ts",
+            "tests": 47,
+            "assertions": 124,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/effort.test.ts",
+            "tests": 7,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/fingerprint.test.ts",
+            "tests": 12,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/history.test.ts",
+            "tests": 12,
+            "assertions": 17,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/hook-gate.test.ts",
+            "tests": 20,
+            "assertions": 57,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-config.test.ts",
+            "tests": 11,
+            "assertions": 36,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-death.test.ts",
+            "tests": 13,
+            "assertions": 32,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-facts.test.ts",
+            "tests": 5,
+            "assertions": 11,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-process.test.ts",
+            "tests": 3,
+            "assertions": 9,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-requests.test.ts",
+            "tests": 4,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/ledger.test.ts",
+            "tests": 9,
+            "assertions": 25,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/lifecycle.test.ts",
+            "tests": 59,
+            "assertions": 175,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/meta.test.ts",
+            "tests": 23,
+            "assertions": 59,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/model-limits.test.ts",
+            "tests": 6,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/muse-bin.test.ts",
+            "tests": 21,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/platform.test.ts",
+            "tests": 6,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/prompt-policy.test.ts",
+            "tests": 7,
+            "assertions": 19,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/replay.test.ts",
+            "tests": 3,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/schema-gate.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/suite-list.test.ts",
+            "tests": 4,
+            "assertions": 7,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/toolset-record.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/transcript.test.ts",
+            "tests": 16,
+            "assertions": 30,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/tui-notice.test.ts",
+            "tests": 5,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/usage.test.ts",
+            "tests": 9,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/version.test.ts",
+            "tests": 3,
+            "assertions": 6,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/view-gap.test.ts",
+            "tests": 4,
+            "assertions": 10,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog-resume.test.ts",
+            "tests": 1,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog.test.ts",
+            "tests": 24,
+            "assertions": 64,
+            "failures": 0,
+            "skipped": 0
+          }
+        ]
+      },
+      "ubuntu-latest": {
+        "tests": 410,
+        "assertions": 1023,
+        "failures": 0,
+        "skipped": 0,
+        "suites": [
+          {
+            "file": "test/allowance.test.ts",
+            "tests": 9,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/approval-failures.test.ts",
+            "tests": 4,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge-denial.test.ts",
+            "tests": 3,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge.test.ts",
+            "tests": 6,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/compaction.test.ts",
+            "tests": 5,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/containment.test.ts",
+            "tests": 14,
+            "assertions": 37,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/contributor-models.test.ts",
+            "tests": 12,
+            "assertions": 24,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/convert.test.ts",
+            "tests": 11,
+            "assertions": 20,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/doctor.test.ts",
+            "tests": 47,
+            "assertions": 124,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/effort.test.ts",
+            "tests": 7,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/fingerprint.test.ts",
+            "tests": 12,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/history.test.ts",
+            "tests": 12,
+            "assertions": 17,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/hook-gate.test.ts",
+            "tests": 20,
+            "assertions": 57,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-config.test.ts",
+            "tests": 11,
+            "assertions": 36,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-death.test.ts",
+            "tests": 13,
+            "assertions": 32,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-facts.test.ts",
+            "tests": 5,
+            "assertions": 11,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-process.test.ts",
+            "tests": 3,
+            "assertions": 9,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-requests.test.ts",
+            "tests": 4,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/ledger.test.ts",
+            "tests": 9,
+            "assertions": 25,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/lifecycle.test.ts",
+            "tests": 59,
+            "assertions": 175,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/meta.test.ts",
+            "tests": 23,
+            "assertions": 59,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/model-limits.test.ts",
+            "tests": 6,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/muse-bin.test.ts",
+            "tests": 21,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/platform.test.ts",
+            "tests": 6,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/prompt-policy.test.ts",
+            "tests": 7,
+            "assertions": 19,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/replay.test.ts",
+            "tests": 3,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/schema-gate.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/suite-list.test.ts",
+            "tests": 4,
+            "assertions": 7,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/toolset-record.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/transcript.test.ts",
+            "tests": 16,
+            "assertions": 30,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/tui-notice.test.ts",
+            "tests": 5,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/usage.test.ts",
+            "tests": 9,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/version.test.ts",
+            "tests": 3,
+            "assertions": 6,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/view-gap.test.ts",
+            "tests": 4,
+            "assertions": 10,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog-resume.test.ts",
+            "tests": 1,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog.test.ts",
+            "tests": 24,
+            "assertions": 64,
+            "failures": 0,
+            "skipped": 0
+          }
+        ]
+      },
+      "windows-latest": {
+        "tests": 410,
+        "assertions": 1010,
+        "failures": 0,
+        "skipped": 5,
+        "suites": [
+          {
+            "file": "test/allowance.test.ts",
+            "tests": 9,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/approval-failures.test.ts",
+            "tests": 4,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge-denial.test.ts",
+            "tests": 3,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/bridge.test.ts",
+            "tests": 6,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/compaction.test.ts",
+            "tests": 5,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/containment.test.ts",
+            "tests": 14,
+            "assertions": 37,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/contributor-models.test.ts",
+            "tests": 12,
+            "assertions": 24,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/convert.test.ts",
+            "tests": 11,
+            "assertions": 20,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/doctor.test.ts",
+            "tests": 47,
+            "assertions": 124,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/effort.test.ts",
+            "tests": 7,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/fingerprint.test.ts",
+            "tests": 12,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/history.test.ts",
+            "tests": 12,
+            "assertions": 17,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/hook-gate.test.ts",
+            "tests": 20,
+            "assertions": 57,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-config.test.ts",
+            "tests": 11,
+            "assertions": 32,
+            "failures": 0,
+            "skipped": 2
+          },
+          {
+            "file": "test/host-death.test.ts",
+            "tests": 13,
+            "assertions": 32,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-facts.test.ts",
+            "tests": 5,
+            "assertions": 11,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/host-process.test.ts",
+            "tests": 3,
+            "assertions": 1,
+            "failures": 0,
+            "skipped": 2
+          },
+          {
+            "file": "test/host-requests.test.ts",
+            "tests": 4,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/ledger.test.ts",
+            "tests": 9,
+            "assertions": 25,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/lifecycle.test.ts",
+            "tests": 59,
+            "assertions": 175,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/meta.test.ts",
+            "tests": 23,
+            "assertions": 59,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/model-limits.test.ts",
+            "tests": 6,
+            "assertions": 13,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/muse-bin.test.ts",
+            "tests": 21,
+            "assertions": 28,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/platform.test.ts",
+            "tests": 6,
+            "assertions": 12,
+            "failures": 0,
+            "skipped": 1
+          },
+          {
+            "file": "test/prompt-policy.test.ts",
+            "tests": 7,
+            "assertions": 19,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/replay.test.ts",
+            "tests": 3,
+            "assertions": 14,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/schema-gate.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/suite-list.test.ts",
+            "tests": 4,
+            "assertions": 7,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/toolset-record.test.ts",
+            "tests": 6,
+            "assertions": 18,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/transcript.test.ts",
+            "tests": 16,
+            "assertions": 30,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/tui-notice.test.ts",
+            "tests": 5,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/usage.test.ts",
+            "tests": 9,
+            "assertions": 15,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/version.test.ts",
+            "tests": 3,
+            "assertions": 6,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/view-gap.test.ts",
+            "tests": 4,
+            "assertions": 10,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog-resume.test.ts",
+            "tests": 1,
+            "assertions": 8,
+            "failures": 0,
+            "skipped": 0
+          },
+          {
+            "file": "test/watchdog.test.ts",
+            "tests": 24,
+            "assertions": 64,
+            "failures": 0,
+            "skipped": 0
+          }
+        ]
+      }
+    }
+  },
+  "arch": "not recorded by this run; macos-latest is arm64 per the job log, ubuntu-latest and windows-latest x64 (B4 records it from run 26 on)",
+  "published": {
+    "files": 36,
+    "command": "bun run check:offline on a fresh checkout",
+    "results": [
+      {
+        "os": "macos-latest",
+        "artifact": "junit-macos-latest",
+        "tests": 410,
+        "ran": 410,
+        "assertions": 1023,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "os": "ubuntu-latest",
+        "artifact": "junit-ubuntu-latest",
+        "tests": 410,
+        "ran": 410,
+        "assertions": 1023,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "os": "windows-latest",
+        "artifact": "junit-windows-latest",
+        "tests": 410,
+        "ran": 405,
+        "assertions": 1010,
+        "failures": 0,
+        "skipped": 5
+      }
+    ]
+  },
+  "local": {
+    "files": 39,
+    "command": "bun run check:offline",
+    "tests": 443,
+    "failures": 0,
+    "note": "at commit 791840c; the tree has since added the round-26 instruments"
+  },
+  "notes": "Counts are the testsuites attributes of the JUnit artifacts, not a hand count. ran = tests - skipped; Windows skipped 5 (2 POSIX-only modes, 3 behaviour). The local frame is larger because .gitignore:25-27 keeps three bench/harness files out of the repository. The artifact expires 2027-02-21; this file does not."
+}

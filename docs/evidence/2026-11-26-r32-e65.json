@@ -1,0 +1,154 @@
+{
+  "experiment": "E65",
+  "date": "2026-11-23",
+  "question": "Is E62 the one-time legacy amnesty or a recurring update bypass, and does the update bypass reach this plugin's private muse serve host?",
+  "versions": {
+    "muse": "Muse Code 1.4.25 (1.4.25-R9361.1)",
+    "museBinarySha256": "ffb95b823e2a71f49ce98f9ddcb7cd7c731b77615aae9f5f253819c69453079f",
+    "node": "v24.22.1"
+  },
+  "isolation": {
+    "root": "scratch/r32-e65",
+    "storeA": "store-a/{config,data,state,cache}",
+    "workspace": "ws-a",
+    "privateConfig": "private-config (settings.json plus trust.json; no owner config read or written)",
+    "ownerConfigTouched": false,
+    "trustPrecondition": "trust.json for ws-a was seeded in store-a and later in private-config; this is a precondition, not a measurement"
+  },
+  "plugin": {
+    "name": "e65-probe",
+    "version": "0.1.0",
+    "hook": "SessionStart `mark`; command node hooks/mark-a.mjs, changed to hooks/mark-b.mjs, then hooks/mark-c.mjs"
+  },
+  "arms": {
+    "A": {
+      "setup": "settings.json seeded with BOTH E62 amnesty records before the fresh project-scope install",
+      "seededSettingsSha256": "f5c9f5798ca81d0bf76df4a282676b7dc9ada83bc54dae29b9829ec6cbd43754",
+      "install": {
+        "exit": 0,
+        "warning": "third-party plugin: hooks require review before activation",
+        "plainManifestSha256": "sha256:676a73b752bf8af081877fc9a39d179262569636144e29f3ae2d4b510da1d88d",
+        "packageSha256": "sha256:4fe5f778ff48ed1421f19efc697f2f0eba819dc5f0d3f30424cb595dd114ed97"
+      },
+      "inspectBefore": {
+        "status": "review_needed",
+        "effectiveCapabilities": [],
+        "definitionHash": "sha256:5027da420480b6bf4ac9ea805e521257cf6cb1c37516045ae1c13c2e188de517"
+      },
+      "approve": {
+        "exit": 0,
+        "trustedDefinitionHash": "sha256:5027da420480b6bf4ac9ea805e521257cf6cb1c37516045ae1c13c2e188de517",
+        "settingsSha256AfterApproveAndRun": "531a325870db0d38f494e466f1bcc8e47e76b8aba6b791e5e646342e8a357fba"
+      },
+      "firstTurn": {
+        "exit": 0,
+        "markerA": true,
+        "settingsAmnestyTopLevel": true,
+        "settingsAmnestyRuntimeRow": { "enabled": false, "trusted_definition_hash": "tbh:amnesty-applied:v1" }
+      },
+      "update": {
+        "exit": 0,
+        "changedManifestSha256": "f62e1bf4420e702d99a8734efa80a85c6e45be399f166047a6cc3cbbfa3704a4",
+        "inspectStatus": "modified",
+        "diagnosticCode": "modified_definition_hash",
+        "definitionHash": "sha256:698d7b8e06dbb61ba5d6c0b1efc5a9cf64b669361ad7631337e5959654c149e9",
+        "sourceDigest": "sha256:27076e4b5cdd62465da640a3645e8c75d8b5b39aa16fcbe3a90ac28d736ffa98",
+        "settingsSha256AfterUpdate": "531a325870db0d38f494e466f1bcc8e47e76b8aba6b791e5e646342e8a357fba"
+      },
+      "secondTurn": {
+        "exit": 0,
+        "markerB": false,
+        "settingsSha256AfterRun": "531a325870db0d38f494e466f1bcc8e47e76b8aba6b791e5e646342e8a357fba",
+        "settingsChanged": false
+      },
+      "reading": "With both amnesty records seeded before the fresh install, the update reported `modified`, the changed hook did not run, and the stored trusted hash and flags were unchanged. The flag pair suppresses the migration on 1.4.25."
+    },
+    "B": {
+      "control": "E62 (docs/evidence/2026-11-26-r31-e62.json): flag absent at fresh install, changed hook ran and the amnesty pair was written",
+      "repeated": false,
+      "why": "The Arm A setup differs only by the seeded flag pair, so E62 is the valid flag-absent control."
+    },
+    "C": {
+      "setup": "Private XDG_CONFIG_HOME in the shape writeMuseHostConfig() writes (schema_version, run, the six reminder rows, context, compaction), XDG_DATA_HOME pointed at store-a/data; no e65 approval entry",
+      "deviations": [
+        "run.system_prompt was removed because the echo provider exits 1 with `provider does not support base instructions` (run-c-1).",
+        "run.toolset was removed because with no MCP server registered the host exits 1 with `unknown tool mcp__opencode__*` (run-c-2).",
+        "trust.json was added after `muse plugins update` refused with `project-local plugin source is blocked because the workspace is untrusted` (update-c); this is the same trust precondition Arm A used.",
+        "These removals keep the property under test: a private config with no user approval row."
+      ],
+      "privateSettingsSha256": "657ce4208044583cefa8a813a5bd51988ebd5ca78e1741af4ce25a7841b79b5d",
+      "beforeApproval": {
+        "runExit": 0,
+        "marker": false,
+        "inspectStatus": "review_needed",
+        "effectiveCapabilities": [],
+        "reading": "The user-approved hook in store-a did not run in the private host; the plugin record is visible (`trust=project-trusted`) but the approval is not."
+      },
+      "afterApprovalInPrivateConfig": {
+        "approveExit": 0,
+        "trustedDefinitionHash": "sha256:698d7b8e06dbb61ba5d6c0b1efc5a9cf64b669361ad7631337e5959654c149e9",
+        "runExit": 0,
+        "markerB": true,
+        "settingsSha256": "8666518b0c6a7c171b61610768516b8a070a8586bab27c577defdd0510eb97da"
+      },
+      "updateInPrivateConfig": {
+        "firstAttemptExit": 1,
+        "firstAttemptError": "invalid-plugin-package: project-local plugin source is blocked because the workspace is untrusted",
+        "retryExit": 0,
+        "inspectStatus": "modified",
+        "diagnosticCode": "modified_definition_hash",
+        "definitionHash": "sha256:fa0982ba79815475f1958d14c0fbec75d6f07dd63c6cd452360b249c72a6a390",
+        "sourceDigest": "sha256:3dce1647a2cb9d6c93cb4d1db4b843dc2eae1b55f056b196b9b82ee17fd21b4e",
+        "settingsSha256BeforeRun": "8666518b0c6a7c171b61610768516b8a070a8586bab27c577defdd0510eb97da"
+      },
+      "runAfterUpdate": {
+        "exit": 0,
+        "markerC": true,
+        "settingsSha256AfterRun": "2d23851411f27ce31284c778757fbe6a696c9a4c74bf8d21d6ab034642db4846",
+        "amnestyPairWritten": true,
+        "trustedDefinitionHash": "sha256:fa0982ba79815475f1958d14c0fbec75d6f07dd63c6cd452360b249c72a6a390"
+      },
+      "reading": "Once an approval exists inside the private config, `muse plugins update` plus one turn ran the changed hook (marker C) with no new approval and wrote the full amnesty pair into that config. The mechanism therefore reaches a private muse serve config; it does not reach the user's approval, which the private config never carries."
+    }
+  },
+  "productionShape": {
+    "spawn": "muse serve --trust-workspace with a per-process XDG_CONFIG_HOME from writeMuseHostConfig()",
+    "privateConfigLifetime": "mkdtemp per host process; settings.json is rewritten each start",
+    "approvalSource": "the private settings file only; the user's real settings.json is not copied",
+    "updateCaller": "the plugin never runs `muse plugins update` or `muse plugins approve`",
+    "reading": "The measured bypass needs an approval inside the private config and an update issued against it. The plugin creates neither, so a normal session has no live bypass path; the reachable finding is the user-approved hook being inert in the private host, not a changed hook running."
+  },
+  "markers": {
+    "markerA": "fired (Arm A first turn)",
+    "markerB": "not fired (Arm A second turn); fired only after an explicit approval in the private config",
+    "markerC": "fired (private-config turn after update); sha256 c46699865b6d7c32e964b9feaaf93ff06d3ad8f4455432137837fa9bd894c85a"
+  },
+  "hookList": null,
+  "hypothesis": "H3",
+  "result": "H3 with a scope condition. Arm A shows the seeded flag pair suppresses the one-time amnesty, so E62 was the legacy migration, not a recurring bypass. Arm C shows the private host does not inherit the user's approval (no marker, review_needed), but a private config that holds its own approval runs an updated hook without re-approval and writes the amnesty pair. The bypass reaches the private config shape, not the normal production session, because the plugin never approves or updates inside that config.",
+  "branch": "D254 H3: stop the run; P1/P2 become an owner decision (block plugin origins or accept the inert production path)",
+  "cost": "free; echo provider, 5 zero-token turns",
+  "turns": 5,
+  "limits": [
+    "Echo provider only; no paid model turn.",
+    "The private config omitted system_prompt and toolset because the echo provider rejects them; the approval-isolation property is preserved but the config is not byte-identical to writeMuseHostConfig().",
+    "The private-config update needed a seeded trust.json; that is a precondition, not a measurement.",
+    "Arm C reused store-a/data, so its update rewrote the shared plugin cache after Arm A's recorded state.",
+    "`hook/list` was not called; the SDK type carries no trust status, so it would not have distinguished the states.",
+    "One Muse version (1.4.25) on Linux."
+  ],
+  "artifacts": [
+    "scratch/r32-e65/install-a.json",
+    "scratch/r32-e65/approve-a.json",
+    "scratch/r32-e65/run-a-1.json",
+    "scratch/r32-e65/inspect-a-after-update.json",
+    "scratch/r32-e65/run-a-2.json",
+    "scratch/r32-e65/inspect-c-before-approve.json",
+    "scratch/r32-e65/approve-c.json",
+    "scratch/r32-e65/update-c.json",
+    "scratch/r32-e65/update-c-2.json",
+    "scratch/r32-e65/run-c-6.json",
+    "scratch/r32-e65/store-a/config/muse/settings.json",
+    "scratch/r32-e65/private-config/muse/settings.json"
+  ]
+}

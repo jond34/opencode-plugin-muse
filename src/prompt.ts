@@ -1,4 +1,6 @@
 import type { LanguageModelV3FilePart, LanguageModelV3Prompt } from "@ai-sdk/provider";
+import { textOfContent } from "./shared.js";
+import { renderTranscript } from "./transcript.js";
 
 /**
  * Prompt extraction for the Muse language model.
@@ -30,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Convert a `file` part to a Muse image part; non-images are ignored. */
-export function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment | undefined {
+function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment | undefined {
   if (!part.mediaType.startsWith("image/")) return undefined;
   if (part.data instanceof Uint8Array) {
     return { mediaType: part.mediaType, data: Buffer.from(part.data).toString("base64") };
@@ -42,21 +44,6 @@ export function filePartToImage(part: LanguageModelV3FilePart): ImageAttachment 
     return { mediaType: part.mediaType, data: part.data };
   }
   return undefined;
-}
-
-function textOfContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      parts.push(part);
-      continue;
-    }
-    if (!isRecord(part)) continue;
-    if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
-  }
-  return parts.join("");
 }
 
 /** The last user message in the prompt, with its text and image attachments. */
@@ -75,6 +62,21 @@ export function latestUserTurn(prompt: LanguageModelV3Prompt): UserTurn | undefi
   return undefined;
 }
 
+/**
+ * The trailing message when it carries an instruction instead of a user turn.
+ *
+ * OpenCode's step cap keeps the tool list and appends an assistant message
+ * telling the model to answer in text. Muse starts a turn from a message, so
+ * that instruction is delivered as the turn body; without it the final step of
+ * a capped turn would start no turn at all and return nothing.
+ */
+export function trailingInstruction(prompt: LanguageModelV3Prompt): UserTurn | undefined {
+  const last = prompt[prompt.length - 1];
+  if (last === undefined || last.role !== "assistant") return undefined;
+  const text = textOfContent(last.content);
+  return text.length > 0 ? { text, images: [] } : undefined;
+}
+
 /** Image attachments across every user message, in order. */
 export function allImages(prompt: LanguageModelV3Prompt): ImageAttachment[] {
   const images: ImageAttachment[] = [];
@@ -89,30 +91,20 @@ export function allImages(prompt: LanguageModelV3Prompt): ImageAttachment[] {
   return images;
 }
 
-/** System, user, and assistant text in order, for reseeding a fresh native session. */
+/**
+ * The full prompt for a freshly rebuilt native session.
+ *
+ * @deprecated Use `renderTranscript` from `./transcript.js`. This name is kept
+ * for importers, but it now includes tool calls and tool results: the old
+ * text-only body lost them on every fork, restart, and rewrite, so the model
+ * was told about work whose output it never received.
+ */
 export function fullConversationText(prompt: LanguageModelV3Prompt): string {
-  const parts: string[] = [];
-  for (const message of prompt) {
-    if (message.role === "system") {
-      if (message.content.length > 0) parts.push(message.content);
-      continue;
-    }
-    // Assistant answers are part of the conversation the fresh session must
-    // see; only the text carries over (tool calls replay live via the bridge).
-    if (message.role === "assistant") {
-      const text = textOfContent(message.content);
-      if (text.length > 0) parts.push(text);
-      continue;
-    }
-    if (message.role !== "user") continue;
-    const text = textOfContent(message.content);
-    if (text.length > 0) parts.push(text);
-  }
-  return parts.join("\n\n");
+  return renderTranscript(prompt);
 }
 
 /** Tool results carried by `tool` messages (and assistant tool-result parts). */
-export function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt[number]>): ToolResult[] {
+function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt[number]>): ToolResult[] {
   const results: ToolResult[] = [];
   for (const message of messages) {
     if (message.role === "tool") {
@@ -132,15 +124,6 @@ export function collectToolResults(messages: ReadonlyArray<LanguageModelV3Prompt
     }
   }
   return results;
-}
-
-/** The system prompt text, which carries OpenCode's instructions. */
-export function systemText(prompt: LanguageModelV3Prompt): string {
-  const parts: string[] = [];
-  for (const message of prompt) {
-    if (message.role === "system") parts.push(message.content);
-  }
-  return parts.join("\n");
 }
 
 /** Tool results keyed by call id, for resolving parked Muse tool calls. */

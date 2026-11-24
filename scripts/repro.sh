@@ -3,11 +3,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-EXPECTED=b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
+# 1.0.0 candidate: patches 3 through 5. The published 0.1.9 and older
+# recorded hashes stay in docs/provenance.md.
+EXPECTED=3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 
 npm ci --no-audit --no-fund
+rm -rf dist
 npx tsc -p tsconfig.json
 
 ACTUAL="$(find dist -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"

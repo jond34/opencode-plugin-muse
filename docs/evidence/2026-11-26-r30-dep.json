@@ -1,0 +1,464 @@
+{
+  "experiment": "A4-dep",
+  "date": "2026-11-23",
+  "candidate": {
+    "name": "@jonathand34/opencode-plugin-muse",
+    "version": "0.1.13",
+    "tarball": "scratch/r30-e51-final/jonathand34-opencode-plugin-muse-0.1.13.tgz",
+    "files": 208,
+    "bytes": 297181,
+    "shasumSha1": "caf36bb5e52d4cb394e65e51c6419d19d9a14311",
+    "integrity": "sha512-w9VrdN9L0LH3NzWR/gVlqf2vK3IF46AQcsHmLbl5m3f1rmHGzLRT+V4nsxkBxda6v428youFmyecKIjkGIskfg==",
+    "source": "round-30 worktree after A1-A5; final commit recorded by F"
+  },
+  "command": "npm install --ignore-scripts <tarball> && npm audit --omit=dev --json",
+  "install": {
+    "exit": 0,
+    "prefix": "scratch/r30-dep-final",
+    "lockfile": "scratch/r30-dep-final/package-lock.json"
+  },
+  "audit": {
+    "exit": 1,
+    "counts": {
+      "info": 0,
+      "low": 0,
+      "moderate": 25,
+      "high": 0,
+      "critical": 0,
+      "total": 25
+    },
+    "dependencies": {
+      "prod": 265,
+      "dev": 0,
+      "optional": 3,
+      "peer": 6,
+      "peerOptional": 0,
+      "total": 273
+    },
+    "fixable": [
+      "gaxios",
+      "gcp-metadata",
+      "rimraf"
+    ],
+    "unfixable": [
+      "@jonathand34/opencode-plugin-muse",
+      "@npmcli/arborist",
+      "@npmcli/config",
+      "@npmcli/map-workspaces",
+      "@npmcli/metavuln-calculator",
+      "@npmcli/package-json",
+      "@npmcli/run-script",
+      "@opencode/plugin",
+      "@opencode/util",
+      "@sigstore/sign",
+      "@sigstore/tuf",
+      "@tufjs/models",
+      "cacache",
+      "glob",
+      "ignore-walk",
+      "make-fetch-happen",
+      "minimatch",
+      "npm-packlist",
+      "npm-registry-fetch",
+      "pacote",
+      "sigstore",
+      "tuf-js"
+    ]
+  },
+  "paths": {
+    "@jonathand34/opencode-plugin-muse": {
+      "severity": "moderate",
+      "isDirect": true,
+      "range": "*",
+      "via": [
+        "@opencode/plugin"
+      ],
+      "effects": [],
+      "fixAvailable": false
+    },
+    "@npmcli/arborist": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": ">=6.2.6",
+      "via": [
+        "@npmcli/map-workspaces",
+        "@npmcli/metavuln-calculator",
+        "@npmcli/package-json",
+        "@npmcli/run-script",
+        "cacache",
+        "minimatch",
+        "npm-registry-fetch",
+        "pacote"
+      ],
+      "effects": [
+        "@opencode/util"
+      ],
+      "fixAvailable": false
+    },
+    "@npmcli/config": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "8.3.4 - 11.0.0-pre.3",
+      "via": [
+        "@npmcli/map-workspaces",
+        "@npmcli/package-json"
+      ],
+      "effects": [
+        "@opencode/util"
+      ],
+      "fixAvailable": false
+    },
+    "@npmcli/map-workspaces": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "3.0.3 - 6.0.0",
+      "via": [
+        "@npmcli/package-json",
+        "glob",
+        "minimatch"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "@npmcli/config"
+      ],
+      "fixAvailable": false
+    },
+    "@npmcli/metavuln-calculator": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "7.0.0 - 9.0.3",
+      "via": [
+        "cacache",
+        "pacote"
+      ],
+      "effects": [
+        "@npmcli/arborist"
+      ],
+      "fixAvailable": false
+    },
+    "@npmcli/package-json": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "3.1.0 - 8.0.0",
+      "via": [
+        "glob"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "@npmcli/config",
+        "@npmcli/map-workspaces",
+        "@npmcli/run-script",
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "@npmcli/run-script": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "7.0.4 - 10.0.4",
+      "via": [
+        "@npmcli/package-json"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "@opencode/plugin": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        "@opencode/util"
+      ],
+      "effects": [
+        "@jonathand34/opencode-plugin-muse"
+      ],
+      "fixAvailable": false
+    },
+    "@opencode/util": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        "@npmcli/arborist",
+        "@npmcli/config",
+        "glob",
+        "minimatch",
+        "pacote"
+      ],
+      "effects": [
+        "@opencode/plugin"
+      ],
+      "fixAvailable": false
+    },
+    "@sigstore/sign": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "2.0.0 - 4.1.1",
+      "via": [
+        "make-fetch-happen"
+      ],
+      "effects": [
+        "sigstore"
+      ],
+      "fixAvailable": false
+    },
+    "@sigstore/tuf": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "<=4.0.2",
+      "via": [
+        "tuf-js"
+      ],
+      "effects": [
+        "sigstore"
+      ],
+      "fixAvailable": false
+    },
+    "@tufjs/models": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "1.0.1 - 5.0.2",
+      "via": [
+        "minimatch"
+      ],
+      "effects": [
+        "tuf-js"
+      ],
+      "fixAvailable": false
+    },
+    "cacache": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "17.0.5 - 21.0.1",
+      "via": [
+        "glob"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "@npmcli/metavuln-calculator",
+        "make-fetch-happen",
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "gaxios": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "7.1.3",
+      "via": [
+        "rimraf"
+      ],
+      "effects": [
+        "gcp-metadata"
+      ],
+      "fixAvailable": true
+    },
+    "gcp-metadata": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "8.1.3 - 8.1.4",
+      "via": [
+        "gaxios"
+      ],
+      "effects": [],
+      "fixAvailable": true
+    },
+    "glob": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "9.0.0 - 14.0.1",
+      "via": [
+        {
+          "source": 1244013,
+          "name": "glob",
+          "dependency": "glob",
+          "title": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal",
+          "url": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-400"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": ">=9.0.0 <=14.0.1"
+        },
+        "minimatch"
+      ],
+      "effects": [
+        "@npmcli/map-workspaces",
+        "@npmcli/package-json",
+        "@opencode/util",
+        "cacache",
+        "rimraf"
+      ],
+      "fixAvailable": false
+    },
+    "ignore-walk": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "6.0.2 - 9.0.0",
+      "via": [
+        "minimatch"
+      ],
+      "effects": [
+        "npm-packlist"
+      ],
+      "fixAvailable": false
+    },
+    "make-fetch-happen": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "13.0.0 - 15.0.6",
+      "via": [
+        "cacache"
+      ],
+      "effects": [
+        "@sigstore/sign",
+        "npm-registry-fetch",
+        "tuf-js"
+      ],
+      "fixAvailable": false
+    },
+    "minimatch": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "7.0.0 - 11.0.0",
+      "via": [
+        {
+          "source": 1244623,
+          "name": "minimatch",
+          "dependency": "minimatch",
+          "title": "minimatch has potential denial of service via globparts amplification",
+          "url": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-405"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": ">=7.0.0 <11.0.1"
+        }
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "@npmcli/map-workspaces",
+        "@opencode/util",
+        "@tufjs/models",
+        "glob",
+        "ignore-walk"
+      ],
+      "fixAvailable": false
+    },
+    "npm-packlist": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "8.0.1 - 10.0.4",
+      "via": [
+        "ignore-walk"
+      ],
+      "effects": [
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "npm-registry-fetch": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "16.0.0 - 19.1.1",
+      "via": [
+        "make-fetch-happen"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "pacote": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "17.0.0 - 21.5.3",
+      "via": [
+        "@npmcli/package-json",
+        "@npmcli/run-script",
+        "cacache",
+        "npm-packlist",
+        "npm-registry-fetch",
+        "sigstore"
+      ],
+      "effects": [
+        "@npmcli/arborist",
+        "@npmcli/metavuln-calculator",
+        "@opencode/util"
+      ],
+      "fixAvailable": false
+    },
+    "rimraf": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "4.2.0 - 6.1.3",
+      "via": [
+        "glob"
+      ],
+      "effects": [
+        "gaxios"
+      ],
+      "fixAvailable": true
+    },
+    "sigstore": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "1.6.0 - 4.1.1",
+      "via": [
+        "@sigstore/sign",
+        "@sigstore/tuf"
+      ],
+      "effects": [
+        "pacote"
+      ],
+      "fixAvailable": false
+    },
+    "tuf-js": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "1.1.2 - 6.0.2",
+      "via": [
+        "@tufjs/models",
+        "make-fetch-happen"
+      ],
+      "effects": [
+        "@sigstore/tuf"
+      ],
+      "fixAvailable": false
+    }
+  },
+  "root_cause": "All 25 paths are transitive through @opencode/plugin@2.3.2 -> @opencode/util@2.3.2 -> npm CLI libraries. The two named advisories are glob GHSA-3g3m-2fjr-6pw4 (AbortSignal cancellation bypass) and minimatch GHSA-g3hv-75wg-m249 (globparts amplification). No high or critical advisory is present.",
+  "reachability": {
+    "result": "not reached by the plugin entry",
+    "evidence": [
+      "src/plugin.ts:4 imports Model, Plugin, and Provider from @opencode/plugin; those are schema exports plus an identity helper.",
+      "node_modules/@opencode/plugin/dist/promise/index.js exports the schema modules and Plugin from ./plugin.js.",
+      "node_modules/@opencode/plugin/dist/promise/plugin.js is only `export function define(plugin) { return plugin; }`.",
+      "No file under node_modules/@opencode/plugin/dist/promise or dist/effect imports @opencode/util.",
+      "src/tui.ts:21 imports the TUI type only; the import is erased and the runtime does not load @opencode/plugin/tui.",
+      "node_modules/@opencode/util/dist/glob.js:1 imports glob, but the plugin never imports @opencode/util/glob. The host may load other util modules; that is outside this package entry."
+    ],
+    "caveat": "Static import graph, not a runtime module trace. A future import of @opencode/util or a host path that loads util/glob would change reachability."
+  },
+  "decision": "D237-C",
+  "owner_choice": "O25 A accepted by the owner on 2026-11-23",
+  "review_date": "2027-02-28",
+  "release_effect": "No high/critical; moderate advisories are accepted with this review date under O25 A. Do not run npm audit fix --force as part of release.",
+  "notes": [
+    "The checkout audit reports 24; the clean final-tarball audit reports 25 because the installed package itself is included as a direct path.",
+    "Two advisories have a fix available, but the glob/minimatch class does not; npm reports no fix for the main paths.",
+    "Nothing was published, staged, tagged, or pushed."
+  ]
+}

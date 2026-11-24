@@ -1,11 +1,16 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import {
+  MspError,
   spawnMspConnection,
   type Connection,
+  type FingerprintWarning,
   type MuseServeChild,
   type ProcessExit,
+  type SpawnedMspConnection,
 } from "@muse-code/sdk";
+import { packageVersion } from "./version.js";
 
 /** Suffix Muse appends to a model id to select its contributor variant. */
 export const CONTRIBUTOR_SUFFIX = "-contributor";
@@ -45,12 +50,36 @@ export function contributorModelEntries(
   return entries;
 }
 
+/**
+ * Read the plugin's Contributor mode switch.
+ *
+ * Muse documents its own override as `MUSE_CONTRIBUTOR_MODE=1|0`; the plugin
+ * reuses the name, so a user following Meta's docs must not silently get the
+ * opposite of what they asked for. `1`, `true`, and `on` are on; anything else,
+ * including absent and unparseable values, stays off (the privacy-safe default).
+ */
+export function contributorModeFromEnv(value: string | undefined): "on" | "off" {
+  switch (value?.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "on":
+      return "on";
+    default:
+      return "off";
+  }
+}
+
 /** Build the `muse serve` argument list. */
 export function serveArgs(options: MuseHostOptions): string[] {
   const args = ["serve", ...(options.args ?? [])];
   if (options.preset !== undefined) args.push("--preset", options.preset);
   if (options.contributorMode !== undefined) args.push("--contributor-mode", options.contributorMode);
   if (options.trustWorkspace === true) args.push("--trust-workspace");
+  // Vendor sandbox fences. opencode owns shell, writes, and approvals for every
+  // bridged call, so Muse's own copies of those are only a way around the
+  // harness. Keeping them off does not depend on the settings `run.toolset`
+  // key, which the vendor does not document.
+  args.push("--disable-write", "--disable-request-user-input");
   return args;
 }
 
@@ -65,6 +94,59 @@ export interface NotificationSink {
   /** The native Muse session id notifications are addressed to. */
   readonly sessionId: string;
   handleNotification(notification: MuseNotification): void;
+  /** The host is gone; this session can never serve another turn. */
+  handleHostExit?(reason: HostDeathReason): void;
+}
+
+/**
+ * How a host stopped serving.
+ *
+ * `exited` is the process ending. `transportEof` is the connection ending
+ * while the process may still be alive — the SDK's own `TransportEof` arm,
+ * which the facade maps to `hostExited({ kind: "transportEof" })`. The
+ * distinction is only in the words: both retire the turn and reopen elsewhere.
+ */
+export type HostDeathReason = "exited" | "transportEof";
+
+/**
+ * Answer one MSP server request.
+ *
+ * Only the two presentation-request methods get the `{}` receipt, and only
+ * when the session they name is registered. Every other method keeps the
+ * `-32601` a bare Connection answers: the receipt is a claim that a surface
+ * presented the request, and a false claim suppresses the re-issue that would
+ * otherwise recover it (`msp.d.ts:2249`).
+ */
+export function answerServerRequest(
+  request: { readonly method?: unknown; readonly params?: unknown },
+  sinkFor: (sessionId: string) => NotificationSink | undefined,
+): Record<string, unknown> {
+  const method = typeof request.method === "string" ? request.method : "";
+  const params =
+    request.params !== null && typeof request.params === "object" && !Array.isArray(request.params)
+      ? (request.params as Record<string, unknown>)
+      : {};
+  const sessionId = typeof params.sessionId === "string" ? params.sessionId : undefined;
+  // `approval/request` and `userInput/request` share params with their
+  // notification twins (`msp.d.ts:4667`, `:4669`).
+  const twin =
+    method === "userInput/request"
+      ? "userInput/requested"
+      : method === "approval/request"
+        ? "approval/requested"
+        : undefined;
+  if (twin !== undefined && sessionId !== undefined) {
+    const sink = sinkFor(sessionId);
+    if (sink !== undefined) {
+      sink.handleNotification({ method: twin, params });
+      return {};
+    }
+  }
+  throw new MspError({
+    code: -32601,
+    message: `method not found: ${method}`,
+    data: { kind: "methodNotFound", retryable: false },
+  });
 }
 
 export interface MuseHostOptions {
@@ -86,9 +168,218 @@ export interface MuseHostOptions {
   readonly contributorMode?: "on" | "off";
   /** Start the host with `--trust-workspace`; required for per-session MCP. */
   readonly trustWorkspace?: boolean;
+  /**
+   * Declare the beta capability on this connection only.
+   *
+   * It buys the posture reads (`permissionProfile/list`, `permissionState` on a
+   * start) and is fixed for the connection's lifetime, so only the doctor asks
+   * for it: the user's session needs `sessionMcp` and nothing else (D38).
+   */
+  readonly experimentalApi?: boolean;
   readonly clientName?: string;
   readonly clientVersion?: string;
   readonly onStderr?: (chunk: string) => void;
+  /**
+   * How long the shutdown ladder drains stdin before SIGTERM. Tests set it to
+   * `0`: a fixture is not going to drain anything, and the default 30 s budget
+   * would outlast the test.
+   */
+  readonly shutdownTimeoutMs?: number;
+}
+
+/**
+ * The shutdown rungs this platform actually has.
+ *
+ * The SDK owns the ladder — stdin EOF, a drain window, then SIGTERM and
+ * SIGKILL — so this plugin cannot skip a rung. What it can do is say which
+ * rungs are real. Node documents `SIGTERM`, `SIGKILL` and `SIGINT` on Windows as
+ * terminating the process "forcefully and abruptly", and `SIGTERM` as not
+ * supported there, so the last two rungs collapse into one hard kill: the host
+ * is ended, not drained gracefully, after the drain window.
+ */
+export function shutdownLadder(platform: NodeJS.Platform = process.platform): readonly string[] {
+  return platform === "win32"
+    ? ["stdin-eof", "drain", "hard-kill"]
+    : ["stdin-eof", "drain", "sigterm", "sigkill"];
+}
+
+/** Shims the Windows installer leaves on PATH; none of them is spawnable. */
+const SHIM_NAMES = ["muse.cmd", "muse.bat", "muse.ps1"] as const;
+const NATIVE_NAME = "muse.exe";
+const BIN_PREFIX = "muse-bin-";
+const VERSION_FILE = ".muse-version";
+const BIN_PATTERN = /^muse-bin-.+\.exe$/i;
+/** The launcher names the binary after this pointer; reject anything path-like. */
+const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+
+/** The filesystem facts the resolver needs, injected so a test can hold them. */
+export interface MuseBinInput {
+  readonly platform: NodeJS.Platform;
+  readonly env: NodeJS.ProcessEnv;
+  readonly pathEntries: readonly string[];
+  /** Contents of `.muse-version`, or undefined when it cannot be read. */
+  readonly readFile: (path: string) => string | undefined;
+  readonly readdir: (path: string) => readonly string[] | undefined;
+  readonly statMtime: (path: string) => number | undefined;
+}
+
+/** Which rule produced the command, so a bug report can say so. */
+export type MuseBinSource = "env" | "path-exe" | "version-file" | "newest" | "fallback";
+
+export interface MuseBin {
+  readonly command: string;
+  readonly source: MuseBinSource;
+  /** The PATH entry that held the shim, when the resolver looked at one. */
+  readonly shimDir?: string;
+  /** The version `.muse-version` named, when it was readable. */
+  readonly version?: string;
+}
+
+function lower(value: string): string {
+  return value.toLowerCase();
+}
+
+/** Windows environment variables are case-insensitive; a test's are not. */
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((candidate) => lower(candidate) === lower(name));
+  return key === undefined ? undefined : env[key];
+}
+
+function listingHas(entries: readonly string[], name: string): boolean {
+  const wanted = lower(name);
+  return entries.some((entry) => lower(entry) === wanted);
+}
+
+/** Split PATH the way the platform does, dropping empty entries. */
+export function pathEntriesFrom(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+  const raw = envValue(env, "PATH") ?? "";
+  return raw.split(platform === "win32" ? ";" : ":").filter((entry) => entry.length > 0);
+}
+
+/**
+ * Find a spawnable `muse` on Windows.
+ *
+ * Node refuses to spawn a `.cmd` or `.bat` without a shell — the fix for
+ * CVE-2024-27980 — so the `muse` a normal Windows install puts on PATH, the
+ * vendor's `muse.cmd` shim, cannot be spawned. The installer writes a native
+ * `muse-bin-<version>.exe` beside the shim and points `.muse-version` at the
+ * active one, so this reads that pointer rather than guessing, and only falls
+ * back to the newest binary when the pointer is missing or stale.
+ *
+ * On POSIX the answer is `muse`, as it always was: a launcher script there is
+ * executable, so there is nothing to resolve.
+ */
+export function resolveMuseBin(input: MuseBinInput): MuseBin {
+  const configured = envValue(input.env, "MUSE_BIN");
+  if (configured !== undefined && configured.trim().length > 0) {
+    return { command: configured, source: "env" };
+  }
+  if (input.platform !== "win32") {
+    return { command: "muse", source: "fallback" };
+  }
+
+  const listing = (dir: string): readonly string[] => input.readdir(dir) ?? [];
+  // A native `muse.exe` on PATH needs no resolution and wins over any shim.
+  for (const dir of input.pathEntries) {
+    if (listingHas(listing(dir), NATIVE_NAME)) {
+      return { command: win32.join(dir, NATIVE_NAME), source: "path-exe" };
+    }
+  }
+
+  const shimDir = input.pathEntries.find((dir) =>
+    SHIM_NAMES.some((name) => listingHas(listing(dir), name)),
+  );
+  if (shimDir === undefined) {
+    return { command: "muse", source: "fallback" };
+  }
+
+  const version = (input.readFile(win32.join(shimDir, VERSION_FILE)) ?? "").trim();
+  const named = VERSION_PATTERN.test(version) ? `${BIN_PREFIX}${version}.exe` : undefined;
+  if (named !== undefined && listingHas(listing(shimDir), named)) {
+    return { command: win32.join(shimDir, named), source: "version-file", shimDir, version };
+  }
+
+  let newest: { name: string; mtime: number } | undefined;
+  for (const name of listing(shimDir)) {
+    if (!BIN_PATTERN.test(name)) continue;
+    const mtime = input.statMtime(win32.join(shimDir, name));
+    if (mtime === undefined) continue;
+    // Ties go to the lower name so the choice is stable across listings.
+    if (newest === undefined || mtime > newest.mtime || (mtime === newest.mtime && name < newest.name)) {
+      newest = { name, mtime };
+    }
+  }
+  if (newest !== undefined) {
+    return {
+      command: win32.join(shimDir, newest.name),
+      source: "newest",
+      shimDir,
+      ...(version.length === 0 ? {} : { version }),
+    };
+  }
+  return {
+    command: "muse",
+    source: "fallback",
+    shimDir,
+    ...(version.length === 0 ? {} : { version }),
+  };
+}
+
+/**
+ * The failure a Windows fallback should produce instead of Node's bare `EINVAL`.
+ *
+ * A bare `EINVAL` from `spawn` names nothing: not the setting that would fix
+ * it, not the file that should have been there, not the directory that was
+ * searched. This returns the message for that case and undefined otherwise.
+ */
+export function museBinFailure(
+  bin: MuseBin,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform !== "win32" || bin.source !== "fallback") return undefined;
+  const expected = bin.version === undefined ? "muse-bin-<version>.exe" : `muse-bin-${bin.version}.exe`;
+  const searched = bin.shimDir ?? "no directory on PATH (no muse.cmd, muse.bat or muse.ps1 was found)";
+  return (
+    "Windows cannot spawn the muse.cmd shim without a shell (EINVAL). " +
+    `Set MUSE_BIN to a Muse executable, or install Muse so that ${expected} sits in ${searched}.`
+  );
+}
+
+/** The resolver's inputs from this process, for the one call at host start. */
+export function resolveMuseBinFromProcess(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): MuseBin {
+  return resolveMuseBin({
+    platform,
+    env,
+    pathEntries: pathEntriesFrom(env, platform),
+    readFile: (path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+    readdir: (path) => {
+      try {
+        return readdirSync(path);
+      } catch {
+        return undefined;
+      }
+    },
+    statMtime: (path) => {
+      try {
+        return statSync(path).mtimeMs;
+      } catch {
+        return undefined;
+      }
+    },
+  });
 }
 
 /**
@@ -101,22 +392,38 @@ export interface MuseHostOptions {
  */
 export class MuseHost {
   readonly connection: Connection;
-  readonly initializeResult: { readonly museHome: string };
+  /** The SDK's full initialize result; narrowing it hides schema drift. */
+  readonly initializeResult: SpawnedMspConnection["initializeResult"];
+  /** The SDK's advisory schema-fingerprint warning, when it served one. */
+  readonly fingerprintWarning: FingerprintWarning | undefined;
   readonly exited: Promise<ProcessExit>;
+  /**
+   * Resolves once, with the reason, when this host stops serving. Unlike
+   * `exited`, it also settles for a transport EOF that leaves the process
+   * alive, so callers that cache the host (the adapter) can drop it.
+   */
+  readonly gone: Promise<HostDeathReason>;
   private readonly child: MuseServeChild;
   private readonly sinks = new Map<string, NotificationSink>();
   private closed = false;
+  private exitAnnounced = false;
+  private resolveGone: (reason: HostDeathReason) => void = () => {};
 
   private constructor(
     connection: Connection,
-    initializeResult: { readonly museHome: string },
+    initializeResult: SpawnedMspConnection["initializeResult"],
+    fingerprintWarning: FingerprintWarning | undefined,
     child: MuseServeChild,
     exited: Promise<ProcessExit>,
   ) {
     this.connection = connection;
     this.initializeResult = initializeResult;
+    this.fingerprintWarning = fingerprintWarning;
     this.child = child;
     this.exited = exited;
+    this.gone = new Promise<HostDeathReason>((resolve) => {
+      this.resolveGone = resolve;
+    });
   }
 
   static async spawn(options: MuseHostOptions = {}): Promise<MuseHost> {
@@ -129,6 +436,9 @@ export class MuseHost {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: options.env }),
       ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
+      ...(options.shutdownTimeoutMs === undefined
+        ? {}
+        : { shutdownTimeoutMs: options.shutdownTimeoutMs }),
     });
 
     let spawned;
@@ -136,11 +446,12 @@ export class MuseHost {
       spawned = await handshake.initialize({
         clientInfo: {
           name: options.clientName ?? "opencode_muse",
-          version: options.clientVersion ?? "0.1.0",
+          version: options.clientVersion ?? packageVersion(),
         },
         capabilities: {
           // Per-session MCP servers (the tool bridge) need this grant.
           requestedCapabilities: ["sessionMcp"],
+          ...(options.experimentalApi === true ? { experimentalApi: true } : {}),
         },
       });
     } catch (error) {
@@ -151,6 +462,7 @@ export class MuseHost {
     const host = new MuseHost(
       spawned.connection,
       spawned.initializeResult,
+      spawned.fingerprintWarning,
       spawned.child,
       spawned.exited,
     );
@@ -162,10 +474,20 @@ export class MuseHost {
     return this.initializeResult.museHome;
   }
 
+  /** Capabilities the handshake actually granted, for seam checks. */
+  grantedCapabilities(): readonly string[] {
+    return this.initializeResult.grantedCapabilities;
+  }
+
   /** Read the visible model catalog (`model/list`). */
   async listModels(): Promise<Array<Record<string, unknown>>> {
     const result = await this.connection.request("model/list", {});
-    return Array.isArray(result?.models) ? (result.models as Array<Record<string, unknown>>) : [];
+    // SDK 1.4.24 types the rows as `ModelCatalogEntry`. The wire shape is the
+    // same camelCase records this file already reads field-by-field; the cast
+    // only restores the loose row type the callers share.
+    return Array.isArray(result?.models)
+      ? (result.models as unknown as Array<Record<string, unknown>>)
+      : [];
   }
 
   /** Read the hidden rows Muse keeps in its on-disk catalog. */
@@ -220,12 +542,50 @@ export class MuseHost {
       this.sinks.get(sessionId)?.handleNotification({ method: notification.method, params });
     });
 
-    // The presentation receipt acknowledges that a surface showed the request.
-    // It changes no state; the decision/answer arrives as approval/decide or
-    // userInput/answer.
-    this.connection.onServerRequest(async () => {
-      return {};
-    });
+    // The receipt says a surface showed the request; the decision or answer
+    // travels later as a command. It is only true for the two presentation
+    // methods on a session this host routes, so every other request is
+    // refused rather than acknowledged.
+    this.connection.onServerRequest(async (request) =>
+      answerServerRequest(request, (sessionId) => this.sinks.get(sessionId)),
+    );
+
+    // Without this, a crash is invisible: sessions wait on notifications that
+    // will never arrive. `exited` never rejects in practice, but a second arm
+    // keeps an unhandled rejection from taking the process with it.
+    void this.exited.then(
+      () => this.announceExit("exited"),
+      () => this.announceExit("exited"),
+    );
+
+    // A host that closes stdout while still running emits no exit at all, so
+    // watching the process alone leaves every pending wait hanging. The SDK
+    // resolves `closed` on that EOF; `exited` stays the authoritative arm for
+    // how the process ended, and `announceExit` latches so only the first one
+    // reports.
+    void this.connection.closed.then(() => this.announceExit("transportEof"));
+  }
+
+  /**
+   * Tell every registered session the host is gone.
+   *
+   * `closed` is set before the connection is closed on purpose: an intentional
+   * shutdown must not look like a crash, and the registry closes its sessions
+   * before the adapter closes the host, so nothing is left waiting here.
+   */
+  private announceExit(reason: HostDeathReason): void {
+    if (this.closed || this.exitAnnounced) return;
+    this.exitAnnounced = true;
+    this.resolveGone(reason);
+    // Copy: a sink may unregister itself while this loop runs.
+    for (const sink of [...this.sinks.values()]) sink.handleHostExit?.(reason);
+    // A transport EOF can leave the process running with no reader left to hear
+    // it. The SDK owns that process, so give it the shutdown it will never get;
+    // the `exited` arm needs nothing, because the child is already gone. Not
+    // `kill()`: `close()` is stdin EOF, the drain window, then SIGTERM→SIGKILL,
+    // and it is idempotent with the intentional-shutdown path, which sets
+    // `closed` first and never reaches this line.
+    if (reason === "transportEof") void this.child.close().catch(() => undefined);
   }
 
   registerSink(sink: NotificationSink): void {
@@ -240,5 +600,11 @@ export class MuseHost {
     if (this.closed) return;
     this.closed = true;
     await this.connection.close();
+    // A closed host serves nothing, which is what `gone` promises. The adapter
+    // caches hosts and drops them on this signal, so without it a host ended by
+    // the watchdog would be handed to the next open, already dead. Sinks are
+    // not notified: an intentional close is not a crash, and the session that
+    // asked for it has already retired its turn.
+    this.resolveGone("exited");
   }
 }

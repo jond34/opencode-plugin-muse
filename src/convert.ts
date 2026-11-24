@@ -14,6 +14,32 @@ export class StreamConverter {
   private reasoningId: string | null = null;
   private textOpen = false;
   private reasoningOpen = false;
+  /** The message the open text block belongs to; the id alone cannot say. */
+  private textMessage: string | null = null;
+  /**
+   * Characters already streamed per message id: the offset a completion
+   * appends from. No text is retained, so this is an integer, not a buffer.
+   */
+  private readonly emitted = new Map<string, number>();
+  /** Completions already closed. A delta replayed after one must not reopen. */
+  private readonly settled = new Set<string>();
+  /**
+   * Text accounting thrown away by conversion and kept for the ledger: what
+   * arrived as deltas, what the completed frames held, and how much of a reply
+   * only the frame supplied. Reset by the reader (`takeTextStats`).
+   */
+  private streamedChars = 0;
+  private completedChars = 0;
+  private fillChars = 0;
+  private fillMessages = 0;
+
+  /** Bound the settled set; a late delta arrives within the same step. */
+  private settle(messageId: string): void {
+    this.settled.add(messageId);
+    if (this.settled.size <= 64) return;
+    const oldest = this.settled.values().next().value;
+    if (oldest !== undefined) this.settled.delete(oldest);
+  }
 
   convert(event: HarnessEvent): LanguageModelV3StreamPart[] {
     const parts: LanguageModelV3StreamPart[] = [];
@@ -25,12 +51,21 @@ export class StreamConverter {
         break;
       case "message.delta":
         if (event.text) {
+          // A replay can deliver a delta after its completion; opening a block
+          // then would leave a start with no end.
+          if (this.settled.has(event.messageId)) break;
           if (!this.textOpen) {
             this.textId = `text-${event.messageId}`;
+            this.textMessage = event.messageId;
             parts.push({ type: "text-start", id: this.textId });
             this.textOpen = true;
           }
           parts.push({ type: "text-delta", id: this.textId!, delta: event.text });
+          this.emitted.set(
+            event.messageId,
+            (this.emitted.get(event.messageId) ?? 0) + event.text.length,
+          );
+          this.streamedChars += event.text.length;
         } else if (event.reasoning) {
           if (!this.reasoningOpen) {
             this.reasoningId = `reasoning-${event.messageId}`;
@@ -41,24 +76,81 @@ export class StreamConverter {
         }
         break;
       case "message.completed": {
-        const isReasoning = this.reasoningOpen && this.reasoningId === `reasoning-${event.message.id}`;
+        const completed = event.message;
+        if (completed.role !== "assistant") break;
+        const isReasoning = this.reasoningOpen && this.reasoningId === `reasoning-${completed.id}`;
         if (isReasoning) {
           parts.push({ type: "reasoning-end", id: this.reasoningId! });
           this.reasoningOpen = false;
           this.reasoningId = null;
           break;
         }
-        if (this.textOpen && this.textId === `text-${event.message.id}`) {
-          parts.push({ type: "text-end", id: this.textId });
+        // The completed frame carries the reply. Streamed deltas are its
+        // prefix, so the characters past the offset are exactly the tail they
+        // did not deliver: nothing if they all arrived, the whole reply if none
+        // did, and nothing when the surface saturated (the frame is then the
+        // shorter one and the preview already showed more than it records).
+        const emitted = this.emitted.get(completed.id) ?? 0;
+        const final = completed.content
+          .map((block) => (block.type === "text" ? block.text : ""))
+          .join("");
+        const tail = final.slice(emitted);
+        this.completedChars += final.length;
+        const holdsMessage = this.textOpen && this.textMessage === completed.id;
+        if (tail.length > 0 && (holdsMessage || !this.textOpen)) {
+          this.fillChars += tail.length;
+          this.fillMessages += 1;
+          if (!holdsMessage) {
+            // `text-<id>` is unused when nothing streamed; after a block was
+            // closed for this message the id is spent, so the tail is its own
+            // part rather than a second start under the same id.
+            this.textId = emitted === 0 ? `text-${completed.id}` : `text-${completed.id}-tail`;
+            this.textMessage = completed.id;
+            parts.push({ type: "text-start", id: this.textId });
+            this.textOpen = true;
+          }
+          parts.push({ type: "text-delta", id: this.textId!, delta: tail });
+        }
+        if (this.textOpen && this.textMessage === completed.id) {
+          parts.push({ type: "text-end", id: this.textId! });
           this.textOpen = false;
           this.textId = null;
+          this.textMessage = null;
         }
+        this.emitted.delete(completed.id);
+        this.settle(completed.id);
         break;
       }
       default:
         break;
     }
     return parts;
+  }
+
+  /**
+   * Text accounting since the last call; the reader resets it.
+   *
+   * Read-and-reset by the ledger row writer, never by a step boundary: a step
+   * that parked on a tool call has no usage and writes no row, so its fills are
+   * carried into the next row that is written instead of being lost.
+   */
+  takeTextStats(): {
+    streamedChars: number;
+    completedChars: number;
+    fillChars: number;
+    fillMessages: number;
+  } {
+    const stats = {
+      streamedChars: this.streamedChars,
+      completedChars: this.completedChars,
+      fillChars: this.fillChars,
+      fillMessages: this.fillMessages,
+    };
+    this.streamedChars = 0;
+    this.completedChars = 0;
+    this.fillChars = 0;
+    this.fillMessages = 0;
+    return stats;
   }
 
   /** Close any open block; used when a step ends mid-block. */
@@ -72,6 +164,7 @@ export class StreamConverter {
     this.reasoningOpen = false;
     this.textId = null;
     this.reasoningId = null;
+    this.textMessage = null;
     return parts;
   }
 }

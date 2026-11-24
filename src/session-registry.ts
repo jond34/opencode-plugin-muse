@@ -1,9 +1,31 @@
 import type { LanguageModelV3StreamPart, LanguageModelV3Usage } from "@ai-sdk/provider";
 import type { HarnessEvent, HarnessToolBridge, HarnessToolResult } from "./contract/index.js";
-import { MuseHarnessAdapter } from "./adapter.js";
-import type { MuseHarnessSession } from "./session.js";
+import type { LanguageAdapter, LanguageSession } from "./language.js";
+import type { HistoryCompactedEvent } from "./session.js";
 import { StreamConverter } from "./convert.js";
+import { appendLedgerRow, appendUsage, type HistoryRow } from "./usage-ledger.js";
+import {
+  decidePromptPolicy,
+  PROBE_QUESTION,
+  probeInstruction,
+  probeSucceeded,
+  type PromptDelivery,
+} from "./prompt-policy.js";
 
+/**
+ * Split by lifetime, not by order: `MuseHarnessSession` (`session.ts`) owns one
+ * Muse native session — its events, containment, compaction, and turn usage —
+ * while `LiveSession` here owns OpenCode's step state: the stream controller,
+ * the parked bridge calls, and per-step bookkeeping. One native session, many
+ * steps.
+ *
+ * In file order: `ToolDefinition` (what a session may call); `SessionStore`,
+ * `NativeCompactionMarker`, `STORE_VERSION` and `storeKey` (the durable
+ * OpenCode → Muse session-id map); `PendingCall`, `Usage`, `StepStats` and
+ * `toAIUsage` (step accounting); `LiveSession` (one OpenCode step, and the
+ * parked bridge calls it owns, with `parseFingerprints` as its helper);
+ * `MuseSessionRegistry` (the object the plugin holds).
+ */
 export interface ToolDefinition {
   readonly name: string;
   readonly description?: string;
@@ -14,6 +36,27 @@ export interface ToolDefinition {
 export interface SessionStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
+}
+
+/** The compaction hook's native window, kept until the next primary request. */
+export interface NativeCompactionMarker {
+  /** Fingerprint of the digest the hook installed, not just "a compaction". */
+  readonly fingerprint: string;
+  /** Messages in the replacement window; zero means summary-only. */
+  readonly windowMessages: number;
+}
+
+/**
+ * Store-key version. The transcript fingerprint format changed with this
+ * version (tool identity is now part of it), so old keys are ignored: that
+ * forces one clean reseed per existing session instead of matching a shape the
+ * new code cannot verify.
+ */
+const STORE_VERSION = "v2";
+
+/** Namespace a durable session key. */
+export function storeKey(sessionID: string, suffix = ""): string {
+  return `${STORE_VERSION}:${sessionID}${suffix}`;
 }
 
 export interface PendingCall {
@@ -31,7 +74,29 @@ export interface Usage {
   cachedInputTokens?: number;
   cacheWriteTokens?: number;
   totalTokens?: number;
+  costUsd?: number;
+  /** 1 when any completion's cost was provisional; merged from a boolean. */
+  costPartial?: number;
+  billedPromptTokens?: number;
+  billedCacheRead?: number;
+  billedCacheWrite?: number;
+  billedOutput?: number;
   [key: string]: number | undefined;
+}
+
+/** What the step actually sent, recorded beside its usage. */
+export interface StepStats {
+  readonly renderedChars: number;
+  readonly promptMessages: number;
+  readonly toolBlocks: number;
+  readonly truncated: boolean;
+  readonly hostFingerprint: string | null;
+  /**
+   * Wall ms from the `turn/start` send to its ack, as this step waited; a
+   * replayed admission (lost ack, same command id) is included twice over.
+   * Absent on a steered step, which starts no turn.
+   */
+  readonly admitMs?: number;
 }
 
 /**
@@ -80,7 +145,7 @@ export function toAIUsage(usage: Usage): LanguageModelV3Usage {
  */
 export class LiveSession {
   readonly openCodeSessionId: string;
-  readonly muse: MuseHarnessSession;
+  readonly muse: LanguageSession;
   readonly pending = new Map<string, PendingCall>();
 
   private readonly converter = new StreamConverter();
@@ -91,6 +156,8 @@ export class LiveSession {
   private stepAborted = false;
   private stepEnded = false;
   private lastPromptLength = 0;
+  private transcript: string[] = [];
+  private compactions: string[] = [];
   private counter = 0;
   private parkTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -98,9 +165,25 @@ export class LiveSession {
   private terminalError: Error | null = null;
   private preamble = "";
   private preambleSent = false;
+  private readonly nativeDeveloperPrompt: boolean;
   private fresh = true;
   private model: string | null;
-  private fullSeed = false;
+  private nativeHasHistoryValue: boolean;
+  private stepNumber = 0;
+  private stepSeed: "delta" | "full" = "delta";
+  private stepReason = "first";
+  private stepStats: StepStats = {
+    renderedChars: 0,
+    promptMessages: 0,
+    toolBlocks: 0,
+    truncated: false,
+    hostFingerprint: null,
+  };
+  private stepStartedAt = 0;
+  private turnToolCalls = 0;
+  private compactionPendingValue = false;
+  private nativeCheckpointValue = false;
+  private lastCompactionValue: HistoryCompactedEvent | null = null;
 
   /** True until the first step seeds the prompt diff. */
   get isFresh(): boolean {
@@ -111,32 +194,67 @@ export class LiveSession {
     this.fresh = false;
   }
 
-  /** The next turn carries the full conversation: a forked native session has seen nothing yet. */
-  requestFullSeed(): void {
-    this.fullSeed = true;
+  /**
+   * True when this native session already holds context that is not in the
+   * prompt: a session resumed after a host restart. A rebuilt session started
+   * from no stored id has none and must be seeded from the whole prompt.
+   */
+  get nativeHasHistory(): boolean {
+    return this.nativeHasHistoryValue;
   }
 
-  /** Consume the one-shot full-seed flag. */
-  takeFullSeed(): boolean {
-    const value = this.fullSeed;
-    this.fullSeed = false;
-    return value;
+  /** Mark a just-rebuilt native session as carrying no prior context. */
+  markNativeEmpty(): void {
+    this.nativeHasHistoryValue = false;
   }
 
-  /** Prepend the agent role/instructions once, and again when they change. */
+  /**
+   * Prepend the agent role/instructions once, and again when they change.
+   *
+   * A session created with `developerPrompt` already carries the first value
+   * natively, so the first turn must not repeat it. A later, different value
+   * still travels in the next user turn; Muse has no per-session mutation for
+   * that field.
+   */
   prependPreamble(preamble: string): boolean {
     if (preamble.length === 0) return false;
-    if (this.preambleSent && this.preamble === preamble) return false;
+    if (this.preamble === preamble && (this.preambleSent || this.nativeDeveloperPrompt)) return false;
     this.preamble = preamble;
     this.preambleSent = true;
     return true;
   }
 
-  constructor(openCodeSessionId: string, muse: MuseHarnessSession) {
+  constructor(
+    openCodeSessionId: string,
+    muse: LanguageSession,
+    private readonly toolsRef: { current: ToolDefinition[] } = { current: [] },
+    developerPrompt = "",
+    /** A resumed native session already holds the history this prompt repeats. */
+    nativeHasHistory = false,
+    /**
+     * Whether the host is verified to honor `config.developerPrompt`. Unknown
+     * is treated as false: sending the preamble twice is recoverable, losing
+     * the agent role and instructions is not.
+     */
+    nativeDeveloperPrompt = developerPrompt.trim().length > 0,
+    private readonly strictContainment = false,
+  ) {
     this.openCodeSessionId = openCodeSessionId;
+    this.nativeHasHistoryValue = nativeHasHistory;
     this.muse = muse;
     this.model = muse.info.model;
+    this.preamble = developerPrompt.trim();
+    this.nativeDeveloperPrompt = nativeDeveloperPrompt && this.preamble.length > 0;
     void this.pump();
+  }
+
+  /**
+   * Offer this step's tools to the bridge. Each OpenCode session has its own
+   * agent and therefore its own tool set; a shared list would serve one
+   * session's tools to another.
+   */
+  setTools(tools: ReadonlyArray<ToolDefinition>): void {
+    this.toolsRef.current = [...tools];
   }
 
   get promptLength(): number {
@@ -147,8 +265,82 @@ export class LiveSession {
     this.lastPromptLength = value;
   }
 
+  /** Visible user/assistant fingerprints the native session has already seen. */
+  get transcriptFingerprints(): readonly string[] {
+    return this.transcript;
+  }
+
+  setTranscriptFingerprints(fingerprints: readonly string[]): void {
+    this.transcript = [...fingerprints];
+  }
+
+  /** Compaction summaries this session produced, for rewrite detection. */
+  get compactionFingerprints(): readonly string[] {
+    return this.compactions;
+  }
+
+  setCompactionFingerprints(fingerprints: readonly string[]): void {
+    this.compactions = [...fingerprints];
+  }
+
   get hasActiveTurn(): boolean {
     return this.turnActive;
+  }
+
+  /**
+   * Muse rewrote its own history and opencode has not been reseeded yet. The
+   * flag deliberately survives the turn that saw the compaction: that turn may
+   * continue on the summary, but the next user turn must be rebuilt.
+   */
+  get compactionPending(): boolean {
+    return this.compactionPendingValue;
+  }
+
+  /** The compaction that set `compactionPending`, for the ledger. */
+  get lastCompaction(): HistoryCompactedEvent | null {
+    return this.lastCompactionValue;
+  }
+
+  /** Clear the pending flag once a user turn has acted on it. */
+  consumeCompaction(): void {
+    this.compactionPendingValue = false;
+  }
+
+  /**
+   * The current history is the native window this plugin supplied. Pressure
+   * and Muse-compaction rebuilds are suppressed: rebuilding would close the
+   * session that already holds the history and reseed from a prompt that no
+   * longer contains it.
+   */
+  get nativeCheckpoint(): boolean {
+    return this.nativeCheckpointValue;
+  }
+
+  markNativeCheckpoint(): void {
+    this.nativeCheckpointValue = true;
+  }
+
+  /**
+   * True when the native window is at or past the reseed threshold. Pressure
+   * is a pre-emption: it catches the case where Muse compacts without an item
+   * the adapter can see.
+   */
+  get pressureReseed(): boolean {
+    const usage = this.muse.contextUsage;
+    if (!usage) return false;
+    if (usage.pressure !== "normal") return true;
+    if (usage.windowTokens === undefined || usage.windowTokens <= 0) return false;
+    return usage.usedTokens / usage.windowTokens >= 0.9;
+  }
+
+  /** A stored native id existed, but the resume was refused and started fresh. */
+  get resumeFallback(): boolean {
+    return this.muse.resumeOutcome === "resume_fallback";
+  }
+
+  /** The native session was successfully resumed, so it already holds history. */
+  get resumed(): boolean {
+    return this.muse.resumeOutcome === "resumed";
   }
 
   /** Host turn id of the running turn, for `turn/steer` and `turn/interrupt`. */
@@ -157,6 +349,8 @@ export class LiveSession {
   }
 
   setActiveTurn(value: boolean, turnId?: string): void {
+    // A new turn starts a new tool-call count.
+    if (value && !this.turnActive) this.turnToolCalls = 0;
     this.turnActive = value;
     this.currentTurnId = value ? (turnId ?? null) : null;
   }
@@ -185,6 +379,27 @@ export class LiveSession {
       for await (const event of this.muse.subscribe()) {
         if (this.closed) return;
         for (const part of this.converter.convert(event)) this.enqueue(part);
+        if (event.type === "session.error" && event.error.code === "containment_breach") {
+          // Warn mode records the breach and lets the turn continue; strict
+          // mode turns it into the step's failure.
+          if (this.strictContainment) {
+            this.terminalError = new Error(event.error.message);
+            if (this.currentTurnId !== null) {
+              void this.muse.interruptTurn({ turnId: this.currentTurnId });
+            }
+          }
+        }
+        if (event.type === "history.compacted") {
+          this.compactionPendingValue = true;
+          this.lastCompactionValue = event;
+          this.recordHistory("compaction", "muse_compaction", {
+            ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+            ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+            ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
+            ...(event.strategy === undefined ? {} : { strategy: event.strategy }),
+            ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
+          });
+        }
         if (event.type === "turn.terminal") {
           this.setActiveTurn(false);
           if (event.turn.status === "failed") {
@@ -209,6 +424,12 @@ export class LiveSession {
   private mergeUsage(usage: Usage | undefined): void {
     if (!usage) return;
     for (const [key, value] of Object.entries(usage)) {
+      // The turn's cost flag arrives as a boolean, which the numeric merge
+      // below would drop. Preserve it as a 1, never unset by a later false.
+      if (key === "costPartial") {
+        if ((value as unknown) === true) this.stepUsage.costPartial = 1;
+        continue;
+      }
       if (typeof value === "number" && Number.isFinite(value)) {
         this.stepUsage[key] = (this.stepUsage[key] ?? 0) + value;
       }
@@ -285,17 +506,24 @@ export class LiveSession {
   /**
    * Stop the active turn because OpenCode cancelled the step.
    *
-   * A turn parked on tool calls is left waiting for its results, mirroring the
-   * reference provider: interrupting it would only turn the pending calls into
-   * errors. A turn that is still generating is interrupted natively, and the
-   * buffered parts are dropped so a stale finish cannot reach the next step.
+   * A turn still generating is interrupted natively, and the buffered parts
+   * are dropped so a stale finish cannot reach the next step. A turn parked on
+   * a tool call would otherwise wait forever, because OpenCode discards the
+   * step that owed the result; its call is rejected and the turn is stopped.
    */
   async interrupt(): Promise<void> {
-    if (!this.turnActive || this.pending.size > 0) return;
+    if (!this.turnActive) return;
     const turnId = this.currentTurnId;
     this.setActiveTurn(false);
     this.stepAborted = true;
     this.queue = [];
+    // A parked turn has a `tools/call` waiting on the bridge. If the step is
+    // cancelled, OpenCode will never send that result, so reject it here and
+    // interrupt the native turn; otherwise the session stays parked with a
+    // turn OpenCode no longer knows about.
+    if (this.pending.size > 0) {
+      this.clearPending(new Error("Step cancelled before the tool result arrived"));
+    }
     if (turnId !== null) {
       try {
         await this.muse.interruptTurn({ turnId });
@@ -303,11 +531,52 @@ export class LiveSession {
         // The turn may already be over.
       }
     }
-    this.clearPending(new Error("Turn interrupted"));
+  }
+
+  /** Why the most recent step seeded the native session. */
+  get lastSeedReason(): string {
+    return this.stepReason;
+  }
+
+  /** What the most recent step sent, for tests and diagnostics. */
+  get lastStepStats(): StepStats {
+    return this.stepStats;
+  }
+
+  /** Begin this step's ledger accounting; called once per `doStream`. */
+  beginStep(seed: "delta" | "full", reason = "same", stats: StepStats = {
+    renderedChars: 0,
+    promptMessages: 0,
+    toolBlocks: 0,
+    truncated: false,
+    hostFingerprint: null,
+  }): void {
+    this.stepNumber += 1;
+    this.stepSeed = seed;
+    this.stepReason = reason;
+    this.stepStats = stats;
+    this.stepStartedAt = Date.now();
+  }
+
+  /** Record a compaction or reseed explanation beside the turn rows. */
+  recordHistory(
+    event: HistoryRow["event"],
+    reason: string,
+    extra: Omit<HistoryRow, "type" | "ts" | "sessionID" | "event" | "reason"> = {},
+  ): void {
+    void appendLedgerRow({
+      type: "history",
+      ts: new Date().toISOString(),
+      sessionID: this.openCodeSessionId,
+      event,
+      reason,
+      ...extra,
+    });
   }
 
   /** Emit a tool call to OpenCode and park the step. */
   emitToolCall(call: { toolCallId: string; toolName: string; input: unknown }): void {
+    this.turnToolCalls += 1;
     this.enqueue({
       type: "tool-call",
       toolCallId: call.toolCallId,
@@ -358,6 +627,7 @@ export class LiveSession {
     for (const part of this.converter.closeBlocks()) this.enqueue(part);
     const usage = this.stepUsage;
     this.stepUsage = {};
+    this.recordUsage(usage);
     const error = this.terminalError;
     this.terminalError = null;
     if (error) this.enqueue({ type: "error", error });
@@ -378,6 +648,46 @@ export class LiveSession {
         // Already closed.
       }
     }
+  }
+
+  /** Append this step's token counts to the local ledger, best effort. */
+  private recordUsage(usage: Usage): void {
+    // Muse reports token usage at the turn terminal. A step that parked on a
+    // tool call ends before that, so it has no numbers; logging it as a zero
+    // row would drag the input percentiles down and inflate the turn count.
+    if (Object.keys(usage).length === 0) return;
+    const at = new Date();
+    void appendUsage({
+      ts: at.toISOString(),
+      sessionID: this.openCodeSessionId,
+      step: this.stepNumber,
+      kind: "primary",
+      model: this.model ?? this.muse.info.model ?? "unknown",
+      // Billed sums, not context high-water marks: a tool loop sends several
+      // prompts in one turn and each one is billed. The ledger's percentiles
+      // are about cost, so they must see the sum.
+      input: usage.billedPromptTokens ?? usage.inputTokens ?? 0,
+      cached: usage.billedCacheRead ?? usage.cachedInputTokens ?? 0,
+      cacheWrite: usage.billedCacheWrite ?? usage.cacheWriteTokens ?? 0,
+      output: usage.billedOutput ?? usage.outputTokens ?? 0,
+      toolCalls: this.turnToolCalls,
+      wallMs: this.stepStartedAt === 0 ? 0 : Math.max(0, at.getTime() - this.stepStartedAt),
+      ...(this.stepStats.admitMs === undefined ? {} : { admitMs: this.stepStats.admitMs }),
+      seed: this.stepSeed,
+      seedReason: this.stepReason,
+      renderedChars: this.stepStats.renderedChars,
+      promptMessages: this.stepStats.promptMessages,
+      toolBlocks: this.stepStats.toolBlocks,
+      truncated: this.stepStats.truncated,
+      hostFingerprint: this.stepStats.hostFingerprint,
+      // Read-and-reset here, not at `beginStep`: a parked step writes no row, so
+      // its fills belong to the next row that is. A row can therefore cover
+      // more than one step, and each fill is still counted exactly once.
+      ...this.converter.takeTextStats(),
+      nativeSessionId: this.muse.nativeSessionId,
+      ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
+      ...(usage.costPartial === undefined ? {} : { costPartial: usage.costPartial > 0 }),
+    });
   }
 
   /** Resolve a parked tool call from an OpenCode tool result. */
@@ -406,19 +716,77 @@ export class LiveSession {
 /**
  * The registry owns every live session and the adapter that serves them.
  */
+function parseFingerprints(raw: string | undefined): string[] {
+  if (raw === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The registry owns every live session and the adapter that serves them.
+ */
 export class MuseSessionRegistry {
   private readonly sessions = new Map<string, LiveSession>();
-  private readonly adapter: MuseHarnessAdapter;
+  private readonly transcriptBySession = new Map<string, string[]>();
+  private readonly compactionBySession = new Map<string, string[]>();
+  /** Sessions whose next primary request is the checkpoint the hook supplied. */
+  private readonly nativeCompactions = new Map<string, NativeCompactionMarker>();
+  /** Tail of the in-flight `get` per opencode id, so one key opens once. */
+  private readonly getChains = new Map<string, Promise<unknown>>();
+  private readonly adapter: LanguageAdapter;
   private readonly store: SessionStore | undefined;
-  private tools: ToolDefinition[] = [];
+  private hostFingerprintValue: string | null = null;
+  private promptDeliveryValue: PromptDelivery = "unknown";
+  private containmentModeValue: "strict" | "warn" | "off" = "warn";
 
-  constructor(adapter: MuseHarnessAdapter, store?: SessionStore) {
+  constructor(adapter: LanguageAdapter, store?: SessionStore) {
     this.adapter = adapter;
     this.store = store;
   }
 
-  setTools(tools: ReadonlyArray<ToolDefinition>): void {
-    this.tools = [...tools];
+  /** Record the served schema fingerprint for ledger rows and containment. */
+  setHostFingerprint(fingerprint: string | null): void {
+    this.hostFingerprintValue = fingerprint;
+  }
+
+  get hostFingerprint(): string | null {
+    return this.hostFingerprintValue;
+  }
+
+  /** The cached probe result for this host; unknown means preamble fallback. */
+  setPromptDelivery(delivery: PromptDelivery): void {
+    this.promptDeliveryValue = delivery;
+  }
+
+  get promptDelivery(): PromptDelivery {
+    return this.promptDeliveryValue;
+  }
+
+  /** Set once at startup; a containment breach in strict mode fails the turn. */
+  setContainmentMode(mode: "strict" | "warn" | "off"): void {
+    this.containmentModeValue = mode;
+  }
+
+  /**
+   * One tiny throwaway turn that proves `developerPrompt` reached the model.
+   * It never touches a user's live session. Callers decide when to spend it.
+   */
+  async probeDeveloperPrompt(canary: string, model?: string): Promise<boolean> {
+    const response = await this.runOnce(
+      process.cwd(),
+      [{ type: "text", text: PROBE_QUESTION }],
+      undefined,
+      [],
+      model,
+      probeInstruction(canary),
+    );
+    return probeSucceeded(response.text, canary);
   }
 
   /** Read the Muse model catalog through the session's host. */
@@ -427,58 +795,185 @@ export class MuseSessionRegistry {
   }
 
   /**
+   * Persist the visible transcript the native session now matches.
+   *
+   * The store is best-effort: losing the map only costs a full reseed on the
+   * next start, while failing the request would lose the turn.
+   */
+  async rememberTranscript(sessionID: string, fingerprints: readonly string[]): Promise<void> {
+    const copy = [...fingerprints];
+    this.transcriptBySession.set(sessionID, copy);
+    this.sessions.get(sessionID)?.setTranscriptFingerprints(copy);
+    await this.store?.set(storeKey(sessionID, ":transcript"), JSON.stringify(copy)).catch(() => undefined);
+  }
+
+  /** Record a locally produced compaction summary so a rewrite can be named. */
+  async recordCompaction(sessionID: string, fingerprint: string): Promise<void> {
+    const next = [...(this.compactionBySession.get(sessionID) ?? []), fingerprint].slice(-8);
+    this.compactionBySession.set(sessionID, next);
+    this.sessions.get(sessionID)?.setCompactionFingerprints(next);
+    await this.store?.set(storeKey(sessionID, ":compaction"), JSON.stringify(next)).catch(() => undefined);
+  }
+
+  compactionFingerprintsFor(sessionID: string): readonly string[] {
+    return this.compactionBySession.get(sessionID) ?? [];
+  }
+
+  /** The compaction hook supplied this session's current native window. */
+  markNativeCompaction(sessionID: string, marker: NativeCompactionMarker): void {
+    this.nativeCompactions.set(sessionID, marker);
+  }
+
+  /** Consume the marker once, so a later rewind is not mistaken for it. */
+  consumeNativeCompaction(sessionID: string): NativeCompactionMarker | undefined {
+    const marker = this.nativeCompactions.get(sessionID);
+    this.nativeCompactions.delete(sessionID);
+    return marker;
+  }
+
+  /**
    * Get or create the live session for an OpenCode session id.
    *
-   * `resumeFrom` is the OpenCode id of the session being forked. A fork starts
-   * a *new* native session: resuming the source's native id would overwrite
-   * the source's notification sink, and a server-side fork inherits the
-   * source's MCP bridge instead of this session's. The forked conversation
-   * reseeds here as text on its first turn.
+   * A forked OpenCode session has a new id and therefore no stored native id,
+   * so it starts a *new* native session: resuming the source's native id would
+   * overwrite the source's notification sink, and a server-side fork inherits
+   * the source's MCP bridge instead of this session's. Having no stored id is
+   * also what tells the caller to seed the whole prompt rather than a delta.
    */
   async get(
     openCodeSessionId: string,
     cwd: string,
-    resumeFrom?: string,
     model?: string,
+    tools?: ReadonlyArray<ToolDefinition>,
+    developerPrompt?: string,
+  ): Promise<LiveSession> {
+    // Serialize per opencode id. The body's `sessions.get` check and its later
+    // `sessions.set` straddle awaits, so two concurrent callers both opened a
+    // native session for one key and the second silently replaced the first.
+    const prev = this.getChains.get(openCodeSessionId);
+    const run = (prev ?? Promise.resolve()).then(() =>
+      this.getInner(openCodeSessionId, cwd, model, tools, developerPrompt),
+    );
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.getChains.set(openCodeSessionId, tail);
+    try {
+      return await run;
+    } finally {
+      // Only the last waiter clears the slot; a later `get` chains on `tail`.
+      if (this.getChains.get(openCodeSessionId) === tail) this.getChains.delete(openCodeSessionId);
+    }
+  }
+
+  private async getInner(
+    openCodeSessionId: string,
+    cwd: string,
+    model?: string,
+    /**
+     * The tools this session's next step offers; the bridge serves them.
+     * Omitted for utility requests, which must leave the live list alone.
+     */
+    tools?: ReadonlyArray<ToolDefinition>,
+    /**
+     * Agent role and instructions for a session this call creates. An existing
+     * session keeps its native prompt; a changed value travels in the next turn.
+     */
+    developerPrompt?: string,
   ): Promise<LiveSession> {
     const existing = this.sessions.get(openCodeSessionId);
     if (existing) {
-      if (model !== undefined) await existing.setModel(model);
-      return existing;
+      if (existing.muse.hostExited === true) {
+        // Its native session is durable and idle on the host; the stored id is
+        // what the reopen resumes. Closing here only releases local state.
+        this.sessions.delete(openCodeSessionId);
+        void existing.close();
+      } else {
+        if (tools !== undefined) existing.setTools(tools);
+        if (model !== undefined) await existing.setModel(model);
+        return existing;
+      }
     }
 
-    const own = await this.store?.get(openCodeSessionId);
-    // A fork never reattaches to the source's native session; it starts fresh
-    // and its first turn carries the full conversation as text.
-    const seedFull = own === undefined && resumeFrom !== undefined;
+    const own = await this.store?.get(storeKey(openCodeSessionId));
 
+    // The bridge is asked for its tool list during `session/start`, before the
+    // LiveSession exists, so the list lives in a box the session later updates
+    // instead of on the session itself.
+    const toolsRef = { current: tools === undefined ? [] : [...tools] };
     let live: LiveSession | undefined;
     const bridge: HarnessToolBridge = {
-      listTools: () => this.tools,
+      listTools: () => toolsRef.current,
       callTool: async (call) => {
         const current = live;
         if (!current) throw new Error("Session is not ready");
         const id = `muse_tool_${current.toolCounter}`;
-        const result = new Promise<HarnessToolResult>((resolve, reject) => {
-          current.pending.set(id, { id, name: call.name, input: call.input, resolve, reject });
+        return new Promise<HarnessToolResult>((resolve, reject) => {
+          // The opencode-side tool cannot be aborted from here, but the wait
+          // can: release the parked call so it does not leak. The caller sees
+          // the rejection and sends no result for the cancelled request.
+          const onAbort = () => {
+            current.pending.delete(id);
+            reject(new Error("Tool call cancelled"));
+          };
+          const cleanup = () => call.signal?.removeEventListener("abort", onAbort);
+          current.pending.set(id, {
+            id,
+            name: call.name,
+            input: call.input,
+            resolve: (value) => {
+              cleanup();
+              resolve(value);
+            },
+            reject: (error) => {
+              cleanup();
+              reject(error);
+            },
+          });
+          if (call.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          call.signal?.addEventListener("abort", onAbort, { once: true });
+          current.emitToolCall({ toolCallId: id, toolName: call.name, input: call.input });
         });
-        current.emitToolCall({ toolCallId: id, toolName: call.name, input: call.input });
-        return result;
       },
     };
 
+    // Exactly once: a verified host gets the developer prompt natively and no
+    // preamble; an unverified host gets the preamble and no duplicate native
+    // copy. Unknown is treated as unverified.
+    const nativePrompt = decidePromptPolicy(this.promptDeliveryValue).nativeDeveloperPrompt;
     const muse = await this.adapter.openSession({
       sessionId: openCodeSessionId,
       cwd,
       ...(model === undefined ? {} : { model }),
       ...(own !== undefined ? { resumeSessionId: own } : {}),
+      ...(!nativePrompt || developerPrompt === undefined || developerPrompt.trim().length === 0
+        ? {}
+        : { developerPrompt }),
+      containment: this.containmentModeValue,
       toolBridge: bridge,
     });
-    live = new LiveSession(openCodeSessionId, muse as MuseHarnessSession);
-    if (seedFull) live.requestFullSeed();
+    live = new LiveSession(
+      openCodeSessionId,
+      muse,
+      toolsRef,
+      developerPrompt,
+      own !== undefined,
+      nativePrompt,
+      this.containmentModeValue === "strict",
+    );
+    const transcript = parseFingerprints(await this.store?.get(storeKey(openCodeSessionId, ":transcript")));
+    const compactions = parseFingerprints(await this.store?.get(storeKey(openCodeSessionId, ":compaction")));
+    this.transcriptBySession.set(openCodeSessionId, transcript);
+    this.compactionBySession.set(openCodeSessionId, compactions);
+    live.setTranscriptFingerprints(transcript);
+    live.setCompactionFingerprints(compactions);
     this.sessions.set(openCodeSessionId, live);
     if (this.store) {
-      await this.store.set(openCodeSessionId, live.muse.nativeSessionId).catch(() => undefined);
+      await this.store.set(storeKey(openCodeSessionId), live.muse.nativeSessionId).catch(() => undefined);
     }
     return live;
   }
@@ -488,15 +983,21 @@ export class MuseSessionRegistry {
   }
 
   async close(openCodeSessionId: string): Promise<void> {
+    // An open in flight must land before the close looks: a close that ran
+    // between the `get`'s check and its set left a live session nobody closes.
+    await this.getChains.get(openCodeSessionId);
     const live = this.sessions.get(openCodeSessionId);
+    this.nativeCompactions.delete(openCodeSessionId);
     if (!live) return;
     this.sessions.delete(openCodeSessionId);
     await live.close();
   }
 
   async closeAll(): Promise<void> {
+    await Promise.all([...this.getChains.values()]);
     for (const session of this.sessions.values()) await session.close();
     this.sessions.clear();
+    this.nativeCompactions.clear();
   }
 
   /**
@@ -512,11 +1013,13 @@ export class MuseSessionRegistry {
     signal?: AbortSignal,
     tools: ToolDefinition[] = [],
     model?: string,
+    developerPrompt?: string,
   ): Promise<{ text: string; usage: Usage }> {
     const session = await this.adapter.openSession({
       sessionId: `oneoff_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       cwd,
       ...(model === undefined ? {} : { model }),
+      ...(developerPrompt === undefined ? {} : { developerPrompt }),
       toolBridge: {
         listTools: () => tools,
         callTool: async (call) => ({

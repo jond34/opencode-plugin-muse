@@ -11,6 +11,25 @@ export function setGlobalRegistry(registry: MuseSessionRegistry): void {
   (globalThis as Record<string, unknown>)[KEY] = registry;
 }
 
-export function getGlobalRegistry(): MuseSessionRegistry | undefined {
-  return (globalThis as Record<string, unknown>)[KEY] as MuseSessionRegistry | undefined;
+/**
+ * The text of an opencode content array: plain string parts and `type: "text"`
+ * parts, concatenated in order. Non-text parts (files, images) contribute
+ * nothing; callers that need them read them separately.
+ */
+export function textOfContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+      continue;
+    }
+    if (typeof part !== "object" || part === null) continue;
+    if ((part as { type?: unknown }).type === "text") {
+      const text = (part as { text?: unknown }).text;
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  return parts.join("");
 }

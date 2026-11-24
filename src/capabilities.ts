@@ -31,7 +31,9 @@ export const MUSE_CAPABILITIES: HarnessCapabilities = {
     emitsTurnCompleted: true,
     supportsInterrupt: true,
     supportsSteering: true,
-    supportsQueuedMessages: true,
+    // Muse queues by default, but an absorbed submit shares the running turn's
+    // native id; this adapter models that as a refusal, not a queued turn.
+    supportsQueuedMessages: false,
     terminalStatusQuality: "strong",
   },
   streaming: {

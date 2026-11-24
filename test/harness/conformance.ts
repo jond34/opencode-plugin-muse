@@ -190,7 +190,6 @@ export async function runHarnessConformance(options: HarnessConformanceOptions):
         throw new Error("expected a request.updated event");
       await session.respondToRequest({
         requestId: request.request.id,
-        decision: "accept",
         ...(request.request.options?.[0] ? { optionId: request.request.options[0].id } : {}),
       });
       await collector.waitFor(isTerminalFor("turn-approval"), timeoutMs);

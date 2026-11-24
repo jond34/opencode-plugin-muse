@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { assertTurnEventContract, assistantText } from "./harness/index.js";
 import type { HarnessEvent } from "../src/contract/index.js";
+import type { MuseNotification } from "../src/host.js";
 import {
   MuseHarnessSession,
   type SessionHost,
-} from "../src/index.js";
-import type { MuseNotification } from "../src/index.js";
+} from "../src/session.js";
 
 function fakeHost(): SessionHost {
   return {

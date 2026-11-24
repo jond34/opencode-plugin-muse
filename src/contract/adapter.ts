@@ -29,6 +29,8 @@ export interface StartTurnInput {
     readonly turnId: string;
     readonly message: HarnessUserMessage;
     readonly model?: string | null;
+    /** Per-turn reasoning effort, when the selected variant names one. */
+    readonly reasoningEffort?: string;
     /** Overrides the session tool bridge for this turn. */
     readonly toolBridge?: HarnessToolBridge;
     readonly signal?: AbortSignal;
@@ -40,8 +42,9 @@ export interface InterruptTurnInput {
 export interface SteerTurnInput {
     readonly turnId: string;
     readonly message: HarnessUserMessage;
+    /** Applies to the running turn and every turn after it. */
+    readonly reasoningEffort?: string;
 }
-export type HarnessApprovalDecision = "accept" | "accept_for_session" | "accept_always" | "decline" | "cancel";
 /**
  * Answer to a runtime request. `optionId` must be one of the ids the harness
  * supplied in `HarnessRuntimeRequest.options`; the adapter translates it to the
@@ -49,7 +52,6 @@ export type HarnessApprovalDecision = "accept" | "accept_for_session" | "accept_
  */
 export interface HarnessRequestResponse {
     readonly requestId: string;
-    readonly decision?: HarnessApprovalDecision;
     readonly optionId?: string;
     readonly feedback?: string;
     readonly answers?: Record<string, unknown>;
