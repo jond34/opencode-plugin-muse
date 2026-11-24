@@ -172,8 +172,12 @@ percentages rather than a per-turn cost.
   workspace file is accepted only after its exact hash is recorded
   (`bun run doctor --trust-hooks`). `MUSE_ALLOW_PROJECT_HOOKS=1` accepts it for
   one run instead. A `plugin` handler is allowed: every install scope writes
-  into your own store, so it is code you installed and approved rather than a
-  file a checkout can plant, and the doctor prints each handler's origin.
+  into your own store, so it is code you installed rather than a file a
+  checkout can plant. This host still does not run it: the plugin starts
+  `muse serve` with a private config, so the approval in your Muse config is not
+  visible to that host, and `bun run doctor` prints each handler's origin and
+  this limitation. A private config that holds its own approval is amnestied by
+  `muse plugins update` on 1.4.25; this plugin never creates or updates one.
   Skills stay a startup warning, because they are instructions rather than
   commands.
 - **Timeouts.** A host that stops answering is ended, not waited on: no first

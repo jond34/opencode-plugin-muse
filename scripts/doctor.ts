@@ -68,6 +68,42 @@ interface Report {
   hooks: HookReport | null;
 }
 
+/**
+ * P1 A's caveat, in the doctor rather than in a gate. A plugin-origin hook is
+ * allowed, but this host cannot see the approval that would make Muse run it.
+ */
+export const PLUGIN_HOOK_LIMITATION =
+  "installed plugin hooks are outside this record; this host runs them only from an approval in its private config, which the plugin never creates";
+
+/** The hooks row: advisory only. `plugin` rows warn; they never refuse. */
+export function hooksRow(
+  rows: readonly HookRow[],
+  refusal: string | null,
+  accepted = 0,
+  handlers = 0,
+): Check {
+  const plugin = rows.some((row) => row.handlerKind === "plugin");
+  const detail =
+    rows.length === 0
+      ? "no installed handlers"
+      : `${rows.length} handler(s), ${accepted} of ${handlers} declared accepted: ${rows
+          .map(
+            (row) =>
+              `${row.handlerKind}/${row.event}` +
+              `${row.handlerKind === "plugin" ? " (installed plugin)" : ""}` +
+              `${row.enabled ? "" : " (disabled)"}`,
+          )
+          .join(" ")}`;
+  return {
+    id: "hooks",
+    status: refusal !== null || plugin ? "warn" : "ok",
+    detail: plugin ? `${detail}; ${PLUGIN_HOOK_LIMITATION}` : detail,
+    ...(refusal === null
+      ? {}
+      : { remediation: "MUSE_ALLOW_PROJECT_HOOKS=1 for one run, or --trust-hooks" }),
+  };
+}
+
 interface Options {
   readonly json: boolean;
   readonly offline: boolean;
@@ -785,24 +821,7 @@ async function main(): Promise<number> {
     } else {
       const refusal = hookGateRefusal(probe.hooks, root, env);
       trust.refusal = refusal === null ? null : redact(refusal);
-      report.checks.push({
-        id: "hooks",
-        status: refusal === null ? "ok" : "warn",
-        detail:
-          probe.hooks.length === 0
-            ? "no installed handlers"
-            : `${probe.hooks.length} handler(s), ${trust.accepted ?? 0} of ${trust.handlers ?? 0} declared accepted: ${probe.hooks
-                .map(
-                  (row) =>
-                    `${row.handlerKind}/${row.event}` +
-                    `${row.handlerKind === "plugin" ? " (installed plugin)" : ""}` +
-                    `${row.enabled ? "" : " (disabled)"}`,
-                )
-                .join(" ")}`,
-        ...(refusal === null
-          ? {}
-          : { remediation: "MUSE_ALLOW_PROJECT_HOOKS=1 for one run, or --trust-hooks" }),
-      });
+      report.checks.push(hooksRow(probe.hooks, refusal, trust.accepted, trust.handlers));
     }
     const usage = parseAllowance(probe.usage);
     if (usage === null) {

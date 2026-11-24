@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 # 0.1.13 local candidate: patches 3 through 5, not published. The published
 # 0.1.9 and older recorded hashes stay in docs/provenance.md.
-EXPECTED=15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b
+EXPECTED=3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 

@@ -33,7 +33,7 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 0.1.13 local candidate (base + patches 1-5), not published:
 
 ```text
-15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b
+3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120
 ```
 
 160 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
@@ -45,9 +45,11 @@ Round 30 repacked the tarball after moving four unshipped README doc links to
 absolute GitHub URLs. The `dist/` hash above is unchanged. Round 31 then changed
 the package to ship the built `dist/` entry only; the candidate is 165 files
 with tarball SHA-256
-`b1b8fde031aa6797e2d174433d8736edbadc8eb252423f69d2870ec37052b0c1`. The old
+`67c66300921138281f06ba3626ca2658f1325fde5ddc4aa3559a579e96aafd60`. The old
 208-file digest remains in [`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json).
-The second clean builder (E64) was not run because the release stopped at E62.
+Round 33 added the advisory doctor detail, which changed `dist/` to 160 files /
+`3470ecc9…`; the second clean builder (E64) run is recorded in
+[`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json).
 
 Historical tree (base + patches 1-5) at `bcfabcb`, not published:
 
@@ -70,7 +72,7 @@ d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
 | Patch 5 (effort, prompt, and rewritten-history boundaries) | sha256 `8283f7f5f9b168230d9085f3cc7834971c7e1d3237ac97f40fc9c545bba74fdd` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
-| Candidate | `0.1.13`, 160 files, hash `15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b`; not published |
+| Candidate | `0.1.13`, 160 files, hash `3470ecc97c98ef8358aaf77dbea767cebd1824542762ae0fef50713f46d3a120`; not published |
 | Dependency graph | `package-lock.json`, 275 packages |
 
 `evidence/` holds the raw inputs behind this record. It lives in the repository and is

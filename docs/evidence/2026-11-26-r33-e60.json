@@ -1,0 +1,64 @@
+{
+  "experiment": "A5/E60",
+  "date": "2026-11-23",
+  "status": "preflight-only",
+  "question": "What is the registry state before any stage, and can a stage/reject rehearsal run?",
+  "versions": {
+    "node": "v24.22.1",
+    "npm": "11.19.1"
+  },
+  "preflight": {
+    "distTags": {
+      "value": { "latest": "0.1.12" },
+      "command": "npm view @jonathand34/opencode-plugin-muse dist-tags --json"
+    },
+    "versions": {
+      "value": ["0.0.0-stage", "0.1.10", "0.1.11", "0.1.12"],
+      "command": "npm view @jonathand34/opencode-plugin-muse versions --json",
+      "note": "no 0.1.13 public. 0.0.0-stage is an old public probe version, not this release."
+    },
+    "attestation": {
+      "command": "npm view @jonathand34/opencode-plugin-muse@0.1.12 dist.attestations --json",
+      "value": {
+        "url": "https://registry.npmjs.org/-/npm/v1/attestations/@jonathand34%2fopencode-plugin-muse@0.1.12",
+        "provenance": { "predicateType": "https://slsa.dev/provenance/v1" }
+      },
+      "reading": "0.1.12 carries a SLSA provenance attestation. This does not prove 0.1.13 will, because provenance is generated at public publish."
+    },
+    "whoami": {
+      "command": "npm whoami",
+      "value": "jonathand34",
+      "reading": "The local npm session is authenticated. Round 32's E401 is cleared; E60 can read the stage list."
+    },
+    "stageList": {
+      "command": "npm stage list --json",
+      "exit": 0,
+      "value": [],
+      "reading": "No stage is pending. The 0.1.13 absence is verified, not merely unobserved."
+    },
+    "visibility": {
+      "command": "gh repo view jond34/opencode-plugin-muse --json visibility,isPrivate",
+      "value": { "isPrivate": false, "visibility": "PUBLIC" }
+    }
+  },
+  "stageId": null,
+  "tarballHash": null,
+  "candidateHash": null,
+  "stageView": null,
+  "reject": null,
+  "publicVersions": null,
+  "result": "Preflight only. No 0.1.13 is public, no stage is pending, and the local npm session is authenticated.",
+  "branch": "not run",
+  "limits": [
+    "No stage, approve, reject, publish, or tag was performed.",
+    "The reject prompt requires the owner's one-time password; E60 cannot complete unattended even though the token is valid."
+  ],
+  "artifacts": [
+    "scratch/r33-versions.json",
+    "scratch/r33-disttags.json",
+    "scratch/r33-attestations.json",
+    "scratch/r33-whoami.txt",
+    "scratch/r33-stage-list.json",
+    "scratch/r33-visibility.json"
+  ]
+}

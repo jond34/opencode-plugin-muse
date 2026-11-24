@@ -29,6 +29,19 @@ publish, a staged upload, a tag, or a push.
   P2 A: keep the `plugin`-origin allow, document that a user-approved Muse plugin
   hook is inert in this host, and resume after E61/F1/E64/E60. E55a/E55b remain
   blocked on the owner browser; E60 needs `npm login` and reject 2FA.
+- Round 33 implemented the advisory doctor detail and the known-limitation
+  wording. E61 measured B1: a Muse `tool` grant crossed workspaces with no second
+  prompt and no `workspace_root` in the rule. The rebuilt candidate is 165 files,
+  `dist/` `3470ecc9…`, tarball SHA-256 `67c66300…`.
+
+## Watch item
+
+Re-run E65/E65b when a Muse release changes plugin approval loading for `muse
+serve`, or when `hook/list` exposes a per-plugin trust status or hash — on the
+next Muse minor after 1.4.25, or by 2027-02-28, whichever is sooner. If the
+private host starts reading the user's approvals, re-open P1 and implement the
+`plugin` gate. Until then P1 A stands: the allow stays, and the doctor and this
+page carry the caveat.
 
 ## Version policy
 
@@ -152,6 +165,11 @@ name the same commit as the published artifact.
 - No offline or air-gapped path.
 - No automatic approval surface. `allowAll` plus opencode's rules remains the
   current posture; see [`approval.md`](approval.md).
+- No execution of a Muse plugin hook that is approved only in the user's Muse
+  config. The private host config carries no such approval; `bun run doctor`
+  reports the installed handler and the limitation. A private config that holds
+  its own approval is amnestied by `muse plugins update` on 1.4.25, and this
+  plugin never creates or updates one.
 
 ## Evidence
 

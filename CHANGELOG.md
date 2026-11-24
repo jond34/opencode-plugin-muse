@@ -17,6 +17,14 @@ published release.
   with `bun run doctor --trust-hooks` or `MUSE_ALLOW_PROJECT_HOOKS=1` is set for
   one run. Installed plugin handlers remain allowed and are reported by origin.
 
+### Known limitation
+
+- A Muse plugin hook approved in your Muse config does not run in opencode
+  sessions: the plugin starts the host with a private config, so the host sees
+  no approval. A private config that holds its own approval is amnestied by
+  `muse plugins update` on 1.4.25; this plugin never creates or updates one.
+  `bun run doctor` reports an installed plugin handler with this limitation.
+
 ### opencode-owned context and native history
 
 - Titles and compaction are answered inside opencode. Titles are derived from

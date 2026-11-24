@@ -96,11 +96,24 @@ dormant, unapproved plugin hook as `enabled: true` with no trust field, so the
 gate would refuse sessions for hooks the host would not run; the live bypass
 needs an approval inside the private config, which the plugin never creates.
 The release resumes under P2 A after the normal gates, with this limitation and
-the update caveat documented. A watch item covers a Muse change that makes the
-host read the user's approvals. Records:
+the update caveat documented. The doctor makes it visible without gating:
+`bun run doctor` marks its `hooks` row `warn` when any handler has origin
+`plugin` and appends that limitation, but the session still opens. A watch item
+covers a Muse change that makes the host read the user's approvals. Records:
 [`evidence/2026-11-26-r31-e62.json`](evidence/2026-11-26-r31-e62.json) and
 [`evidence/2026-11-26-r32-e65.json`](evidence/2026-11-26-r32-e65.json). This is a
 Muse-side finding, not a claim that the plugin maps a Muse approval.
+
+## Watch item
+
+- **Trigger:** a Muse release changes plugin approval loading for `muse serve`,
+  or exposes a per-plugin trust status or hash on `hook/list`.
+- **Action:** re-run E65 and E65b. If the private host starts reading the user's
+  approvals, re-open P1 and implement B (the `plugin` gate). If `hook/list`
+  exposes a trust status, the gate can refuse only untrusted rows instead of
+  every dormant plugin.
+- **Recheck:** the next Muse minor after 1.4.25, or 2027-02-28 (the dependency
+  review date), whichever is sooner.
 
 ## Why the plugin still uses `allowAll`
 

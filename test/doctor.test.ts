@@ -14,6 +14,8 @@ import {
   configDiagnostics,
   configRow,
   exitCode,
+  hooksRow,
+  PLUGIN_HOOK_LIMITATION,
   pluginRow,
   policyRow,
   postureCheck,
@@ -163,6 +165,47 @@ describe("doctor posture row", () => {
     expect(row.status).toBe("ok");
     expect(row.detail).toContain(":read-only");
     expect(row.detail).not.toContain("catalog");
+  });
+});
+
+/**
+ * P1 A: a plugin-origin hook is allowed and the doctor says why it is inert.
+ * D267 keeps this advisory; the gate itself is pinned in `the gate`.
+ */
+describe("the hooks row", () => {
+  const row = (handlerKind: string) => ({
+    enabled: true,
+    event: "sessionStart",
+    handlerKind,
+    key: `${handlerKind}:k`,
+  });
+
+  test("no handlers is ok and carries no caveat", () => {
+    const check = hooksRow([], null);
+    expect(check.status).toBe("ok");
+    expect(check.detail).toBe("no installed handlers");
+    expect(check.detail).not.toContain(PLUGIN_HOOK_LIMITATION);
+  });
+
+  test("an installed plugin hook warns with the limitation", () => {
+    const check = hooksRow([row("plugin")], null);
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("(installed plugin)");
+    expect(check.detail).toContain(PLUGIN_HOOK_LIMITATION);
+    expect(check.remediation).toBeUndefined();
+  });
+
+  test("a plugin row is still non-blocking", () => {
+    const { root, state } = workspace();
+    const env = { ...process.env, XDG_STATE_HOME: state };
+    expect(hookGateRefusal([row("plugin")], root, env)).toBeNull();
+  });
+
+  test("a project refusal keeps its remediation and gains no plugin caveat", () => {
+    const check = hooksRow([row("project")], "project hooks are not trusted", 0, 1);
+    expect(check.status).toBe("warn");
+    expect(check.remediation).toContain("--trust-hooks");
+    expect(check.detail).not.toContain(PLUGIN_HOOK_LIMITATION);
   });
 });
 
