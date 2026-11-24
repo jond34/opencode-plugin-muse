@@ -126,8 +126,8 @@ restating it, which is what stops a count from drifting in three sentences.
 | Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner | a vendor installer release; re-read `.muse-version` |
 | `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner | re-run `ci/real`; sampler hardened in E29 |
 | The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account | re-read after any `opencode auth login` |
-| A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account | re-read after a Console build change |
-| A Console policy could not be created through this build's UI | target requires a member tag; no tag UI in this build (member menu: View details / Remove only); API write untested | Console `/policies/new`, Settings → Members, build `index-OIWtun4R.js` | 2026-11-24 | this account | Console build pinned in E31; E36/E37 test the API route |
+| A Console policy is visible in `debug config` but not attributable | `info.policies` gains the statement inside the `document` source; no Console-typed source | `opencode debug config` before/during/after E37 | 2026-11-24 | this account | E37; re-read after a Console build change |
+| A Console policy could not be created through E31's read | the builder's audience menu has a hand-picked-members mode; E31 recorded only the collapsed tag trigger; API write untested | Console `/policies/new`, bundle `controls-Bf3Y4t9I.js`, build `index-OIWtun4R.js` | 2026-11-24 | this account | E37 tests the API route; recheck if the builder changes |
 
 ## What a Windows user is consenting to
 

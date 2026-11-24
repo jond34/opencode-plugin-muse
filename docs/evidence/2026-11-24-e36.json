@@ -1,0 +1,23 @@
+{
+  "experiment": "E36",
+  "date": "2026-11-24",
+  "method": "read-only fetch of the pinned Console bundles; no session, no write",
+  "build": "index-OIWtun4R.js",
+  "index_sha256": "2953f14c3b14f565a34beedefaba399fe882e0e4137b2cbc6af62fa29b40da56",
+  "controls_chunk": "controls-Bf3Y4t9I.js",
+  "controls_sha256": "bd17f0cb61907829eee38d75ae8f62856f96c5b92bd69f23ea756ffc24be2956",
+  "target_modes": [
+    ["only", "except"],
+    ["members", "except-members"],
+    ["workspace", "everyone", "all-service-accounts"],
+    ["service-accounts", "except-service-accounts"]
+  ],
+  "finding": "The audience menu groups tag modes, hand-picked-members modes, workspace/everyone/all-service-accounts, and service-account modes. The collapsed trigger renders 'Members tagged with' for the default 'only' mode, which is what E31 recorded. The hand-picked route exists in this build and needs no tag.",
+  "strings": {
+    "members tagged with": 2,
+    "service accounts": 5,
+    "these members": 0,
+    "picked by hand": 0
+  },
+  "note": "The labels for 'members'/'except-members' are composed at runtime (mode -> label), so the changelog phrase is not a literal in the chunk. No member email, cookie, or token is in this artifact."
+}

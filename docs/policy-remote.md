@@ -78,9 +78,11 @@ open), so there is no log line for the doctor to read (E-R21-04).
 The observable surface is `opencode debug config`, not `config status --json`:
 that command is not recognized on 2.4.1. On this machine `opencode debug config
 --standalone` lists one `document` source and two `directory` sources and names
-**no Console source**, even though `opencode auth list` shows Console credentials
-stored; its `info.policies` carries the local statements only (E-R21-05). So the
-doctor can read what a file says, and cannot attribute anything to the Console.
+**no source with a Console type**, even though `opencode auth list` shows Console
+credentials stored; before a Console policy was fetched, its `info.policies`
+carried the local statements only (E-R21-05). E37 showed a Console statement
+appearing in that same `document` source, so the surface changed but the label did
+not. The doctor can read the statement and cannot attribute it to the Console.
 
 There is no API to ask instead. On 2.4.1 `/api/policies`,
 `/api/policies/current`, `/api/experimental/policies` and `/api/config/policies`
@@ -93,7 +95,8 @@ one model (`beam-free`) in the workspace, waiting past the fetch window, and
 re-reading the host changed nothing: the same one `document` and two `directory`
 sources, no Console source, and `beam-free` still listed by `opencode models
 --standalone`. The toggle was restored to `enabled` afterwards. So a workspace
-restriction is not visible through either surface this plugin can read, and the
+model restriction was not visible through either surface this plugin can read.
+A Providers policy is visible in `debug config` (E37), but not attributable; the
 no-attribution rule is measured rather than inferred.
 
 **Round 24 corrects the premise and then hits the policy surface.** Round 23's
@@ -117,10 +120,9 @@ models", and `/policies/new` offers one target, "Members tagged with…", whose
 `Add tag` is disabled because no member tags exist. This build has no member page
 carrying Controls (Settings → Members offers only View and Invite), no per-model
 control on the Models table, and no tag affordance anywhere — `Tag` appears only
-as a table filter.The changelog's hand-picked-member route did not appear in this build, and the one target it did offer could not be used. This Console build (`index-OIWtun4R.js`, 2026-11-24) offered one target, "Members tagged with…", for a one-member personal workspace, and its Add tag and Save were disabled. The Console changelog documents four other targets, including "These members, picked by hand"; none appeared in this build's builder. Whether a tag can be created through the API is untested (E36/E37). The compile question is therefore **unmeasured rather than negative**, which is weaker than round 23 implied: a model toggle never tested a policy, and a policy could not be made to test. The Console was
-left exactly as found — no policy, no reservation, no tag; `debug config` still
-one `document` and two `directory` sources; `opencode models` unchanged at
-112 lines.
+as a table filter.
+
+The changelog's hand-picked-member route exists in this build; E31 read only the collapsed trigger. This Console build (`index-OIWtun4R.js`, 2026-11-24) renders "Members tagged with…" for its default audience mode, and with no tags the Add tag and Save controls were disabled. E36 read the builder chunk (`controls-Bf3Y4t9I.js`): its audience menu groups tag modes with `members`/`except-members` ("These members, picked by hand"), `workspace`/`everyone`/`all-service-accounts`, and service-account modes. The hand-picked route therefore needs no tag and was available; E31 recorded the closed control, not the menu. Whether a tag can be created through the API is still untested, but no longer matters for this route. The compile question is now measured (E37): a policy targeting the sole member with a Providers deny for `mistral` was created through the builder, and `opencode debug config` gained `info.policies: [{action: "provider.use", resource: "mistral", effect: "deny"}]` — inside the existing `document` source, not a source with a Console type. `opencode models` stayed at 112 lines and still listed `mistral`. The policy was then deleted; the statement disappeared, Controls returned to "No policies yet", and the workspace baseline policy set (deny `*`, allow five providers) remained cached in the document. E26 left the account as found; E37 did too.
 
 E31 pinned that observation to a build and read the page's own requests instead of
 its buttons. The build has no footer version and no `x-…-version` header; the pin
@@ -138,14 +140,23 @@ opened in round 24) offers only "View details" and "Remove…", and the builder'
 "Tag members first" link points at that page — so the control is absent from the
 one page the builder sends you to. But the client bundle does carry a tag model:
 the member schema includes `tags` and the members list accepts a `tags` filter, so
-tags exist server-side and only the UI cannot make one.The claim is therefore the narrower one above: this build's builder cannot create the tag it needs, not that tags are unsupported. A write through the API is untested (E36/E37); E32 was not taken because E31 found no route, not because a read settled the API question.
+tags exist server-side and only the UI cannot make one. The tag target is still
+unexercised; the hand-picked target needs no tag, so it does not block a policy.
+
+**What compiles, and what cannot be attributed.** The statement is readable: the
+doctor's `debug config` document carries it, and this plugin could report it as a
+policy on the member. It cannot say where it came from. The source type is
+`document`, the same label a local `opencode.json` gets, so a Console rule and a
+local rule are indistinguishable by provenance. That is the narrow claim: the
+remote half is not unobservable, it is unattributable. The workspace baseline
+(the five-provider allowlist) appears the same way after the first fetch and is
+not removed by deleting a policy.
 
 What that leaves untested is still the wording of a denial: the vendor says a
 Console-derived denial names the workspace, while a local statement does not.
-Reproducing it needs a member tag and a Providers or Tools deny; the tag half is
-not reachable in this build, so E19 stays unmeasured with that cost stated. It
-would not change the doctor either way — the plugin still cannot attribute the
-decision it sees.
+E37 made the policy but did not spend a turn against the denied provider, so E19
+stays unmeasured with that cost stated. A turn is the only way to read the
+sentence; the plugin still cannot attribute it from the sentence alone.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
 source and a stated precedence, and `chrome://policy` can reload and show it.

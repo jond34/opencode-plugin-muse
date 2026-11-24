@@ -1,0 +1,50 @@
+{
+  "experiment": "E37",
+  "date": "2026-11-24",
+  "method": "Console UI session, one reversible policy; no API token or cookie recorded",
+  "build": "index-OIWtun4R.js",
+  "route": "UI, not API",
+  "targets_offered": [
+    "Members tagged with",
+    "All members except those tagged",
+    "These members",
+    "All members except these members",
+    "Entire workspace",
+    "All members",
+    "All service accounts",
+    "These service accounts",
+    "All service accounts except these"
+  ],
+  "policy": {
+    "audience": "These members (the sole workspace member)",
+    "rule": "Providers: Can't use Mistral",
+    "created": true,
+    "deleted": true,
+    "status_codes": null,
+    "note": "created and deleted through the builder; no POST status was available from the UI path"
+  },
+  "debug_config": {
+    "before": {
+      "sources": ["document", "directory", "directory"],
+      "has_info_policies": false,
+      "models": 112
+    },
+    "during": {
+      "sources": ["document", "directory", "directory"],
+      "has_info_policies": true,
+      "statement": { "action": "provider.use", "resource": "mistral", "effect": "deny" },
+      "models": 112,
+      "mistral_listed": true
+    },
+    "after_delete": {
+      "sources": ["document", "directory", "directory"],
+      "test_statement_present": false,
+      "info_policies": "workspace baseline (deny *, allow openai/opencode/opencode-go/muse/deepseek)",
+      "models": 112,
+      "note": "the workspace baseline is cached in the document source after the first fetch; it is not the policy this experiment created, and Controls shows no policies"
+    }
+  },
+  "finding": "The Console statement compiled and was visible in `debug config`, but inside the existing `document` source, not a source with a console type. The test statement disappeared after deletion; the workspace baseline policy set remained cached. `opencode models` never changed (112 lines, mistral still listed), so a provider deny does not remove the model from that listing.",
+  "attribution": "The plugin can read info.policies, but the source type says `document`, so it cannot tell a Console statement from a local one by provenance. This is 'compiled but unattributable', not 'no source'.",
+  "account_after": "Controls: No policies yet. Members unchanged at 1. No invite, no service account, no reservation."
+}

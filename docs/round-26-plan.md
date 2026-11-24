@@ -12,16 +12,16 @@ outlive the artifacts goes in `docs/evidence/`.
 
 | Item | State | Commit | Note |
 |---|---|---|---|
-| A. Documentation corrections | todo | | one commit |
-| B1. JUnit summary + snapshot v2 | todo | | free |
-| B2. Skip ledger guard | todo | | free |
-| B3. Measured-on notes | todo | | free |
-| B4. `runner.arch` in workflow | todo | | free |
-| B5. Claims table + checker | todo | | free, network |
+| A. Documentation corrections | done | `fc3e023` | one commit |
+| B1. JUnit summary + snapshot v2 | done | `84ba90f` | free; 452/41 local after the new tests |
+| B2. Skip ledger guard | done | `84ba90f` | free; five Windows skips declared |
+| B3. Measured-on notes | done | `fc3e023` | covered by A2 |
+| B4. `runner.arch` in workflow | done | `84ba90f` | free |
+| B5. Claims table + checker | done | `84ba90f` | free, network; 15/15 current |
 | E34. Windows coverage | todo | | 1–2 dispatches |
 | E35. Project-scoped plugin hook | todo | | 1–2 real runs |
-| E36. Console target inventory | todo | | free, read-only |
-| E37. Tag/policy write probe | todo | | account writes, reversible |
+| E36. Console target inventory | done | uncommitted | found 9 targets; E31 read the collapsed trigger |
+| E37. Policy write probe | done | uncommitted | UI write; compiled, visible in `document`, not attributable |
 | E38. Grandchild survivor | todo | | 1 dispatch |
 | E39. `denyUnmatched` wildcard | todo | | 1 H run |
 | E40. Citation pass | todo | | free |
