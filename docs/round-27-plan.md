@@ -20,11 +20,11 @@ code, and only if their branches say so.
 | E42. Close after EOF | done | run 45315205129 | `closed` pending; `close()` 7 ms; skip kept |
 | E43. Console denial sentence | done | local control | `Model unavailable`; Console arm unmeasured |
 | E44. MCP rule under `denyUnmatched` | done | 2 turns | no approval offered; store absent; rule half unmeasured |
-| E45. E38 job membership | doing | | 1 dispatch |
-| E46. Windows desktop kit | todo | | owner-assisted, 45 min |
-| E47. Older claim rows | todo | | free |
-| C. Results + decision table | todo | | final commit |
-| O. Owner choices | todo | | only O9/O11 may need a reply |
+| E45. E38 job membership | done | run 45316675044 | both pids in a job; desktop still unmeasured |
+| E46. Windows desktop kit | blocked | docs/scripts landed | owner-assisted; no desktop JSON, so O11 A |
+| E47. Older claim rows | done | 61a64c1 | codex + Vue rows; brew/a4 not reopened |
+| C. Results + decision table | done | final | results recorded in §9 |
+| O. Owner choices | done | defaults applied | O9 A, O10 A+B, O11 A; no reply needed |
 
 ---
 
@@ -544,3 +544,30 @@ be run.
   `docs/integration-landscape.md`.
 - Final report: baseline/final counts, per item command/run/result/branch/cost,
   docs changed, checks, unmeasured items, open choices with recommendations.
+
+---
+
+## 9. Results
+
+| Item | Result | Branch applied | Cost |
+|---|---|---|---|
+| A | E35 first-prompt wording; policy-store sentence narrowed; `document` source and tag route documented; codex + Vue rows added, brew/a4 not reopened | A1–A5 | free |
+| E41 | `SessionStart` fired after the prompt and before `run.lifecycle.started`; unapproved control wrote nothing | D177 | free |
+| E42 | `connection.closed` stayed pending after 10 s while the pid lived; `close()` settled in 7 ms and killed it; skip kept, comment corrected | D193 (deviation from D179) | 1 dispatch |
+| E43 | A document-source `provider.use` deny removes the model; `opencode run` says `Model unavailable: deepseek/deepseek-flash`, not a policy sentence; Console arm not run (no browser session) | D184 variant | $0, no turn |
+| E44 | `onRequest` ran the MCP echo tool without an approval request; no policy store; `denyUnmatched` then rejected the call with `deny_unmatched`. The saved-rule half is unmeasured | D186/D187 variant; O9 A | 2 turns |
+| E45 | Host and detached grandchild both `inJob: true`; 273 samples, 0 failed; no survivor | D188 | 1 dispatch (first E45 run failed on a serializer bug) |
+| E46 | Checklist and probe landed; no owner JSON, so no desktop result | O11 A | owner kit, not run |
+| E47 | codex-doctor and vue-doctor rows added; brew/a4 marked historical/not reopened | D192 | free |
+
+**Checks:** local `npm run check:offline` 452 pass / 0 fail / 41 files;
+`bun scripts/check-claims.ts` 17/17; `git diff --check`; `node --check` on the
+four seam/fixture scripts. CI run 45316675044: Ubuntu 419/0, macOS 419/0,
+Windows 416 pass / 0 fail / 3 skipped of 419; the seam job succeeded with
+E38/E42 informational steps (E42: `closed` pending, `close()` 5 ms).
+
+**Still unmeasured:** whether a manually saved MCP `tool` rule would let the
+bridge through `denyUnmatched` (E44 never got an approval offer); the Console's
+denial sentence for a `provider.use` policy (no browser session); a signed-in
+Windows desktop (E46). No one of these changes a product sentence that the
+measurements do not already support.

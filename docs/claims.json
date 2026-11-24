@@ -75,11 +75,11 @@
     },
     {
       "id": "opencode-63599",
-      "claim": "A core sandbox PR is open and non-draft",
+      "claim": "A core sandbox PR closed unmerged",
       "url": "https://github.com/anomalyco/opencode/pull/63599",
-      "quote": "state open, draft false",
+      "quote": "state closed, draft false, merged false",
       "version": "2.4.1",
-      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 63599, "state": "open", "draft": false }
+      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 63599, "state": "closed", "draft": false }
     },
     {
       "id": "opencode-64093",

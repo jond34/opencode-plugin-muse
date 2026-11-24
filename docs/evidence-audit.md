@@ -54,6 +54,22 @@ landed, so the two cannot disagree about counts.
 | E38. Grandchild | done | `docs/evidence/2026-11-24-e38.json`; no survivor, no reaper |
 | E39. `denyUnmatched` wildcard | blocked | needs a bridged call and a turn; O4 did not fire |
 
+## Round 27 status (2026-11-24)
+
+The live table is in `docs/round-27-plan.md` §Status; this one records what
+landed and what remains thin.
+
+| Item | Status | Where |
+|---|---|---|
+| A. Premise corrections | done | `61a64c1`; `decision-coverage.md`, `policy-remote.md`, `claims.md` |
+| E41. `SessionStart` on 1.4.25 | done | `docs/evidence/2026-11-24-e41.json`; fired after the prompt, before run start |
+| E42. Close after EOF | done | `docs/evidence/2026-11-24-e42.json`; `closed` pending, `close()` 5–7 ms |
+| E43. Console denial sentence | partial | local `Model unavailable`; Console arm not run |
+| E44. Saved MCP rule | partial | no approval offered under `onRequest`; no store; `denyUnmatched` rejected |
+| E45. Job membership | done | `docs/evidence/2026-11-24-e45.json`; both pids `inJob: true` |
+| E46. Windows desktop | blocked | `docs/windows-desktop-check.md`; no owner JSON |
+| E47. Older claims | done | `claims.md`/`claims.json`; 17/17 current; brew/a4 not reopened |
+
 ---
 
 ## F1 — The Windows failure count is wrong: 13, not 14

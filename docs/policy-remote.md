@@ -156,9 +156,12 @@ not removed by deleting a policy.
 
 What that leaves untested is still the wording of a denial: the vendor says a
 Console-derived denial names the workspace, while a local statement does not.
-E37 made the policy but did not spend a turn against the denied provider, so E19
-stays unmeasured with that cost stated. A turn is the only way to read the
-sentence; the plugin still cannot attribute it from the sentence alone.
+E37 made the policy but did not spend a turn against the denied provider. E43's
+local control showed that a `provider.use` deny is enforced at model selection:
+`opencode run` reports `Model unavailable: deepseek/deepseek-flash` without a
+turn, not a policy sentence. The Console arm was not rerun (no browser session),
+so whether a Console-compiled provider deny differs remains unmeasured. The
+plugin still cannot attribute a statement from provenance alone.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
 source and a stated precedence, and `chrome://policy` can reload and show it.
