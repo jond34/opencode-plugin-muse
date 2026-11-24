@@ -34,6 +34,13 @@ export const PLATFORM_SKIPS: readonly PlatformSkip[] = [
     decisionRow: "U23",
   },
   {
+    file: "test/host-process.test.ts",
+    name: "a transport EOF leaves the process alive until something closes it",
+    platform: "win32",
+    reason: "E34 run 45302325853: the pid dies, but the SDK's close promise does not settle after EOF; E16c measures close of a live host",
+    decisionRow: "U22",
+  },
+  {
     file: "test/platform.test.ts",
     name: "POSIX reports the mode the plugin writes",
     platform: "win32",
