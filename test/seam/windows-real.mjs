@@ -37,32 +37,47 @@ function installDir() {
 }
 
 /**
- * Every running Muse process, as `pid|image|parentPid`.
+ * The Windows process table, as `{rows, ok}`, rows `{pid, image, ppid, created}`.
  *
- * `tasklist` does not accept wildcards and the binary's name carries a version
- * (`muse-bin-1.4.25-R9361.1.exe`). CIM also reports the parent, which is the
- * whole point of an orphan check: the survivor's parent is the process that
- * should have reaped it.
+ * E29: this used to query only `Name LIKE 'muse%'` and to *return []* when
+ * powershell failed, so a failed read at the final tick reported a clean close —
+ * the same fail-open the E16c rewrite exists to prevent, one layer down. The
+ * whole table is now read once per sample: the image filter stays, and a child
+ * with any name is attributable through `ParentProcessId`. Windows reuses pids,
+ * so a link must also satisfy `child.created >= parent.created` (Microsoft's
+ * `Win32_Process` guidance); `survivorsIn` applies that check.
  */
-function museProcesses() {
+function processTable() {
   const script =
-    "Get-CimInstance Win32_Process -Filter \"Name LIKE 'muse%'\" | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.Name, $_.ParentProcessId }";
+    "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.ProcessId, $_.Name, $_.ParentProcessId, $_.CreationDate.ToUniversalTime().ToString('o') }";
   try {
     const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8",
       timeout: 30_000,
     });
-    return out
+    const rows = out
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const [pid, image, ppid, created] = line.split("|");
+        return {
+          pid: Number.parseInt(pid, 10),
+          image: image ?? "",
+          ppid: Number.parseInt(ppid, 10),
+          created: created ?? "",
+        };
+      })
+      .filter((row) => Number.isFinite(row.pid));
+    return { rows, ok: true };
   } catch (error) {
     console.log(`process query failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`);
-    return [];
+    return { rows: [], ok: false };
   }
 }
 
-const pidOf = (row) => Number.parseInt(row.split("|")[0], 10);
+const isMuse = (row) => row.image.toLowerCase().startsWith("muse");
+const fmt = (row) => `${row.pid}|${row.image}|${row.ppid}`;
 const dir = installDir();
 console.log(`install dir: ${dir ?? "(LOCALAPPDATA unset)"}`);
 if (dir !== undefined) {
@@ -142,23 +157,70 @@ async function sampleFor(ms) {
   const started = Date.now();
   const seen = new Map();
   let last = [];
+  let failed = 0;
   while (Date.now() - started < ms) {
     await new Promise((resolve) => setTimeout(resolve, 250));
-    last = museProcesses();
-    for (const row of last) seen.set(pidOf(row), row);
+    const sample = processTable();
+    if (!sample.ok) failed += 1;
+    last = sample.rows;
+    for (const row of last) seen.set(row.pid, row);
   }
-  return { last, seen: [...seen.values()], elapsedMs: Date.now() - started };
+  return { last, seen: [...seen.values()], elapsedMs: Date.now() - started, failed };
+}
+
+/**
+ * What in the final sample this run put there: rows whose image starts with
+ * `muse`, and rows whose parent chain reaches one of this run's pids.
+ *
+ * Two lists rather than one number, because they support different sentences.
+ * The image list is the claim the seam already made; the linked list covers a
+ * helper with another name. A child whose parent has already left the table is
+ * unattributable and is reported by neither — that is a limit of the instrument,
+ * stated rather than hidden.
+ */
+function survivorsIn(rows, runPids, baseline) {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const at = (row) => Date.parse(row.created);
+  const linked = (row) => {
+    let current = row;
+    const visited = new Set();
+    for (let hop = 0; hop < 32; hop += 1) {
+      if (!Number.isFinite(current.ppid) || current.ppid === 0 || visited.has(current.ppid)) {
+        return false;
+      }
+      visited.add(current.ppid);
+      const parent = byPid.get(current.ppid);
+      if (parent === undefined) return false;
+      const childAt = at(current);
+      const parentAt = at(parent);
+      // Windows reuses pids: a child cannot predate its parent, so an earlier
+      // parent timestamp means this link is a reuse, not a lineage.
+      if (Number.isFinite(childAt) && Number.isFinite(parentAt) && childAt < parentAt) {
+        return false;
+      }
+      if (runPids.has(parent.pid)) return true;
+      current = parent;
+    }
+    return false;
+  };
+  const imageMatched = rows.filter((row) => !baseline.has(row.pid) && runPids.has(row.pid));
+  const linkedOnly = rows.filter(
+    (row) => !baseline.has(row.pid) && !runPids.has(row.pid) && linked(row),
+  );
+  return { imageMatched, linkedOnly };
 }
 
 // E16c: the real serve lifecycle, closed exactly as the plugin closes it.
 // Three cycles: one clean close can be a race that happened to lose, and a
 // survivor that appears once in three is a flake in the product, not a pass.
-const before = museProcesses();
-console.log(`E16c before: [${before.join(" ")}]`);
-const known = new Set(before.map(pidOf));
+const before = processTable();
+console.log(`E16c before ok=${before.ok}: [${before.rows.map(fmt).join(" ")}]`);
+check("E16c baseline sample succeeded", before.ok);
+const baseline = new Set(before.rows.map((row) => row.pid));
 const cycleWindows = [60_000, 20_000, 20_000];
 let handshakes = 0;
 let probesSawHost = 0;
+let failedSamples = before.ok ? 0 : 1;
 const survivorPids = new Set();
 
 for (const [index, windowMs] of cycleWindows.entries()) {
@@ -177,9 +239,9 @@ for (const [index, windowMs] of cycleWindows.entries()) {
     console.log(
       `cycle ${cycle} handshake: museHome=${host.museHome} granted=[${host.grantedCapabilities().join(", ")}]`,
     );
-    during = museProcesses();
+    during = processTable().rows.filter(isMuse);
     if (during.length > 0) probesSawHost += 1;
-    console.log(`cycle ${cycle} during: [${during.join(" ")}]`);
+    console.log(`cycle ${cycle} during: [${during.map(fmt).join(" ")}]`);
     await host.close();
     console.log(`cycle ${cycle} close: returned`);
   } catch (error) {
@@ -194,12 +256,18 @@ for (const [index, windowMs] of cycleWindows.entries()) {
   // runs in the window's last sample, is a survivor. A pid that vanished from
   // the table was reaped by the close path.
   const sampled = await sampleFor(windowMs);
-  const lastPids = new Set(sampled.last.map(pidOf));
-  const seenNow = new Set([...during, ...sampled.seen].filter((row) => !known.has(pidOf(row))).map(pidOf));
-  const alive = sampled.last.filter((row) => seenNow.has(pidOf(row)) && lastPids.has(pidOf(row)));
-  for (const pid of alive.map(pidOf)) survivorPids.add(pid);
+  failedSamples += sampled.failed;
+  // Pids this cycle showed that were not running before it: the only ones the
+  // image filter may count, and the only parents a descendant may hang from.
+  const runPids = new Set(
+    [...during, ...sampled.seen]
+      .filter((row) => !baseline.has(row.pid) && isMuse(row))
+      .map((row) => row.pid),
+  );
+  const { imageMatched, linkedOnly } = survivorsIn(sampled.last, runPids, baseline);
+  for (const row of [...imageMatched, ...linkedOnly]) survivorPids.add(row.pid);
   console.log(
-    `cycle ${cycle} sampled ${sampled.elapsedMs} ms: last=[${sampled.last.join(" ")}] survivors=[${alive.join(" ")}]`,
+    `cycle ${cycle} sampled ${sampled.elapsedMs} ms (failed=${sampled.failed}, runPids=[${[...runPids].join(" ")}]): image-survivors=[${imageMatched.map(fmt).join(" ")}] linked-survivors=[${linkedOnly.map(fmt).join(" ")}]`,
   );
 }
 
@@ -208,20 +276,23 @@ check("E16c three cycles completed the handshake", handshakes === cycleWindows.l
 // below means nothing, so say that instead of reporting a clean close.
 check("E16c probe saw the live host", probesSawHost > 0, `cycles=${probesSawHost}/${cycleWindows.length}`);
 
+check("E16c every sample succeeded", failedSamples === 0, `failed=${failedSamples}`);
+
+const afterCycles = processTable();
 const survivors = [...survivorPids]
-  .map((pid) => museProcesses().find((row) => pidOf(row) === pid))
+  .map((pid) => afterCycles.rows.find((row) => row.pid === pid))
   .filter((row) => row !== undefined);
-console.log(`E16c survivors=[${survivors.join(" ")}]`);
+console.log(`E16c survivors=[${survivors.map(fmt).join(" ")}]`);
 
 if (survivors.length > 0) {
   for (const row of survivors) {
-    const pid = pidOf(row);
+    const pid = row.pid;
     const killed = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { encoding: "utf8" });
     console.log(`taskkill ${pid}: status=${killed.status} ${(killed.stdout ?? "").trim()}`);
   }
   await new Promise((resolve) => setTimeout(resolve, 1_000));
-  const remainder = museProcesses().filter((row) => !before.some((old) => pidOf(old) === pidOf(row)));
-  console.log(`E16c after taskkill: survivors=[${remainder.join(" ")}]`);
+  const remainder = processTable().rows.filter((row) => !baseline.has(row.pid) && isMuse(row));
+  console.log(`E16c after taskkill: survivors=[${remainder.map(fmt).join(" ")}]`);
   console.log(
     remainder.length === 0
       ? "E16c: close() left an orphan and taskkill /T /F cleared it"
