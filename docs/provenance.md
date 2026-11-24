@@ -42,6 +42,10 @@ this hash. Recording a new hash is release work and is blocked until the `dist`
 rebuild is authorised; until then a mismatch is expected, not a defect in this
 record.
 
+The current tree is unreleased. The latest npm tarball is 0.1.12; patches 3–5
+exist only in this checkout, and a 0.1.13 release is a separate owner decision
+(O15), not an implication of a green suite.
+
 ## Inputs
 
 | Input | Value |
