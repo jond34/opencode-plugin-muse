@@ -142,11 +142,14 @@ describe("resume after a watchdog kill", () => {
     const firstPid = Number(readFileSync(pidFile, "utf8"));
     mark(`host.pid=${firstPid}`);
 
-    // The idle clock is what ends the turn (1000 ms); the rest is starting a
-    // bun child and its handshake. On Windows that cold start measured ~4.0 s
-    // in two runs, so the budget there is the spawn cost, not a shorter claim
-    // (E22).
-    const terminalBudgetMs = process.platform === "win32" ? 15_000 : 4_000;
+    // The idle clock is what ends the turn (1000 ms), so the terminal should
+    // arrive just after it. The 15 s Windows budget existed because the fixture
+    // could not freeze there (no SIGSTOP): it exited 100 ms in, the turn was
+    // never announced, and the wait ran to whatever the budget allowed. With a
+    // portable freeze the measured Windows terminal arrived at 260 ms after the
+    // turn was requested, with the host gone at 2.275 s (E30, run 45295871849),
+    // so 4 s keeps a 15x margin on every platform.
+    const terminalBudgetMs = 4_000;
     // Watched concurrently: awaiting the death first would spend the budget
     // twice when the host never dies, and the 20 s test timeout would eat the
     // trace this instrumentation exists to print (E30).
