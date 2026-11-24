@@ -124,7 +124,7 @@ as a table filter.
 
 The changelog's hand-picked-member route exists in this build; E31 read only the collapsed trigger. This Console build (`index-OIWtun4R.js`, 2026-11-24) renders "Members tagged with…" for its default audience mode, and with no tags the Add tag and Save controls were disabled. E36 read the builder chunk (`controls-Bf3Y4t9I.js`): its audience menu groups tag modes with `members`/`except-members` ("These members, picked by hand"), `workspace`/`everyone`/`all-service-accounts`, and service-account modes. The hand-picked route therefore needs no tag and was available; E31 recorded the closed control, not the menu. Tag creation through the API is untested. It is not on the measured route: E36 found the hand-picked member target, and E37 created the policy without a tag. No tag API is needed for the documented path. The compile question is now measured (E37): a policy targeting the sole member with a Providers deny for `mistral` was created through the builder, and `opencode debug config` gained `info.policies: [{action: "provider.use", resource: "mistral", effect: "deny"}]` — inside the existing `document` source, not a source with a Console type. `opencode models` stayed at 112 lines and still listed `mistral`. The policy was then deleted; the statement disappeared, Controls returned to "No policies yet", and the workspace baseline policy set (deny `*`, allow five providers) remained cached in the document. E26 left the account as found; E37 did too.
 
-E37's Console policy compiled into `debug config`'s `document` source, the same source a local file uses. For `provider.use`, a document-source deny removes the model from selection: E43's local control made `deepseek` disappear from `opencode models` and `opencode run` said `Model unavailable: deepseek/deepseek-flash`, not "Blocked by configuration policy". The policy sentence belongs to an action that is attempted (a tool call), and only organization statements are documented to name the workspace. E43 could not rerun the Console arm (no browser session), so whether a Console-compiled provider deny shows a different sentence is unmeasured.
+E37's Console policy compiled into `debug config`'s `document` source, the same source a local file uses. For `provider.use`, a document-source deny removes the model from selection: E43's local control made `deepseek` disappear from `opencode models` and `opencode run` said `Model unavailable: deepseek/deepseek-flash`, not "Blocked by configuration policy". The policy sentence belongs to an action that is attempted (a tool call), and only organization statements are documented to name the workspace. E49 reran the Console arm in the already-authenticated browser: it created a provider restriction limiting the sole member to the workspace's providers (deny `*`, allow `opencode`/`opencode-go`), waited 90 s, and saw the statement in a second, unpathed `document` source — still not a Console-typed source. `deepseek` disappeared from `opencode models --standalone` and `opencode run --standalone --model deepseek/deepseek-flash "say ok"` exited 1 with exactly `Error: Model unavailable: deepseek/deepseek-flash`, with no workspace name. The policy was deleted; Controls returned to "No policies yet" and deepseek was listed again after 90 s. The unpathed document remained but carried zero policies, so this run did not reproduce E37's cached baseline.
 
 E31 pinned that observation to a build and read the page's own requests instead of
 its buttons. The build has no footer version and no `x-…-version` header; the pin
@@ -150,17 +150,16 @@ doctor's `debug config` document carries it, and this plugin could report it as 
 policy on the member. It cannot say where it came from. The source type is
 `document`, the same label a local `opencode.json` gets, so a Console rule and a
 local rule are indistinguishable by provenance. That is the narrow claim: the
-remote half is not unobservable, it is unattributable. The workspace baseline
-(the five-provider allowlist) appears the same way after the first fetch and is
-not removed by deleting a policy.
+remote half is not unobservable, it is unattributable. E49's workspace baseline
+arrived in the same unpathed document while the policy existed; after deletion
+that source remained but carried no policies, so the baseline did not persist on
+this run the way E37 recorded it.
 
-What that leaves untested is still the wording of a denial: the vendor says a
-Console-derived denial names the workspace, while a local statement does not.
-E37 made the policy but did not spend a turn against the denied provider. E43's
-local control showed that a `provider.use` deny is enforced at model selection:
-`opencode run` reports `Model unavailable: deepseek/deepseek-flash` without a
-turn, not a policy sentence. The Console arm was not rerun (no browser session),
-so whether a Console-compiled provider deny differs remains unmeasured. The
+E49 closes the wording question for this build: a Console-compiled provider
+restriction is enforced at model selection and produces
+`Error: Model unavailable: deepseek/deepseek-flash`, not a workspace-named
+sentence. The documented `Blocked by <workspace>'s policy` belongs to an action
+that is attempted, or to organization statements, not this selection path. The
 plugin still cannot attribute a statement from provenance alone.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy
@@ -178,17 +177,16 @@ configured", and the attempt itself spends a turn or touches the workspace. The
 effect is the only evidence, and it is the same evidence a typo produces. That is
 not a diagnostic; it is a guess with a bill.
 
-The one thing that would narrow this is E14, and round 22 did not run it: there
-was no connected workspace to deny anything, and the probe spends a turn. If a
-Console denial does name its workspace, the effect becomes attributable — still
-not a diagnostic, still not something to probe by default, but no longer
-indistinguishable from a typo. Until then the rule stands as written.
+E14 no longer has a question to answer on this build: E49 measured the denial
+and it is generic. The rule stands as written. A future build that names the
+workspace would change the record, not the probe decision.
 
 ## Condition that changes this record
 
 A queryable policy surface in the host, a `debug config` source the doctor can
 name for a Console-delivered statement, or #60252 shipping with a strict
-validation or reject diagnostic. The cheapest of those is E13 against a connected
-workspace: one policy, one minute, two reads. Until then the status is: local H,
-remote unobservable, no probe, and the docs say a Console or managed policy may
-apply and is not visible here.
+validation or reject diagnostic. E13/E49 have now measured the connected
+workspace: the statement is readable in `document`, not attributable, and the
+denial is generic. Until a named source or a strict diagnostic exists, the status
+is: local H, remote compiled but unattributable, no probe, and the docs say a
+Console or managed policy may apply and is not visible here.

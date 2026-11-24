@@ -1,0 +1,89 @@
+{
+  "experiment": "E49",
+  "date": "2026-11-25",
+  "build": {
+    "opencode": "2.4.1",
+    "console": "existing authenticated Chrome profile; workspace Default"
+  },
+  "pre": {
+    "sources": [
+      {
+        "type": "document",
+        "path": "/home/jonat/.config/opencode/opencode.jsonc"
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.config/opencode"
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.opencode"
+      }
+    ],
+    "policyCount": 6,
+    "deepseekListed": true
+  },
+  "policy": {
+    "target": "sole member, hand-picked",
+    "providerMode": "limited to this workspace's providers",
+    "compiledEffect": "deny provider.use *, allow provider.use opencode and opencode-go",
+    "excludedLocalProvider": "deepseek"
+  },
+  "after": {
+    "sources": [
+      {
+        "type": "document",
+        "path": null,
+        "policyCount": 3,
+        "policyResources": ["*", "opencode", "opencode-go"]
+      },
+      {
+        "type": "document",
+        "path": "/home/jonat/.config/opencode/opencode.jsonc",
+        "policyCount": 6
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.config/opencode"
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.opencode"
+      }
+    ],
+    "models": "deepseek absent from opencode models --standalone",
+    "run": {
+      "command": "opencode run --standalone --model deepseek/deepseek-flash \"say ok\"",
+      "exit": 1,
+      "stderr": "Error: Model unavailable: deepseek/deepseek-flash",
+      "workspaceNamed": false
+    }
+  },
+  "restored": {
+    "controls": "No policies yet",
+    "sources": [
+      {
+        "type": "document",
+        "path": null,
+        "policyCount": 0
+      },
+      {
+        "type": "document",
+        "path": "/home/jonat/.config/opencode/opencode.jsonc",
+        "policyCount": 6
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.config/opencode"
+      },
+      {
+        "type": "directory",
+        "path": "/home/jonat/.opencode"
+      }
+    ],
+    "deepseekListed": true
+  },
+  "finding": "D201: the Console policy compiled into an unpathed document source, not a Console-typed source; the denial is generic 'Model unavailable', not a workspace-named sentence.",
+  "cleanup": "Policy deleted; Controls returned to 'No policies yet'. The unpathed document source remained but carried zero policies. No account state other than the empty source is changed.",
+  "cost": "0 Muse turns; one reversible Console policy plus two local reads."
+}

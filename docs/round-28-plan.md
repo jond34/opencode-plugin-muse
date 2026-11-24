@@ -18,9 +18,9 @@ sentence, or a release gate.
 | A1. E44 premise correction | done | `69c6dfc` | Auto-review vs Ask me; no past evidence rewrite |
 | A2. Release status paragraph | done | `69c6dfc` | current tree is unreleased; npm latest 0.1.12 |
 | E48. Saved MCP rule under `:ask-me` | done | `docs/evidence/2026-11-25-e48.json` | D194; 4 turns across 3 attempts (selector repair) |
-| E49. Console denial sentence | doing | | browser session only; no model turn |
+| E49. Console denial sentence | done | `docs/evidence/2026-11-25-e49.json` | D201; generic `Model unavailable`; no Console-typed source |
 | E50. Windows desktop | blocked | | owner-assisted; no desktop JSON yet |
-| R1. Release readiness audit | todo | | no build, no publish, no tag |
+| R1. Release readiness audit | doing | | no build, no publish, no tag |
 | C. Results and choices | todo | | §8, §9 |
 | O. Owner choices | todo | | defaults in §6; only O15/O17 may need a reply |
 
