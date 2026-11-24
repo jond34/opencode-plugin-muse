@@ -119,6 +119,11 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: node test/seam/windows-grandchild.mjs
+      # E42: diagnose the EOF arm's unsettled close without changing its budget.
+      - name: E42 close after EOF (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: node test/seam/windows-close.mjs
 
   # E16a/E16c: the vendor installer, the binary it writes, and a real `muse
   # serve` closed through the plugin's own path. No credential: the handshake is
