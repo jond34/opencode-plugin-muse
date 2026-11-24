@@ -75,15 +75,15 @@ public static class JobProbe {
 }
 "@
     Add-Type -TypeDefinition $code
-    $out = @{}
+    $out = [ordered]@{}
     foreach ($id in @(${hostPid}, ${grandchildPid})) {
       try {
         $p = Get-Process -Id $id -ErrorAction Stop
         $inJob = $false
         $ok = [JobProbe]::IsProcessInJob($p.Handle, [IntPtr]::Zero, [ref]$inJob)
-        $out[$id] = @{ ok = $ok; inJob = $inJob; error = $null }
+        $out["$id"] = @{ ok = $ok; inJob = $inJob; error = $null }
       } catch {
-        $out[$id] = @{ ok = $false; inJob = $null; error = $_.Exception.Message }
+        $out["$id"] = @{ ok = $false; inJob = $null; error = $_.Exception.Message }
       }
     }
     $out | ConvertTo-Json -Compress
