@@ -56,16 +56,35 @@ jobs:
       # No `scripts/repro.sh`: it is a bash reproduction script, not a test, and
       # it is not meaningful on PowerShell.
       - run: npm ci
+      # B4: the artifact did not say which architecture produced it, and
+      # macos-latest is arm64 while the other two are x64. Record it on the run
+      # and hand it to the summary script, so a later snapshot needs no inference.
+      - name: Record runner
+        shell: bash
+        run: |
+          echo "runner=${{ runner.os }}-${{ runner.arch }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "RUNNER_ARCH=${{ runner.os }}-${{ runner.arch }}" >> "$GITHUB_ENV"
       # `npm run` appends these to the script string, so `tsc` runs first and
       # bun gets the reporter. The artifact is what makes a count question
       # answerable later without another dispatch (E24): per-file tests= counts
       # plus the hostname and commit properties.
       - run: npm run check:offline -- --reporter=junit --reporter-outfile=junit.xml --reporter-junit-suites=flat
+      - name: Summarize JUnit
+        if: always()
+        shell: bash
+        run: |
+          if [ -f junit.xml ]; then
+            mkdir -p junit-frame
+            cp junit.xml junit-frame/junit.xml
+            bun scripts/junit-summary.ts junit-frame > junit-summary.json
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: junit-${{ matrix.os }}
-          path: junit.xml
+          path: |
+            junit.xml
+            junit-summary.json
           if-no-files-found: ignore
 
   # E11/E12: the Windows spawn contract, without Muse. A stub `muse.cmd`, a

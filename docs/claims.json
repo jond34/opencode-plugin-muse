@@ -1,0 +1,125 @@
+{
+  "as_of": "2026-11-24",
+  "claims": [
+    {
+      "id": "muse-scope",
+      "claim": "A Muse plugin can be installed with a project scope",
+      "url": "https://dev.meta.ai/docs/muse-code/changelog",
+      "quote": "/plugins install accepts --scope user or --scope project",
+      "version": "1.4.25",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "muse-hooks-approve",
+      "claim": "A plugin's hooks wait for an explicit approve",
+      "url": "https://meta-models.github.io/muse-code-sdk/latest/guides/plugins/reference/cli/",
+      "quote": "hooks, MCP servers, reminders and agent definitions wait for approve",
+      "version": "1.4.25",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "console-targets",
+      "claim": "The Console documents hand-picked members as a policy target",
+      "url": "https://opencode.ai/console/changelog/budgets-in-policies",
+      "quote": "These members, picked by hand, or everyone except them.",
+      "version": "2026-10-10 entry",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "opencode-54806",
+      "claim": "The turn-cap request was declined",
+      "url": "https://github.com/anomalyco/opencode/issues/54806",
+      "quote": "state closed, reason not_planned",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 54806, "state": "closed" }
+    },
+    {
+      "id": "opencode-53356",
+      "claim": "The turn-cap request is still open",
+      "url": "https://github.com/anomalyco/opencode/issues/53356",
+      "quote": "state open",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 53356, "state": "open" }
+    },
+    {
+      "id": "opencode-63257",
+      "claim": "opencode's MCP client sends no progress token",
+      "url": "https://github.com/anomalyco/opencode/issues/63257",
+      "quote": "state open",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 63257, "state": "open" }
+    },
+    {
+      "id": "opencode-49929",
+      "claim": "A second thread on the same missing progress token",
+      "url": "https://github.com/anomalyco/opencode/issues/49929",
+      "quote": "state open",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 49929, "state": "open" }
+    },
+    {
+      "id": "opencode-28186",
+      "claim": "The earlier duplicate was closed",
+      "url": "https://github.com/anomalyco/opencode/issues/28186",
+      "quote": "state closed, reason duplicate",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 28186, "state": "closed" }
+    },
+    {
+      "id": "opencode-60252",
+      "claim": "A Console policy is decoded with no diagnostic",
+      "url": "https://github.com/anomalyco/opencode/issues/60252",
+      "quote": "state open",
+      "version": "2.4.1",
+      "check": { "kind": "github-issue", "repo": "anomalyco/opencode", "number": 60252, "state": "open" }
+    },
+    {
+      "id": "opencode-63599",
+      "claim": "A core sandbox PR is open and non-draft",
+      "url": "https://github.com/anomalyco/opencode/pull/63599",
+      "quote": "state open, draft false",
+      "version": "2.4.1",
+      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 63599, "state": "open", "draft": false }
+    },
+    {
+      "id": "opencode-64093",
+      "claim": "A second core sandbox PR is open and draft",
+      "url": "https://github.com/anomalyco/opencode/pull/64093",
+      "quote": "state open, draft true",
+      "version": "2.4.1",
+      "check": { "kind": "github-pr", "repo": "anomalyco/opencode", "number": 64093, "state": "open", "draft": true }
+    },
+    {
+      "id": "sep-2663",
+      "claim": "Tasks are an extension with polling and server-elected creation",
+      "url": "https://modelcontextprotocol.io/seps/2663-tasks-extension",
+      "quote": "three methods: tasks/get, tasks/update, and tasks/cancel; ... Task creation is server-directed",
+      "version": "Final, created 2026-04-27",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "taskkill-t",
+      "claim": "taskkill /T walks child processes from the parent id",
+      "url": "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill",
+      "quote": "/T terminates the specified process and any child processes which were started by it",
+      "version": "Windows Server docs",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "node-signals",
+      "claim": "Windows signal termination is forceful and abrupt",
+      "url": "https://nodejs.org/api/process.html#signal-events",
+      "quote": "SIGTERM, SIGKILL, and SIGINT ... terminate the process forcefully and abruptly",
+      "version": "Node 24",
+      "check": { "kind": "http" }
+    },
+    {
+      "id": "mxc-plugin",
+      "claim": "An MXC sandbox plugin ships for opencode",
+      "url": "https://registry.npmjs.org/universal-opencode-sandbox/latest",
+      "quote": "package universal-opencode-sandbox, version 0.4.1",
+      "version": "0.4.1",
+      "check": { "kind": "http" }
+    }
+  ]
+}
