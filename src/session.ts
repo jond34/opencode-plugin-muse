@@ -424,16 +424,16 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     input: CreateSessionInput,
   ): Promise<MuseHarnessSession> {
     // A bridge session is driven by opencode, whose permission evaluation is
-    // the only fence. Only `allowAll` works, and that is measured rather than
-    // assumed (E-D24, round 6): under `denyUnmatched` a bridged call reaches
-    // `tool.started` and is then refused with `deny_unmatched: no policy rule
-    // allows this action`, because no rule matches: Muse's shell rules are
-    // argv-prefix scoped, the plugin cannot pre-seed a `tool` approval, and the
-    // local policy store is unpublished. Muse can save MCP tool approvals
-    // (1.4.0), so this is a pre-seeding limit, not a missing capability.
-    // `onRequest` and `promptUnmatched` were not
-    // run (E-D25/E-D26 skipped): nothing in this plugin answers a Muse approval,
-    // so a request they raised would have no one to settle it.
+    // the only fence. Only `allowAll` works without a Muse approval surface,
+    // and that is measured rather than assumed (E-D24, round 6): under
+    // `denyUnmatched` a bridged call reaches `tool.started` and is refused with
+    // `deny_unmatched: no policy rule allows this action` when no rule matches.
+    // Muse's shell rules are argv-prefix scoped; a `localPersistent` `tool`
+    // approval can match the bridge name (E48: `mcp__opencode__bash` under
+    // `:ask-me`, then a second `denyUnmatched` session ran it), but the store is
+    // unpublished and this plugin cannot pre-seed it. `onRequest` was also
+    // measured (E48): Muse asks, but nothing in this plugin presents that
+    // request to the opencode user, so a bridge on it would hang.
     if (
       input.toolBridge !== undefined &&
       input.approvalMode !== undefined &&
@@ -442,7 +442,7 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       throw new HarnessError({
         code: "invalid_input",
         adapterId: ADAPTER_ID,
-        message: `approvalMode ${input.approvalMode} cannot be answered here; a bridged call matches no policy rule, so only allowAll lets it through`,
+        message: `approvalMode ${input.approvalMode} cannot be used for a bridge session; this plugin has no path that presents a Muse approval to the opencode user`,
       });
     }
     // Starting a bridge the handshake did not grant would fail `session/start`
@@ -495,7 +495,8 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     // A bridge session is driven by opencode, whose permission evaluation is
     // the only fence. Asking Muse as well would double-ask, and a parked Muse
     // approval would hang a turn opencode has already decided. `denyUnmatched`
-    // is not the safe middle: it refuses every bridged call (E-D24).
+    // is not the safe middle: it refuses every unmatched bridged call (E-D24),
+    // and an unseeded session has nothing to match.
     const approvalMode = input.toolBridge !== undefined ? "allowAll" : input.approvalMode;
     const startParams = () => ({
       workspaceRoot: input.cwd,

@@ -1,12 +1,13 @@
 /**
- * E44: can a locally-persistent `tool` approval let a bridged MCP call run
- * under `denyUnmatched`?
+ * E48: does an MCP tool approval exist under Ask me, and can a locally-persistent
+ * `tool` approval let the bridged name run under `denyUnmatched`?
  *
- * Session 1 starts with `onRequest`, asks the model to call the fixture's
- * `echo` tool, and chooses the `localPersistent` allow choice when Muse asks.
- * Session 2 starts with `denyUnmatched` and the same MCP server. The result
- * records whether the tool runs, whether an approval was requested again, and
- * the policy store path/rule preview. Capped at three turns.
+ * Both sessions explicitly select `:ask-me` and require the SDK to prove that
+ * profile was applied. Session 1 starts with `onRequest`, asks the model to call
+ * the fixture's `mcp__opencode__bash`, and chooses the `localPersistent` allow
+ * choice when Muse asks. Session 2 starts with `denyUnmatched` and the same MCP
+ * server. The result records the approval menu, whether the tool runs, and the
+ * policy store path/rule preview. Capped at three turns.
  *
  * Run under `zsh -lc` so Muse's provider credentials are loaded.
  */
@@ -19,18 +20,19 @@ import { MuseClient } from "@muse-code/sdk";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "..", "fixtures", "fake-mcp-tool.mjs");
-const OUT = join(HERE, "..", "..", "scratch", "r27-e44-result.json");
+const OUT = join(HERE, "..", "..", "scratch", "r28-e48-result.json");
 const MAX_TURNS = 3;
 
-const workdir = mkdtempSync(join(tmpdir(), "muse-e44-"));
+const workdir = mkdtempSync(join(tmpdir(), "muse-e48-"));
 const mcpLog = join(workdir, "mcp.log");
-const prompt = "Call the echo tool once with the text hi. Do not answer in text.";
+const prompt = "Call the bash tool once with the text hi. Do not answer in text.";
 
 const result = {
-  experiment: "E44",
-  date: "2026-11-24",
+  experiment: "E48",
+  date: "2026-11-25",
   muse: "1.4.25",
   prompt,
+  permissionProfiles: [],
   turns: 0,
   sessions: [],
   approvals: [],
@@ -66,20 +68,25 @@ function handlerFor(session, label) {
       choices: offered,
     };
     result.approvals.push(entry);
+    // The host labels a saved allow `approvedPolicyAmendment`, not `allow`;
+    // treating only `allow` as persistent silently downgrades to Allow once.
     const persistent = offered.find(
-      (choice) => choice.scope === "localPersistent" && choice.decision === "allow",
+      (choice) =>
+        choice.scope === "localPersistent" &&
+        (choice.decision === "approvedPolicyAmendment" || choice.decision === "allow"),
     );
     const allow = offered.find((choice) => choice.decision === "allow");
     const reject = offered.find((choice) => choice.decision === "deny");
     const chosen = persistent ?? allow ?? reject ?? offered[0];
     entry.chosen = chosen?.choiceId ?? null;
+    if (chosen === undefined) throw new Error("approval offered no choices");
     return { choiceId: chosen.choiceId };
   });
 }
 
 function mcpConfig() {
   return {
-    e44: {
+    opencode: {
       transport: "stdio",
       command: process.execPath,
       args: [FIXTURE],
@@ -96,17 +103,36 @@ async function open(approvalMode, label) {
     args: ["serve", "--trust-workspace"],
     cwd: workdir,
     env: process.env,
-    clientInfo: { name: "e44_probe", version: "0" },
+    clientInfo: { name: "e48_probe", version: "0" },
+    // `permissionState` is an experimental field on the stable session snapshot.
+    // Without this opt-in the SDK cannot prove the :ask-me selection, and the
+    // probe would run on the host default it is trying to rule out.
+    capabilities: { experimentalApi: true },
     shutdownTimeoutMs: 0,
   });
-  const session = await client.startSession({
-    workspaceRoot: workdir,
-    approvalMode,
-    modelId: "muse-spark-1.3",
-    config: { mcpServers: mcpConfig() },
-  });
-  handlerFor(session, label);
-  return { client, session };
+  try {
+    const session = await client.startSession({
+      workspaceRoot: workdir,
+      approvalMode,
+      permissionProfile: ":ask-me",
+      requirePermissionProfile: true,
+      modelId: "muse-spark-1.3",
+      config: { mcpServers: mcpConfig() },
+    });
+    const started = session.opening?.result?.session ?? null;
+    const permissionState = started?.permissionState ?? null;
+    result.permissionProfiles.push({
+      session: label,
+      requested: ":ask-me",
+      committed: permissionState?.profileId ?? null,
+      permissionState,
+    });
+    handlerFor(session, label);
+    return { client, session };
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 async function turn(session, label) {
@@ -154,7 +180,7 @@ function readStore(path) {
       bytes: text.length,
       matchingLines: text
         .split("\n")
-        .filter((line) => /e44|echo/i.test(line))
+        .filter((line) => /opencode|bash/i.test(line))
         .slice(0, 20),
     };
   } catch (error) {

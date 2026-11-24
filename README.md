@@ -134,11 +134,14 @@ percentages rather than a per-turn cost.
   pre-check here to bypass, and the gate is opencode's (`allowAll`'s vendor
   justification is the same boundary: the client already holds the user's
   ambient authority). The bridge's denial path is pinned by a test. `allowAll`
-  is measured, not assumed: `denyUnmatched` refuses every bridged call
+  is measured, not assumed: an unseeded `denyUnmatched` refuses every bridged call
   (`deny_unmatched: no policy rule allows this action`). Muse's shell rules are
-  argv-prefix scoped; MCP tool approvals can be saved locally since 1.4.0, but
-  the store is unpublished and this plugin cannot pre-seed a rule, so an
-  unseeded `denyUnmatched` has nothing to match. Approval is
+  argv-prefix scoped; MCP tool approvals can be saved locally since 1.4.0. E48
+  measured the bridge's registered name: `:ask-me` offered "Always allow this MCP
+  tool" for `mcp__opencode__bash`, wrote a `localPersistent` rule, and a second
+  `denyUnmatched` session ran the tool with no approval. This plugin still starts
+  `allowAll` because it has no path that presents Muse's approval to the opencode
+  user; a saved rule removes the refusal, not the missing surface. Approval is
   not the only layer, but the layers are not stacked here. The stack is one gate
   and one allowlist. Every bridged call is emitted into opencode, which decides
   and runs it, so the gate is opencode's permission rules; the allowlist is

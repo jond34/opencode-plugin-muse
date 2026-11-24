@@ -1,8 +1,12 @@
 /**
- * E44's minimal MCP server: one `echo` tool, newline-delimited JSON-RPC.
+ * E48's minimal MCP server: one `bash` tool under the server name `opencode`,
+ * so the registered name is `mcp__opencode__bash` — the bridge's actual name.
  *
  * `FAKE_MCP_LOG` gets one JSON line per request, so the probe can tell whether
- * Muse actually reached `tools/call` in the second session.
+ * Muse actually reached `tools/call` in either session.
+ *
+ * The tool only echoes its argument. It must never execute a shell: this is an
+ * approval probe, not a command runner.
  */
 import { appendFileSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
@@ -38,7 +42,7 @@ process.stdin.on("data", (chunk) => {
       respond(message.id, {
         protocolVersion: "2025-06-18",
         capabilities: { tools: {} },
-        serverInfo: { name: "e44-fixture", version: "0.1.0" },
+        serverInfo: { name: "e48-fixture", version: "0.1.0" },
       });
       continue;
     }
@@ -46,8 +50,9 @@ process.stdin.on("data", (chunk) => {
       respond(message.id, {
         tools: [
           {
-            name: "echo",
-            description: "Echo the text argument back.",
+            name: "bash",
+            description: "Run a harmless check and echo the text argument back.",
+            annotations: { readOnlyHint: false, destructiveHint: true },
             inputSchema: {
               type: "object",
               properties: { text: { type: "string" } },

@@ -1,0 +1,208 @@
+{
+  "experiment": "E48",
+  "date": "2026-11-25",
+  "muse": "1.4.25",
+  "prompt": "Call the bash tool once with the text hi. Do not answer in text.",
+  "permissionProfiles": [
+    {
+      "session": "onRequest",
+      "requested": ":ask-me",
+      "committed": ":ask-me",
+      "permissionState": {
+        "axes": {
+          "approval": "onRequest",
+          "filesystem": "sandboxed",
+          "network": "off",
+          "reviewer": "human"
+        },
+        "profileId": ":ask-me",
+        "reviewerAttached": true,
+        "reviewerAuthority": "human"
+      }
+    },
+    {
+      "session": "denyUnmatched",
+      "requested": ":ask-me",
+      "committed": ":ask-me",
+      "permissionState": {
+        "axes": {
+          "approval": "onRequest",
+          "filesystem": "sandboxed",
+          "network": "off",
+          "reviewer": "human"
+        },
+        "profileId": ":ask-me",
+        "reviewerAttached": true,
+        "reviewerAuthority": "human"
+      }
+    }
+  ],
+  "turns": 2,
+  "sessions": [
+    {
+      "session": "onRequest",
+      "turnId": "01a20ba2-1ad2-7000-826e-acb6ce13201c",
+      "outcome": {
+        "kind": "completed",
+        "observedStart": true,
+        "params": {
+          "durationMs": 15074,
+          "sessionId": "01a20ba2-19f5-7f22-954e-038ae4f443ab",
+          "sourceRange": {
+            "first": {
+              "id": "01a20ba2-55da-7222-bbce-8530af531c51",
+              "sequence": 149
+            },
+            "last": {
+              "id": "01a20ba2-55da-7222-bbce-8530af531c51",
+              "sequence": 149
+            },
+            "stream": {
+              "id": "01a20ba2-19f5-7f22-954e-038ae4f443ab",
+              "kind": "session"
+            }
+          },
+          "terminal": "completed",
+          "timeToFirstTokenMs": 5649,
+          "turnId": "01a20ba2-1ad2-7000-826e-acb6ce13201c",
+          "viewCursor": "v10:01a20ba2-19f5-7f22-954e-038ae4f443ab:31"
+        }
+      },
+      "finalText": "Called `bash` with `hi`; observed `echo:hi`. No files changed.",
+      "toolCalls": [
+        {
+          "toolName": "mcp__opencode__bash",
+          "status": "completed"
+        }
+      ],
+      "usage": null
+    },
+    {
+      "session": "denyUnmatched",
+      "turnId": "01a20ba2-5977-7000-b779-b041a98b057d",
+      "outcome": {
+        "kind": "completed",
+        "observedStart": true,
+        "params": {
+          "durationMs": 14926,
+          "sessionId": "01a20ba2-5882-7db1-83d3-4df177e13b86",
+          "sourceRange": {
+            "first": {
+              "id": "01a20ba2-93f0-7622-97b8-d4837f350432",
+              "sequence": 144
+            },
+            "last": {
+              "id": "01a20ba2-93f0-7622-97b8-d4837f350432",
+              "sequence": 144
+            },
+            "stream": {
+              "id": "01a20ba2-5882-7db1-83d3-4df177e13b86",
+              "kind": "session"
+            }
+          },
+          "terminal": "completed",
+          "timeToFirstTokenMs": 4216,
+          "turnId": "01a20ba2-5977-7000-b779-b041a98b057d",
+          "viewCursor": "v10:01a20ba2-5882-7db1-83d3-4df177e13b86:28"
+        }
+      },
+      "finalText": "Called `bash` with `hi` — result `echo:hi`.",
+      "toolCalls": [
+        {
+          "toolName": "mcp__opencode__bash",
+          "status": "completed"
+        }
+      ],
+      "usage": null
+    }
+  ],
+  "approvals": [
+    {
+      "session": "onRequest",
+      "approvalId": "01a20ba2-26f3-7192-ae34-48aaf5a82dfe",
+      "subjectKind": "tool",
+      "subjectToolName": "mcp__opencode__bash",
+      "toolName": "mcp__opencode__bash",
+      "choices": [
+        {
+          "choiceId": "allow_once",
+          "label": "Allow once",
+          "decision": "approved",
+          "scope": "once",
+          "rulePreview": null
+        },
+        {
+          "choiceId": "allow_session",
+          "label": "Allow for this session",
+          "decision": "approvedForSession",
+          "scope": "session",
+          "rulePreview": "tool `mcp__opencode__bash`"
+        },
+        {
+          "choiceId": "allow_local_mcp_tool",
+          "label": "Always allow this MCP tool",
+          "decision": "approvedPolicyAmendment",
+          "scope": "localPersistent",
+          "rulePreview": "tool `mcp__opencode__bash`"
+        },
+        {
+          "choiceId": "abort",
+          "label": "Reject",
+          "decision": "abort",
+          "scope": "once",
+          "rulePreview": null
+        }
+      ],
+      "chosen": "allow_local_mcp_tool"
+    }
+  ],
+  "policyStore": {
+    "path": "/home/jonat/.config/muse/approval-policy.json",
+    "bytes": 240,
+    "matchingLines": [
+      "        \"tool_name\": \"mcp__opencode__bash\""
+    ]
+  },
+  "finding": {
+    "firstToolRan": true,
+    "secondToolRan": true,
+    "secondToolRejected": false,
+    "secondApprovalRequested": false,
+    "mcpReached": 6
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "outcome": "blocked-before-turn",
+      "error": "PermissionProfileNotApplied: stable snapshot stripped permissionState; no turn sent",
+      "turns": 0
+    },
+    {
+      "attempt": 2,
+      "outcome": "approval-offered-selector-bug",
+      "note": "Both sessions committed :ask-me. Muse offered allow_local_mcp_tool, but the probe treated only decision=allow as persistent and chose allow_once. No rule was saved.",
+      "turns": 2
+    },
+    {
+      "attempt": 3,
+      "outcome": "D194",
+      "note": "Selector fixed to accept approvedPolicyAmendment; persistent rule saved and second denyUnmatched session ran.",
+      "turns": 2
+    }
+  ],
+  "storeContents": {
+    "schema_version": 2,
+    "rules": [
+      {
+        "effect": "allow",
+        "durability": "local_persistent",
+        "rule": {
+          "kind": "tool_action",
+          "tool_name": "mcp__opencode__bash"
+        },
+        "reason": null
+      }
+    ]
+  },
+  "cleanup": "removed the probe-created store after copying it here; it contained only the E48 rule"
+}
