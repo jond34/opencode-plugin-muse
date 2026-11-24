@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { HEADERS } from "../src/language-model.js";
-import { createArm } from "../bench/arms.js";
+import { productionArm } from "./harness/production-arm.js";
 
 /**
  * Phase 8a: the three ways a parked bridge call can end without a tool result.
@@ -83,7 +83,7 @@ async function until(what: string, predicate: () => boolean, ms = 3000): Promise
 
 describe("a parked bridge call", () => {
   test("a denied result reaches the model as an error carrying the reason", async () => {
-    const arm = createArm("production", { toolName: "bash" });
+    const arm = productionArm({ toolName: "bash" });
     try {
       const step = await arm.model.doStream(request("deny-1", [said("run the sentinel")]));
       const parts = await withDeadline(collect(step), "first step");
@@ -122,7 +122,7 @@ describe("a parked bridge call", () => {
   });
 
   test("a turn that ends while the call is parked rejects instead of hanging", async () => {
-    const arm = createArm("production", { toolName: "bash", failTurnWhileParked: true });
+    const arm = productionArm({ toolName: "bash", failTurnWhileParked: true });
     try {
       const step = await arm.model.doStream(request("deny-2", [said("run the sentinel")]));
       // The stream may fail with the turn; the claim under test is the parked
@@ -139,7 +139,7 @@ describe("a parked bridge call", () => {
   });
 
   test("closing the session while the call is parked rejects it", async () => {
-    const arm = createArm("production", { toolName: "bash" });
+    const arm = productionArm({ toolName: "bash" });
     const step = await arm.model.doStream(request("deny-3", [said("run the sentinel")]));
     await withDeadline(collect(step), "first step");
     expect(arm.adapter.sessions[0]?.toolResults).toHaveLength(0);

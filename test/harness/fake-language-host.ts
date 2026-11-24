@@ -6,13 +6,13 @@ import type {
   HarnessToolResult,
   HarnessTurn,
   StartTurnInput,
-} from "../src/contract/index.js";
-import { MUSE_CAPABILITIES } from "../src/capabilities.js";
-import type { LanguageAdapter, LanguageOpenSessionInput, LanguageSession } from "../src/language.js";
-import type { ContextUsage } from "../src/session.js";
+} from "../../src/contract/index.js";
+import { MUSE_CAPABILITIES } from "../../src/capabilities.js";
+import type { LanguageAdapter, LanguageOpenSessionInput, LanguageSession } from "../../src/language.js";
+import type { ContextUsage } from "../../src/session.js";
 
 /**
- * A deterministic language host for the bench.
+ * A deterministic language host for the public bridge tests.
  *
  * It records the exact text the provider sends, calls the real tool bridge
  * when a script says so, and emits the same normalized events a Muse host
