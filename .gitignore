@@ -13,15 +13,5 @@ scratch/
 tmp/
 evidence/*.tgz
 
-# Local-only records (release-plan §5). Never published to GitHub.
-bench/*.md
-bench/prereg/
-bench/audit3.ts
-bench/stats.ts
-bench/power.ts
-bench/report.ts
-docs/native-history.md
-docs/steady-state.md
-test/bench.test.ts
-test/bench-stats.test.ts
-test/native-history-harness.test.ts
+# Local experiment harness; not public
+bench/
