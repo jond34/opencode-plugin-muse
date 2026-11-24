@@ -31,8 +31,12 @@ boundary belongs with the vendor, not here.
 Releases are published from GitHub Actions using npm trusted publishing, with a
 staged package that the maintainer approves with 2FA. Each version carries a
 provenance attestation naming the repository, workflow, and commit it was built
-from. No long-lived npm token is used to publish. The gates and rollback are in
-[`docs/release.md`](docs/release.md). You can check a release yourself:
+from. Automatic provenance depends on three conditions: the staged publish uses
+OIDC/trusted publishing, the source repository is public, and the npm package is
+public. This repository and package meet them; a private mirror or fork does not
+inherit this sentence. No long-lived npm token is used to publish. The gates and
+rollback are in [`docs/release.md`](docs/release.md). You can check a release
+yourself:
 
 ```
 npm audit signatures

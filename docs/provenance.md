@@ -41,6 +41,12 @@ tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
 hash. The candidate is local only: the latest npm tarball is 0.1.12, patches 3–5
 exist only in this checkout, and publishing is a separate owner action (O15).
 
+Round 30 repacked the tarball after moving four unshipped README doc links to
+absolute GitHub URLs. The `dist/` hash above is unchanged; this file is itself
+packaged, so the tarball digest is recorded in
+[`evidence/2026-11-26-r30-e51.json`](evidence/2026-11-26-r30-e51.json) instead of
+being repeated here.
+
 Historical tree (base + patches 1-5) at `bcfabcb`, not published:
 
 ```text

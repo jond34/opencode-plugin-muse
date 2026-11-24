@@ -81,6 +81,26 @@ landed and what remains thin.
 | E53. Windows desktop | blocked | no owner JSON; D221, O17 A, desktop row retired |
 | E54. Two-gate spike | not run | O16 A; double gate remains recorded in `docs/approval.md` |
 
+## Round 30 status (2026-11-23)
+
+The live table is in `docs/round-30-plan.md` §Status; this one records what
+landed, what is blocked, and what was explicitly not run.
+
+| Item | Status | Where |
+|---|---|---|
+| A1. Approval trace | done | D231; E-D24/D27 marked superseded by E48; E44 addendum |
+| A2. Release instructions | done | `docs/release.md`; stage-ID sequence and 2FA boundary; `SECURITY.md` conditions |
+| A3. Package docs | done | O26 B; four README links absolute; E51 rerun, shasum `caf36bb5…` |
+| A4. Dependency gate | done | 25 moderate / 0 high / 0 critical; O25 A, review 2027-02-28 |
+| A5. E52 addendum | done | fresh-install warnings are expected; no release effect |
+| E55. Console matrix | blocked | D232-D; no owner-authenticated browser; no new claim |
+| E56. Project hook firing | done | D233-A; approved marker fired, unapproved control wrote nothing |
+| E57. Rule durability | done | D234-A; seeded E48 rule ran after restart in a second workspace |
+| E58. One-prompt spike | not run | O29 A; O16 B not live |
+| E59. Windows desktop | blocked | D236-D; O27 C; kit is `docs/windows-desktop-check.md` |
+| E60. Stage rehearsal | not run | D239-D; no push/stage authorization |
+| F. Final checks and commit | done | 452 pass / 0 fail / 41 files; claims 17/17; repro PASS; diff check clean |
+
 ---
 
 ## Round 27 status (2026-11-24)

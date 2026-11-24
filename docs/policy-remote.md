@@ -159,7 +159,13 @@ E49 closes the wording question for this build: a Console-compiled provider
 restriction is enforced at model selection and produces
 `Error: Model unavailable: deepseek/deepseek-flash`, not a workspace-named
 sentence. The documented `Blocked by <workspace>'s policy` belongs to an action
-that is attempted, or to organization statements, not this selection path. The
+that is attempted, or to organization statements, not this selection path.
+
+**Round 30 did not extend this.** E55's owner-browser Console matrix — one
+provider deny, one allowlist, one tool deny, polled at 0/30/60/90/120 seconds —
+was blocked because no owner-authenticated browser was available. No policy was
+created or deleted, no new source type or denial sentence was observed, and the
+E37/E49 timing and attribution record stands without a new claim. The
 plugin still cannot attribute a statement from provenance alone.
 
 The field technique is Chrome Enterprise's policy page: it shows a per-policy

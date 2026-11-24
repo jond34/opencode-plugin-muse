@@ -34,8 +34,12 @@ asking for `:ask-me`. The approval menu offered:
 
 Choosing `allow_local_mcp_tool` wrote a `schema_version: 2` store with a
 `tool_action` rule for `mcp__opencode__bash`. A second `denyUnmatched` session
-then ran the same tool with no approval request. The saved-rule half is settled;
-the evidence is [`evidence/2026-11-25-e48.json`](evidence/2026-11-25-e48.json).
+then ran the same tool with no approval request. E57 repeated that rule after
+closing the host and in a second workspace; both sessions ran the tool with no
+approval. The rule was seeded from E48's recorded store, so this is durability
+at name level, not a new approval-menu run. The evidence is
+[`evidence/2026-11-25-e48.json`](evidence/2026-11-25-e48.json) and
+[`evidence/2026-11-26-r30-e57.json`](evidence/2026-11-26-r30-e57.json).
 
 ## Why the plugin still uses `allowAll`
 

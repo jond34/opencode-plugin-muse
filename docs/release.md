@@ -16,6 +16,11 @@ publish, a staged upload, a tag, or a push.
 - The next version is `0.1.13` (O21 A). It is prepared locally, reproducible
   from the lockfile, and not published by the preparation round. The candidate
   hash is recorded in [`provenance.md`](provenance.md).
+- Round 30 repacked the candidate after moving four README doc links to absolute
+  GitHub URLs: tarball shasum `caf36bb5…`, 208 files. The dependency gate records
+  25 moderate and no high/critical; O25 A accepts them with a 2027-02-28 review.
+  Release is **held**: E55's Console matrix is blocked on the owner browser, and
+  E60's stage rehearsal was not authorized.
 
 ## Version policy
 
@@ -38,11 +43,27 @@ All of these run before the candidate is called ready:
 4. `npm pack` inspection — required files present; no scratch, tests, evidence
    tarballs, `.env*`, `.git`, or owner-modified files.
 5. Isolated install and import from the packed tarball, outside this checkout.
-6. The Windows sentence stays best-effort unless a named desktop result exists.
-7. `git diff --check`; the only unstaged file is the owner's integration file.
+6. `npm audit --omit=dev` against a clean install of the packed tarball, with the
+   dependency gate below.
+7. The Windows sentence stays best-effort unless a named desktop result exists.
+8. `git diff --check`; the only unstaged file is the owner's integration file.
 
 A green suite is necessary, not sufficient. It does not exercise the publish
 workflow, the registry, or a model turn.
+
+## Dependency gate
+
+Run `npm audit --omit=dev` in a clean install of the packed tarball, not only in
+this checkout. The release rule is:
+
+- **high or critical:** block the release;
+- **moderate:** record the count, the dependency path, and whether the vulnerable
+  code is reachable from the plugin's loaded entry; accept only with a written
+  review date;
+- **low or none:** record the result and proceed.
+
+Do not run `npm audit fix --force` as part of a release. The current candidate
+result is in `docs/evidence/2026-11-26-r30-dep.json`.
 
 ## Publish flow
 
@@ -50,18 +71,33 @@ The workflow uses GitHub OIDC trusted publishing, so no long-lived npm token is
 stored. Under O22 A the flow is:
 
 1. CI checks out the candidate, runs the gates, then runs `npm stage publish`.
-2. The owner reviews the staged tarball and approves with 2FA, either with
-   `npm stage approve` or on npmjs.com.
-3. Only then does the version become public.
+2. The owner reads the stage ID from `npm stage list --json`.
+3. The owner inspects it, downloads it, and compares its digest with the
+   candidate:
+
+   ```bash
+   npm stage list --json
+   npm stage view <stage-id>
+   npm stage download <stage-id>
+   # inspect the tarball and compare its sha256 with the candidate
+   ```
+
+4. The owner approves that exact ID with `npm stage approve <stage-id>` and 2FA.
+   On npmjs.com the same review and approval are available in the UI.
+5. If the stage is wrong, reject it with `npm stage reject <stage-id>`. Only an
+   approved stage becomes public.
+
+`npm stage approve` takes a **stage ID**, never a package spec. `npm stage
+publish` does not require 2FA; approval does. The trusted publisher should be
+configured as **stage-only**; that setting is owner-side, not repo-side, and
+rejects a direct `npm publish` from the workflow. The workflow does not publish
+anything until the owner dispatches it.
 
 Staged publishing requires npm CLI 11.15.0+. The workflow pins `npm@11.19.1`
-before `npm ci` so the runner does not depend on the bundled CLI. The trusted
-publisher should be configured as **stage-only**; that setting is owner-side,
-not repo-side, and rejects a direct `npm publish` from the workflow. The
-workflow change does not publish anything until the owner dispatches it.
+before `npm ci` so the runner does not depend on the bundled CLI.
 
-If the stage cannot be approved, reject it. A staged package is not a registry
-version and does not need a rollback.
+A staged package is not a registry version. If it cannot be approved, reject it;
+it does not need a rollback.
 
 ## Rollback
 

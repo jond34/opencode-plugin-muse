@@ -142,7 +142,7 @@ percentages rather than a per-turn cost.
   `denyUnmatched` session ran the tool with no approval. This plugin still starts
   `allowAll` because it has no path that presents Muse's approval to the opencode
   user; a saved rule removes the refusal, not the missing surface. The measured
-  posture and the double-gate constraint are in [`docs/approval.md`](docs/approval.md). Approval is
+  posture and the double-gate constraint are in [`docs/approval.md`](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/approval.md). Approval is
   not the only layer, but the layers are not stacked here. The stack is one gate
   and one allowlist. Every bridged call is emitted into opencode, which decides
   and runs it, so the gate is opencode's permission rules; the allowlist is
@@ -256,7 +256,7 @@ percentages rather than a per-turn cost.
   vendor's sandbox may ask for UAC consent when it initialises — a headless spawn
   cannot answer that, and it surfaces 900 s later as `host_idle_timeout`. The
   doctor's `platform` row states all three for the machine it runs on; the
-  capability table is [`docs/platform-support.md`](docs/platform-support.md).
+  capability table is [`docs/platform-support.md`](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/platform-support.md).
 
 ### A hard stop, if you want one
 
@@ -311,7 +311,7 @@ machine there is no log line to check and the effect is the only evidence. A
 Console or managed policy may therefore apply and is not visible here: `opencode
 debug config` on this machine names local sources only, and Console outranks a
 global or project file. The two halves and the precedence order are recorded in
-[`docs/policy-remote.md`](docs/policy-remote.md).
+[`docs/policy-remote.md`](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/policy-remote.md).
 
 `tool.use` is the denial that names itself. Its resource is `<action>:<value>`,
 matched against every check the tool makes, so `read:*` covers every read and
@@ -572,7 +572,7 @@ bash scripts/repro.sh
 It installs from the committed lockfile, compiles, and compares the resulting `dist/`
 against the hash recorded for this tree in `docs/provenance.md`. It prints `PASS` or
 exits non-zero. The reproducible build, package, and publish gates are in
-[`docs/release.md`](docs/release.md); the hash of the published 0.1.9 tarball and
+[`docs/release.md`](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/release.md); the hash of the published 0.1.9 tarball and
 the candidate record are in `docs/provenance.md`.
 
 ```bash
@@ -624,7 +624,7 @@ be written.
 The npm package is built and staged by `.github/workflows/publish.yml` on
 GitHub Actions, then approved with 2FA before it becomes public. Every version
 carries a provenance attestation. The gates and rollback are in
-[`docs/release.md`](docs/release.md). After installing, two checks tie the bytes
+[`docs/release.md`](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/release.md). After installing, two checks tie the bytes
 you have to that workflow:
 
 ```bash

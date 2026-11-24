@@ -1,0 +1,94 @@
+{
+  "experiment": "E57",
+  "date": "2026-11-23",
+  "muse": "1.4.25 (1.4.25-R9361.1)",
+  "question": "Does the E48 saved tool_action rule survive a host restart and a second workspace, or only the same host process?",
+  "method": {
+    "seededFrom": "scratch/r28-e48-store.json — the schema_version 2 store E48 recorded",
+    "seedPath": "scratch/r30-e57/config/muse/approval-policy.json",
+    "isolation": "XDG_CONFIG_HOME=scratch/r30-e57/config; auth.json was a symlink to the owner's existing auth file and was removed after the run. No owner config file was edited.",
+    "fixture": "test/fixtures/fake-mcp-tool.mjs — server `opencode`, tool `bash`, registered as mcp__opencode__bash",
+    "workspaceA": "/tmp/muse-e57-a-vvYAam",
+    "workspaceB": "/tmp/muse-e57-b-KzxcII",
+    "sessions": "workspace A under denyUnmatched with :ask-me, close the host; workspace B under a new host and the same store, denyUnmatched with :ask-me",
+    "turns": 2,
+    "cap": "$0.50 / 2 turns; usage was not reported by the host (null), as in E48"
+  },
+  "seed": {
+    "schema_version": 2,
+    "rules": [
+      {
+        "effect": "allow",
+        "durability": "local_persistent",
+        "rule": { "kind": "tool_action", "tool_name": "mcp__opencode__bash" },
+        "reason": null
+      }
+    ]
+  },
+  "sessions": [
+    {
+      "session": "workspace-a-first-host",
+      "turnId": "01a20be7-24ca-7000-acb4-98d24abaaea0",
+      "workspace": "/tmp/muse-e57-a-vvYAam",
+      "permissionState": {
+        "axes": { "approval": "onRequest", "filesystem": "sandboxed", "network": "off", "reviewer": "human" },
+        "profileId": ":ask-me",
+        "reviewerAttached": true,
+        "reviewerAuthority": "human"
+      },
+      "outcome": "completed",
+      "finalText": "Called `bash` once with `hi` — result `echo:hi`.",
+      "toolCalls": [{ "toolName": "mcp__opencode__bash", "status": "completed" }],
+      "mcpRequests": 3
+    },
+    {
+      "session": "workspace-b-second-host",
+      "turnId": "01a20be7-d2ea-7000-8cb7-ddb5f9e768b8",
+      "workspace": "/tmp/muse-e57-b-KzxcII",
+      "permissionState": {
+        "axes": { "approval": "onRequest", "filesystem": "sandboxed", "network": "off", "reviewer": "human" },
+        "profileId": ":ask-me",
+        "reviewerAttached": true,
+        "reviewerAuthority": "human"
+      },
+      "outcome": "completed",
+      "finalText": null,
+      "toolCalls": [{ "toolName": "mcp__opencode__bash", "status": "completed" }],
+      "mcpRequests": 3
+    }
+  ],
+  "approvals": [],
+  "storeAfter": {
+    "unchangedAcrossRestart": true,
+    "stillNamesRule": true,
+    "contents": {
+      "schema_version": 2,
+      "rules": [
+        {
+          "effect": "allow",
+          "durability": "local_persistent",
+          "rule": { "kind": "tool_action", "tool_name": "mcp__opencode__bash" },
+          "reason": null
+        }
+      ]
+    }
+  },
+  "finding": {
+    "firstToolRan": true,
+    "secondToolRan": true,
+    "secondToolRejected": false,
+    "secondApprovalRequested": false,
+    "survivesHostRestart": true,
+    "survivesSecondWorkspace": true
+  },
+  "branch": "D234-A: saved-rule claim at name level",
+  "scope": [
+    "The rule was seeded from E48, not created by a new approval turn. This measures durability, not approval-menu behavior.",
+    "Still the fixture named opencode; the production bridge is not claimed.",
+    "One host restart and one second workspace; no third workspace or concurrent host.",
+    "The second session's finalText was null, but the tool call completed and the fixture logged three MCP requests."
+  ],
+  "cleanup": "The isolated store remains at scratch/r30-e57/config/muse/approval-policy.json; the auth symlink was removed. The real ~/.config/muse/approval-policy.json was never written (it was absent before the run).",
+  "artifact": "scratch/r30-e57/probe.mjs; scratch/r30-e57/result.json; scratch/r30-e57/stdout.json",
+  "cost": "2 model turns, within the 2-turn / $0.50 cap"
+}

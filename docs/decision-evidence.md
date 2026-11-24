@@ -533,6 +533,13 @@ limit (D31).
 
 ### E-D24 — what does `denyUnmatched` do to a bridged call? (three turns)
 
+> **Superseded by E48 (2026-11-25) for the saved-rule half.** The unseeded
+> refusal below stands. The last two sentences do not: Muse's `:ask-me` menu
+> offered "Always allow this MCP tool" for `mcp__opencode__bash`, wrote a
+> `localPersistent` `tool_action` rule, and a second `denyUnmatched` session ran
+> the tool with no approval. E48 is fixture-scope, one host and one workspace;
+> see `docs/evidence/2026-11-26-r30-e44-addendum.json`.
+
 Same session shape as the plugin uses, mode switched on the wire, one prompt:
 *use the `lookup` tool with q=hello, then reply with the result.* The bridge
 records whether `callTool` was reached.
@@ -607,6 +614,13 @@ typings have no step or spend member on `turn/start`. Absent, not declined.
 
 - **D27** `allowAll` stays, now measured: it is the only mode in which a bridged
   call reaches `callTool`. A denying mode refuses it before the bridge sees it.
+
+  > **Superseded by E48 (2026-11-25) for the saved-rule half.** A saved
+  > `tool_action` rule naming the MCP tool lets a later `denyUnmatched` session
+  > reach the bridge. The plugin still starts `allowAll`, because it has no
+  > surface that presents Muse's approval to the opencode user; the rule removes
+  > a Muse refusal, not the missing surface.
+
 - **D28** subagents and workflows stay off, and the reason is corrected: their
   spawner tools are outside the pinned toolset, a child is a billed call whose
   context opencode never sees, and spawning belongs to opencode. A Muse child

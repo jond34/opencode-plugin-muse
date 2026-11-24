@@ -1,0 +1,27 @@
+{
+  "experiment": "E52-addendum",
+  "date": "2026-11-23",
+  "parent": "docs/evidence/2026-11-25-e52.json",
+  "observed": [
+    "Muse schema fingerprint differs from the SDK pin; review the containment report before trusting new behavior.",
+    "containment blocked: tools.bridge-only-observed=degraded prompt.instructions=unknown"
+  ],
+  "expected_state": {
+    "schema fingerprint differs": "E52 loaded the 0.1.13 candidate against opencode 2.4.1. The warning is the existing SDK-pin drift warning, not a new packaging failure; it does not assert a breaking change.",
+    "tools.bridge-only-observed=degraded": "The check reads the host's own runtime session record. No session record exists on a fresh install, so `absent` is scored `degraded` by design. This is not evidence of a foreign tool.",
+    "prompt.instructions=unknown": "Prompt delivery is only scored after a session probe. Before a session it is `unknown`; E52 ran install, import, and plugin load only, not a Muse-authenticated turn."
+  },
+  "source_lines": [
+    "src/containment.ts:96-107 — absent observed toolset is degraded, unreadable is unknown; a fresh install has no session record",
+    "src/containment.ts:126-131 — promptDelivery other than pass/fail is unknown",
+    "src/host-facts.ts:75-78 — schema drift warning text"
+  ],
+  "not_claimed": [
+    "No muse/* model was listed.",
+    "No Muse-authenticated session or live turn was run.",
+    "The warnings do not show that the plugin failed to load or that containment was breached."
+  ],
+  "release_effect": "None, unless a session with Muse auth shows the same verdict after a session record exists.",
+  "scope": "Addendum only. The parent E52 file is unchanged.",
+  "decision": "informational; no decision trigger"
+}

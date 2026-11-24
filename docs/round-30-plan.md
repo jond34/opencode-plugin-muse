@@ -40,21 +40,21 @@ decision:
 | Item | State | Artifact | Result |
 |---|---|---|---|
 | A0. This plan | done | `docs/round-30-plan.md` | — |
-| A1. Correct the approval trace | pending | `docs/decision-evidence.md`; `docs/evidence/2026-11-26-r30-e44-addendum.json` | |
-| A2. Correct release instructions | pending | `docs/release.md`; `SECURITY.md` | |
-| A3. Decide package-doc links | pending | `package.json` or absolute README links | |
-| A4. Add dependency gate | pending | `docs/release.md`; `docs/evidence/2026-11-26-r30-dep.json` | |
-| A5. Explain E52 warnings | pending | `docs/evidence/2026-11-26-r30-e52-addendum.json` | |
-| E55. Console fetch/source matrix | pending | `docs/evidence/2026-11-26-r30-e55.json` | |
-| E56. Project-scope hook firing | pending | `docs/evidence/2026-11-26-r30-e56.json` | |
-| E57. E48 durability matrix | pending | `docs/evidence/2026-11-26-r30-e57.json` | |
-| E58. One-prompt spike | conditional | `docs/evidence/2026-11-26-r30-e58.json` | |
-| E59. Windows desktop | owner-assisted | `docs/evidence/2026-11-26-r30-e59.json` | |
-| E60. Stage rehearsal | owner-gated | `docs/evidence/2026-11-26-r30-e60.json` | |
-| F. Final record | pending | plan §Results; evidence audit | |
+| A1. Correct the approval trace | done | `docs/decision-evidence.md`; `docs/evidence/2026-11-26-r30-e44-addendum.json` | D231; E-D24/D27 marked superseded by E48 |
+| A2. Correct release instructions | done | `docs/release.md`; `SECURITY.md` | Stage-ID sequence, 2FA boundary, provenance conditions |
+| A3. Decide package-doc links | done | four absolute README links | O26 B; E51 rerun, shasum `caf36bb5…` |
+| A4. Add dependency gate | done | `docs/release.md`; `docs/evidence/2026-11-26-r30-dep.json` | 25 moderate / 0 high / 0 critical; O25 A, review 2027-02-28 |
+| A5. Explain E52 warnings | done | `docs/evidence/2026-11-26-r30-e52-addendum.json` | Expected fresh-install state; no release effect |
+| E55. Console fetch/source matrix | blocked | `docs/evidence/2026-11-26-r30-e55.json` | D232-D; no owner browser; no new claim |
+| E56. Project-scope hook firing | done | `docs/evidence/2026-11-26-r30-e56.json` | D233-A; approved fired, unapproved wrote nothing |
+| E57. E48 durability matrix | done | `docs/evidence/2026-11-26-r30-e57.json` | D234-A; restart + second workspace |
+| E58. One-prompt spike | not run | `docs/evidence/2026-11-26-r30-e58.json` | O29 A; O16 B not live |
+| E59. Windows desktop | blocked | `docs/evidence/2026-11-26-r30-e59.json` | D236-D; O27 C; kit ready |
+| E60. Stage rehearsal | not run | `docs/evidence/2026-11-26-r30-e60.json` | D239-D; no push/stage authorization |
+| F. Final record | done | plan §8; evidence audit | Checks green; round-30 close commit |
 
-Dates in artifact names are placeholders for the run date. Rename consistently
-if the round runs later.
+The run date is 2026-11-23; artifact names retain the `2026-11-26` prefix used
+when this plan was written, so all round-30 records sort together.
 
 ## 1. Documentation and release corrections (free)
 
@@ -529,3 +529,50 @@ Use the prompt in the final response or the short form below:
 > Write evidence after each item, apply D231–D240, keep
 > `docs/integration-landscape.md` untouched unless the owner permits it, and
 > finish with the report in §6.
+
+## 8. Results (run 2026-11-23)
+
+**Baseline.** `0.1.13` local candidate from `f430481`; offline 452 pass / 0 fail /
+41 files; claims 17/17; `dist/` 160 files,
+`15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b`; tarball
+shasum `d936320d…` before the README link change.
+
+**Final.** Same offline and claims counts. `dist/` unchanged. Final tarball
+`scratch/r30-e51-final/jonathand34-opencode-plugin-muse-0.1.13.tgz`, 208 files,
+sha1 `caf36bb5e52d4cb394e65e51c6419d19d9a14311`, integrity
+`sha512-w9VrdN9L…`. Clean install audit: 25 moderate, 0 high, 0 critical, no fix
+for the glob/minimatch class.
+
+| Item | Result | Evidence |
+|---|---|---|
+| A1 | D231; E-D24/D27 marked superseded for the saved-rule half; E44 addendum says its Auto-review explanation was an inference | `docs/evidence/2026-11-26-r30-e44-addendum.json` |
+| A2 | Stage-ID approval sequence and 2FA boundary; provenance conditions stated | `docs/release.md`, `SECURITY.md` |
+| A3 | O26 B; four unshipped README docs use absolute GitHub links | `README.md`; E51 rerun |
+| A4 | 25 moderate / 0 high / 0 critical; O25 A with 2027-02-28 review | `docs/evidence/2026-11-26-r30-dep.json` |
+| A5 | E52 warnings are the expected no-session state | `docs/evidence/2026-11-26-r30-e52-addendum.json` |
+| E55 | **Blocked**: no owner-authenticated Console browser; no policy created or deleted | `docs/evidence/2026-11-26-r30-e55.json`; D232-D |
+| E56 | **Pass**: approved project hook fired after prompt and before run start; unapproved control wrote nothing | `docs/evidence/2026-11-26-r30-e56.json`; D233-A |
+| E57 | **Pass**: seeded E48 rule ran after host restart in a second workspace, no approval | `docs/evidence/2026-11-26-r30-e57.json`; D234-A |
+| E58 | Not run: O29 A, O16 B not live | `docs/evidence/2026-11-26-r30-e58.json` |
+| E59 | **Blocked**: no standard-user Windows machine/VM; O27 C retires the desktop claim | `docs/evidence/2026-11-26-r30-e59.json`; D236-D |
+| E60 | Not run: no push/stage authorization | `docs/evidence/2026-11-26-r30-e60.json`; D239-D |
+
+**Decisions applied.** D231, D232-D, D233-A, D234-A, D237-C, D238-B, D239-D,
+D240-B. D235 was not applied (E58 not triggered); D236-D applies for the absent
+Windows desktop. D240-B holds the release: E55 is still blocked, and E60 is
+unmeasured.
+
+**Owner choices.** O25 A accepted (moderate advisories accepted with the review
+date); O26 B applied; O27 C applied; O28 A stands; O29 A applied; O30 A is
+dormant because E55 produced no wording to narrow.
+
+**Unmeasured.** E55's Console timing/source/denial matrix; E59's Windows desktop;
+E60's stage ID, download, digest match, and approval; E58 by owner choice.
+
+**Exact next owner action.** Run E55 in an authenticated Console browser and
+write its JSON, restoring “No policies yet.” Then decide whether to authorize
+E60; if authorized, set the trusted publisher to stage-only, dispatch
+`publish.yml` from the frozen commit, list the stage ID, download it, compare its
+sha256 with the candidate, and approve or reject. If O27 changes to A, run
+`docs/windows-desktop-check.md`; otherwise no desktop claim. Nothing was
+published, staged, tagged, pushed, or sent to a vendor.

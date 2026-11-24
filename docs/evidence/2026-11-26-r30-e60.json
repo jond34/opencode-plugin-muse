@@ -1,0 +1,16 @@
+{
+  "experiment": "E60",
+  "date": "2026-11-23",
+  "status": "not run",
+  "question": "Does the staged-publish path create a stage ID, allow download and digest verification, and accept approval with 2FA?",
+  "reason": "The execution prompt explicitly says not to run E60 and does not authorize push or stage. A dry-run already exists from prior work; it is not a stage.",
+  "branch": "D239-D: owner did not authorize; stay at dry-run and record unmeasured",
+  "not_claimed": [
+    "No stage was created.",
+    "No stage ID was listed, viewed, downloaded, approved, or rejected.",
+    "The trusted publisher stage-only setting was not verified."
+  ],
+  "release_effect": "O22 A remains unverified; the candidate is local only.",
+  "cost": "zero",
+  "next_owner_action": "If the owner authorizes push/stage, set the trusted publisher to stage-only, dispatch publish.yml from the frozen commit, list the stage ID, download it, compare its sha256 with the candidate, then approve or reject."
+}
