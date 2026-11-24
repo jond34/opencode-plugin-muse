@@ -15,9 +15,9 @@ code, and only if their branches say so.
 
 | Item | State | Commit / run | Note |
 |---|---|---|---|
-| A. Documentation corrections | todo | | E35 timing, E39 plane, E19 source, tag API, claims |
-| E41. `SessionStart` on 1.4.25 | todo | | free, `--provider echo` |
-| E42. Close after EOF | todo | | 1 dispatch, diagnostic |
+| A. Documentation corrections | done | 61a64c1 | E35 timing, policy store, tag API, codex/Vue claims |
+| E41. `SessionStart` on 1.4.25 | done | 2026-11-24-e41.json | fired after prompt, before run start; control none |
+| E42. Close after EOF | doing | | 1 dispatch, diagnostic |
 | E43. Console denial sentence | todo | | 1 run, no model turn if denied |
 | E44. MCP rule under `denyUnmatched` | todo | | 2–3 turns, capped; replaces E39 |
 | E45. E38 job membership | todo | | 1 dispatch |

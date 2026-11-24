@@ -1,0 +1,53 @@
+{
+  "experiment": "E41",
+  "date": "2026-11-24",
+  "muse": "1.4.25 (1.4.25-R9361.1)",
+  "question": "Does an approved plugin's SessionStart hook fire on 1.4.25 without a paid turn?",
+  "method": {
+    "store": "isolated XDG_DATA_HOME/XDG_CONFIG_HOME under scratch/r27/e41/dxg",
+    "install": "muse plugins install ./plugin --scope user --json",
+    "approve": "muse plugins approve e41-probe --json",
+    "run": "muse exec --json --provider echo --trust-workspace \"ok\"",
+    "marker": "/tmp/r27-e41-marker, hardcoded in the hook; the hook environment is cleared"
+  },
+  "scope_deviation": {
+    "attempted": "--scope project",
+    "exit": 1,
+    "error": "project-local plugin source is blocked because the workspace is untrusted",
+    "reading": "`--trust-workspace` is per-run (\"does not save trust\"), so a project-scope install needs saved trust this probe cannot create. The scope question was already measured in E35; E41 uses an isolated user-scope store to measure firing."
+  },
+  "install": {
+    "exit": 0,
+    "id": "e41-probe",
+    "trust": "user-local",
+    "manifest_sha256": "sha256:8128043d8fa66e40905d310ab88645cca42d00776e374c98208de15e3d49b21e"
+  },
+  "approve": {
+    "exit": 0,
+    "decision": "approve",
+    "stable_id": "plugin:e41-probe:hook:mark",
+    "trusted_definition_hash": "sha256:7b75e622b80ef839a25b6b5f98be3840e81bda0dca583f4cea502a891cb5daaf"
+  },
+  "run": {
+    "exit": 0,
+    "stdout_text": "echo: ok",
+    "wall_start": "2026-11-24T02:48:25.373Z",
+    "wall_end": "2026-11-24T02:48:26.320Z",
+    "marker_time": "2026-11-24T02:48:26.052Z",
+    "user_input_event": "2026-11-24T02:48:26.001Z",
+    "run_started_event": "2026-11-24T02:48:26.073Z",
+    "marker_after_process_start": true,
+    "marker_after_prompt_event": true,
+    "marker_before_run_started": true,
+    "paid_calls": 0,
+    "usage": { "calls": 1, "completed_calls": 1, "failed_calls": 0, "input_tokens": 0, "output_tokens": 0, "model": null }
+  },
+  "control": {
+    "store": "separate isolated XDG under scratch/r27/e41/control-dxg",
+    "install": "same manifest, --scope user, not approved",
+    "run_exit": 0,
+    "marker": "none"
+  },
+  "finding": "SessionStart fires on 1.4.25 at the first prompt, after the prompt event and before run.lifecycle.started; it does not fire at process start. Approval is still the gate: the unapproved control wrote nothing.",
+  "branch": "D177: close E35 and replace the unmeasured clause with this run."
+}
