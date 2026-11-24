@@ -1,25 +1,23 @@
 name: test
 
-# Manual only, like `publish.yml`: this matrix answers "does the offline suite
-# pass off Linux" (U16), and it has run (45302817218 and later). It proves the
-# suite on each runner, not the Windows seam or a desktop.
+# Pull requests run Ubuntu only. `main` and manual dispatch run the full
+# Ubuntu/macOS/Windows matrix; the Windows seam and real-installer jobs stay
+# manual. This proves the suite on each runner, not the Windows seam or a
+# desktop.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       real_windows:
         description: "E16a/E16c: install real Muse on Windows and measure the serve close path"
         type: boolean
         default: false
-      macos_only:
-        description: "E17: run the offline job on macos-15 only, to retry the cancelled macOS cell"
-        type: boolean
-        default: false
-  # Branch-only: `workflow_dispatch` needs the file on the default branch, and
-  # this file is not there yet, so a run is selected by branch name instead.
-  # `ci/seam` is the full matrix, `ci/real` is E16a/E16c alone, `ci/mac` is the
-  # macOS label retry. Drop this trigger when the round lands.
-  push:
-    branches: [ci/seam, ci/real, ci/mac]
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -31,16 +29,13 @@ jobs:
   # package names). A red cell here is now a finding, not a known condition.
   offline:
     name: offline (${{ matrix.os }})
-    # `ci/real` is the installer job and nothing else: the matrix would only
-    # add the same crowd of minutes to the same run.
-    if: ${{ !contains(github.ref, 'ci/real') }}
     strategy:
       fail-fast: false
       matrix:
         # E17 needs one macOS label, and `macos-latest` is now macOS 26 (arm64):
         # the cancelled round-22 cell was an arm64 acquisition failure, so the
         # retry names `macos-15` explicitly.
-        os: ${{ (contains(github.ref, 'ci/mac') || (github.event_name == 'workflow_dispatch' && inputs.macos_only)) && fromJSON('["macos-15"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       # Pinned by commit SHA for the same reason as the publish job: a
@@ -86,6 +81,7 @@ jobs:
             junit.xml
             junit-summary.json
           if-no-files-found: ignore
+          retention-days: 7
 
   # E11/E12: the Windows spawn contract, without Muse. A stub `muse.cmd`, a
   # native binary renamed `muse-bin-9.9.9-R1.1.exe`, and a `.muse-version`
@@ -95,7 +91,7 @@ jobs:
   # support claim: no `muse serve` runs.
   seam-windows:
     name: seam-windows (spawn contract, stub binary)
-    if: ${{ !contains(github.ref, 'ci/real') && !contains(github.ref, 'ci/mac') }}
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -132,7 +128,7 @@ jobs:
   # route and its absence is not a gap in this measurement.
   real-windows:
     name: real-windows (installer + serve lifecycle)
-    if: ${{ contains(github.ref, 'ci/real') || (github.event_name == 'workflow_dispatch' && inputs.real_windows) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_windows }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
