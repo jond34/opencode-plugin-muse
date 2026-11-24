@@ -1,6 +1,6 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Use Muse models in opencode through the signed-in muse CLI. Republished build of @rasyid_rafi/opencode-muse with five patches.",
   "license": "MIT",
   "repository": {

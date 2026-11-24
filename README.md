@@ -621,9 +621,11 @@ be written.
 
 ## Verify the published package
 
-The npm package is built and published by `.github/workflows/publish.yml` on
-GitHub Actions, and every version carries a provenance attestation. After
-installing, two checks tie the bytes you have to that workflow:
+The npm package is built and staged by `.github/workflows/publish.yml` on
+GitHub Actions, then approved with 2FA before it becomes public. Every version
+carries a provenance attestation. The gates and rollback are in
+[`docs/release.md`](docs/release.md). After installing, two checks tie the bytes
+you have to that workflow:
 
 ```bash
 npm audit signatures          # registry signatures and attestations

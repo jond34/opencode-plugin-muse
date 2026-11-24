@@ -13,8 +13,9 @@ publish, a staged upload, a tag, or a push.
   [`provenance.md`](provenance.md).
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The next version is `0.1.13` (O21 A). It is prepared locally and is not
-  published by the preparation round.
+- The next version is `0.1.13` (O21 A). It is prepared locally, reproducible
+  from the lockfile, and not published by the preparation round. The candidate
+  hash is recorded in [`provenance.md`](provenance.md).
 
 ## Version policy
 

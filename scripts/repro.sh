@@ -3,9 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# This tree carries patches 3 through 5; the published 0.1.9 hash is recorded
-# in docs/provenance.md for the tree before them.
-EXPECTED=d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
+# 0.1.13 local candidate: patches 3 through 5, not published. The published
+# 0.1.9 and older recorded hashes stay in docs/provenance.md.
+EXPECTED=15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 

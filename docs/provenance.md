@@ -30,21 +30,25 @@ b90a36974cfeaf2957bec91a687546ba850adf5a0dc94d6eb95b60ebb0f040c3
 
 84 files, reproduced by `bash scripts/repro.sh` on the tree before patch 3.
 
-Recorded tree (base + patches 1-5) at `bcfabcb`, not published:
+0.1.13 local candidate (base + patches 1-5), not published:
+
+```text
+15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b
+```
+
+160 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
+tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
+hash. The candidate is local only: the latest npm tarball is 0.1.12, patches 3–5
+exist only in this checkout, and publishing is a separate owner action (O15).
+
+Historical tree (base + patches 1-5) at `bcfabcb`, not published:
 
 ```text
 d2d50a429436ec085bc1fa107073e0489e2864bad088edd4fe06b2ed608b5867
 ```
 
-100 files. This hash describes the tree at `bcfabcb`. The working tree has changed
-since, so `bash scripts/repro.sh` fails today: it compares the built `dist/` against
-this hash. Recording a new hash is release work and is blocked until the `dist`
-rebuild is authorised; until then a mismatch is expected, not a defect in this
-record.
-
-The current tree is unreleased. The latest npm tarball is 0.1.12; patches 3–5
-exist only in this checkout, and a 0.1.13 release is a separate owner decision
-(O15), not an implication of a green suite.
+100 files. That hash is kept for the older record; it is not the candidate and
+`repro.sh` does not compare against it.
 
 ## Inputs
 
@@ -58,6 +62,7 @@ exist only in this checkout, and a 0.1.13 release is a separate owner decision
 | Patch 4 (harness-owned context) | sha256 `d87bb126d265c243620297d4abb03112eecda422d228e1e9040e4caaaffc54d4` |
 | Patch 5 (effort, prompt, and rewritten-history boundaries) | sha256 `8283f7f5f9b168230d9085f3cc7834971c7e1d3237ac97f40fc9c545bba74fdd` |
 | Toolchain | node v24.22.1, tsc 5.9.3, npm 11.19.1 |
+| Candidate | `0.1.13`, 160 files, hash `15a64cdd309f5fa2552a7f033e0ae3eb7054e394a3d9c72c40b115464f6b274b`; not published |
 | Dependency graph | `package-lock.json`, 275 packages |
 
 `evidence/` holds the raw inputs behind this record. It lives in the repository and is
