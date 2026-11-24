@@ -869,7 +869,7 @@
     ]
   },
   "local": {
-    "files": 39,
+    "files": 41,
     "command": "bun run check:offline",
     "tests": 452,
     "failures": 0,
