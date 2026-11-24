@@ -70,7 +70,7 @@ Build:
      a runner), **and** `LOCAL_ONLY` equals the listed entries that `git ls-files
      test` does not track. Measured 2026-11-23: 38 listed, 35 tracked, and the three
      untracked are exactly `test/bench.test.ts`, `test/bench-stats.test.ts` and
-     `test/native-history-harness.test.ts` (`.gitignore:24-26`). That equality is
+     `test/native-history-harness.test.ts` (`.gitignore:25-27`). That equality is
      what keeps the excuse from widening: commit one of the three and the test fails
      until the list shrinks;
    - a synthetic `["test/version.test.ts", "test/gone.test.ts"]` with the second

@@ -4,7 +4,7 @@ Linux is the tested surface, and macOS joined it on 2026-11-23 (run 45282185770,
 `macos-15`, arm64 — the log resolves git at `/opt/homebrew/bin/git`): 406 tests,
 0 failures. That 406 is the *published* frame: a runner checks out the repo and
 runs 35 test files, while a local checkout runs 38 and reports 439, because
-`.gitignore:24-26` deliberately keeps `test/bench.test.ts`,
+`.gitignore:25-27` deliberately keeps `test/bench.test.ts`,
 `test/bench-stats.test.ts` and `test/native-history-harness.test.ts` out of the
 repository (33 tests, local-only records). Every count below says which frame it
 comes from, because comparing the two silently produced a phantom gap (D149). The earlier cancellation was capacity, not
@@ -61,7 +61,9 @@ The first dispatch (run 45270085792, commit `972c74f`, before the hook-trust
 canonicalization landed) reported **13** failures (job `138027278561`: 391 pass,
 2 skip, 13 fail), not the three a truncated log read had suggested. Reading the job log through `gh api .../jobs/<id>/logs` —
 `gh run view --log` drops the rest of a step after any line over 64 KiB and still
-exits 0 (`cli/cli#15019`) — separated them by what they measure:
+exits 0 on gh ≤ 2.102.0 (`cli/cli#15019`, closed 2026-11-18; the installed gh
+predates the fix, and the trap needs a line that long to fire) — separated them by
+what they measure:
 
 - **Seven POSIX fixtures**: `the policies row` (a home-directory fold the test
   spelled with forward slashes), `host config` ×3 (a `0700` mode Windows ignores,
@@ -91,17 +93,17 @@ skip would report it as green. Cause not yet named.
 Every number in this file comes from one place. The ledger links here instead of
 restating it, which is what stops a count from drifting in three sentences.
 
-| Claim | Evidence | Run or command | Measured at | Frame |
-|---|---|---|---|---|
-| Offline suite passes on Linux | 439/0, 38 files | `bun run test:offline`, JUnit `scratch/local.xml` | 2026-11-23 | local checkout |
-| Offline suite passes on `ubuntu-latest` | 406/0, 35 files | run 45289611552, artifact `junit-ubuntu-latest` | 2026-11-23 | published checkout |
-| Offline suite passes on `macos-15` (arm64) | 406/0 | runs 45282185770, 45289611552 | 2026-11-23 | published checkout |
-| Offline suite on `windows-latest` | 405/1 | run 45289611552, artifact `junit-windows-latest` | 2026-11-23 | published checkout |
-| Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner |
-| `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner |
-| The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account |
-| A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account |
-| A Console policy cannot be created here | target requires a member tag; no tag UI in this build | Console `/policies/new`, Settings → Members | 2026-11-23 | this account |
+| Claim | Evidence | Run or command | Measured at | Frame | Recheck |
+|---|---|---|---|---|---|
+| Offline suite passes on Linux | 439/0, 38 files | `bun run test:offline`, JUnit `scratch/local.xml` | 2026-11-23 | local checkout | re-run locally; the count moves with the three local-only files |
+| Offline suite passes on `ubuntu-latest` | 406/0, 35 files | run 45289611552, artifact `junit-ubuntu-latest` | 2026-11-23 | published checkout | artifact expires 2027-02-21; re-run the workflow |
+| Offline suite passes on `macos-15` (arm64) | 406/0 | runs 45282185770, 45289611552 | 2026-11-23 | published checkout | artifact expires 2027-02-21; re-run the workflow |
+| Offline suite on `windows-latest` | 405/1 | run 45289611552, artifact `junit-windows-latest` | 2026-11-23 | published checkout | artifact expires 2027-02-21; open while E30 names the 15 s |
+| Installer layout, resolver, `--version`, `config validate` on Windows | all pass | run 45289291661 (E16a) | 2026-11-23 | hosted runner | a vendor installer release; re-read `.muse-version` |
+| `close()` leaves no Muse process on Windows | none alive at any 250 ms sample, 3 cycles, 60+20+20 s | run 45289291661 (E16c/E27) | 2026-11-23 | hosted runner | re-run `ci/real`; sampler hardened in E29 |
+| The Console credential names exactly one workspace | `credential` row `cred_14b22fd9b001apW4pAdrUmjbtt`, `metadata.orgID` = `wrk_01KYJ6RT2QFFJ0AXV1J2JFEQR6`; one active row, empty `workspace` table | `bun:sqlite` read of `opencode debug paths db` | 2026-11-23 | this account | re-read after any `opencode auth login` |
+| A Console policy is not visible in `debug config` | no Console source; `info.policies` local only | `opencode debug config --standalone` | 2026-11-23 | this account | re-read after a Console build change |
+| A Console policy cannot be created here | target requires a member tag; no tag UI in this build | Console `/policies/new`, Settings → Members | 2026-11-23 | this account | Console build pinned in E31; recheck if the builder gains a tag control |
 
 ## What a Windows user is consenting to
 

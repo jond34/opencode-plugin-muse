@@ -69,7 +69,7 @@ report a clean result from a failed query. Two of these were corrected in commit
    excuse; add `test/suite-list.test.ts` asserting (a) the real package and real
    filesystem return `[]`, and `LOCAL_ONLY` equals the listed entries `git ls-files
    test` does not track — measured today: 38 listed, 35 tracked, the three untracked
-   being the bench/bench-stats/native-history-harness files from `.gitignore:24-26`;
+   being the bench/bench-stats/native-history-harness files from `.gitignore:25-27`;
    (b) a synthetic list with one missing non-local path returns that path; (c) the
    same path excused by `localOnly` returns `[]`. Add the test to `test:offline`. **Gate:** green suite locally,
    and renaming a listed file makes the new test fail with the path in the message
