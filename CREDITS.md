@@ -30,6 +30,28 @@ then confirm that repository's release workflow is the only thing allowed to pub
 
 If upstream ships these fixes, use upstream's.
 
+## Why not patch upstream
+
+Verifiability explains why the bytes had to be rebuilt. It does not explain why
+the three behavioural patches could not have gone upstream as a pull request,
+and the honest answer is that they are a disagreement with the default, not a
+defect. Upstream keeps Muse's own tools, workflows, and subagents on and offers
+presets to narrow them; patches 3 to 5 turn all of that off and make opencode the
+sole executor. An author who picked the other default is entitled to keep it, so
+the change belongs in a package with its own README rather than in their queue.
+
+The pace argument is smaller but real: the five patches, with a diff and
+evidence each, landed 2026-11-18 to 2026-11-21, and 1.0.0 on 2026-11-24. Two
+forks can diverge faster than one tree can review, and that is a reason to
+fork, not a reason to call the upstream slow.
+
+The mechanisms inside patches 3 to 5 were not invented here. The containment
+keys come from the settings `pi-muse-subscription` established, and the effort
+handling follows [pgquiles/opencode-muse](https://github.com/pgquiles/opencode-muse)
+1.1.0, which is a different fork making a compatible choice on the same
+question. Both are credited because the port is theirs; what this package adds
+is the packaging, the record, and the boundary tests.
+
 ## Second upstream
 
 `src/contract/` and the `test/harness/` helpers ported from it come from
