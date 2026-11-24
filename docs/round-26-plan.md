@@ -22,11 +22,11 @@ outlive the artifacts goes in `docs/evidence/`.
 | E35. Project-scoped plugin hook | done | `hooks.ts` reworded | installs project-trusted; approve required; session dispatch unmeasured |
 | E36. Console target inventory | done | uncommitted | found 9 targets; E31 read the collapsed trigger |
 | E37. Policy write probe | done | uncommitted | UI write; compiled, visible in `document`, not attributable |
-| E38. Grandchild survivor | todo | | 1 dispatch |
-| E39. `denyUnmatched` wildcard | todo | | 1 H run |
-| E40. Citation pass | todo | | free |
-| C. Results + decision table applied | todo | | final commit |
-| O. Owner choices raised | todo | | only if branches remain |
+| E38. Grandchild survivor | done | `53bb819` | no survivor on the hosted runner; 239 samples, 0 failed; no taskkill |
+| E39. `denyUnmatched` wildcard | blocked | | needs a bridged call, which needs a turn; O4 did not fire |
+| E40. Citation pass | done | `84ba90f` | 15/15 current; older four not reopened |
+| C. Results + decision table applied | done | this commit | final commit |
+| O. Owner choices raised | done | | O1–O4 did not fire; O5–O8 remain defaults |
 
 ---
 
@@ -555,6 +555,38 @@ statement to a decision. The question is whether that gap is worth more work.
 
 **Recommendation:** A, plus B if the owner wants a vendor conversation. C is the
 option the existing no-probe rule exists to prevent.
+
+---
+
+## 6b. Results
+
+| Item | Command / run | Result | Branch applied | Cost |
+|---|---|---|---|---|
+| A | commit `fc3e023` | Console wording narrowed; enterprise X→P; U16/U22/SEP/OS fixed | D176 | free |
+| B1 | `bun scripts/junit-summary.ts scratch/junit-final` | v2 snapshot: skipped/assertions/per-suite/arch fields | D174, D175 | free |
+| B2 | `npm run check:offline` | 452/0 local; five skips declared, then three | D174 | free |
+| B4 | workflow | `RUNNER_ARCH` X64 / ARM64 in the artifacts | — | free |
+| B5 | `bun scripts/check-claims.ts` | 15/15 current; npm registry URL avoids the 403 | D175 (warn-only) | free |
+| E34 | runs 45302325853, 45302817218 | 419 declared; Windows 416 ran / 0 fail / 3 skipped; frozen and login pass | D164 (EOF kept skipped), no O3 | 2 dispatches |
+| E35 | `muse plugins install ./plugin --scope project`; approve; hook test | install is user-store, `project-trusted`; hook `review_needed` until approve; test fires | D160 | one real run |
+| E36 | bundle `controls-Bf3Y4t9I.js` + live menu | 9 targets, including `members`/`except-members`; E31 read the collapsed trigger | D171 | free |
+| E37 | Console UI, one reversible policy | compiled into `debug config`'s `document`; models unchanged; deleted | D169 | account writes, reverted |
+| E38 | run 45304563000, job 138145110157 | detached grandchild not a survivor; 239 samples, 0 failed; no taskkill | D167, no O2 | 1 dispatch |
+| E39 | — | blocked: needs a bridged call and a model turn; O4 did not fire | not applied | none |
+| E40 | `docs/claims.md` + checker | 15/15 current | — | free |
+
+**Deviations from the plan.** E34's first dispatch failed the EOF arm with a 15 s
+`close()` timeout; the pid dies but the promise does not settle after the
+transport closed, so the arm stays POSIX and is declared in the ledger (D164).
+E36 changed A1's Console sentence: the hand-picked target was in the menu all
+along. E37 was a UI write, not an API write, and produced a statement inside the
+`document` source rather than a Console-typed source, so D169 applied and O4 did
+not fire. E38 produced no survivor, so D167 applied and O2 did not fire. E39 is
+blocked, not passed.
+
+**Not reopened.** The four older external claims (brew, codex, a4, Vue Doctor)
+were outside the review's fifteen; the claims table carries the fifteen the review
+opened, plus the install/approval and MXC rows E35/E36 needed.
 
 ---
 
