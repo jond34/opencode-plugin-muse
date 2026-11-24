@@ -54,9 +54,22 @@ before `npm stage publish`.
 | Windows sentence | Owner review of `docs/platform-support.md` | named desktop result or absence | Yes |
 | Diff check | `check-release.sh` → `git diff --check` | working tree | No |
 | Stage approval | `npm stage approve <stage-id>` with 2FA | npm stage | Yes |
+| Stage rejection | `npm stage reject <stage-id>` with 2FA | npm stage | Yes |
 
 A green suite is necessary, not sufficient. It does not exercise the publish
 workflow, the registry, or a model turn.
+
+## What is verified when
+
+| Object | How it is verified | When |
+|---|---|---|
+| Candidate tarball | `npm pack` plus SHA-256 of the `.tgz` | Before any stage |
+| Staged tarball | `npm stage download <stage-id>` plus SHA-256; compare with the candidate | While the stage is pending |
+| Provenance | Generated at public publish by trusted publishing; not verifiable from a staged package | After approval only |
+| Public version | `npm view <pkg> versions --json` and `dist-tags --json` | After approval only |
+
+`npm audit signatures` verifies an installed package that already carries an
+attestation. It is not a pre-approval check for a staged tarball.
 
 ## Dependency gate
 
@@ -91,19 +104,27 @@ stored. Under O22 A the flow is:
 
 4. The owner approves that exact ID with `npm stage approve <stage-id>` and 2FA.
    On npmjs.com the same review and approval are available in the UI.
-5. If the stage is wrong, reject it with `npm stage reject <stage-id>`. Only an
-   approved stage becomes public.
+5. If the stage is wrong, reject it with `npm stage reject <stage-id>` **and
+   2FA**. Only an approved stage becomes public.
 
 `npm stage approve` takes a **stage ID**, never a package spec. `npm stage
-publish` does not require 2FA; approval does. The trusted publisher should be
-configured as **stage-only**; that setting is owner-side, not repo-side, and
-rejects a direct `npm publish` from the workflow. The workflow does not publish
-anything until the owner dispatches it.
+publish` does not require 2FA; `approve` and `reject` both do. Reject is not an
+unattended operation: it prompts for a one-time password, so the owner must be
+present. The trusted publisher should be configured as **stage-only**; that
+setting is owner-side, not repo-side, and rejects a direct `npm publish` from the
+workflow. The workflow does not publish anything until the owner dispatches it.
 
 A newly created trusted-publisher configuration expires if its first successful
 publish is not completed within **2 days**. Create the configuration when a
 release is ready to stage, not weeks in advance. These are npm-side facts, not
 repo-side checks.
+
+The repository is **PUBLIC** (`jond34/opencode-plugin-muse`), so repository
+visibility does not block provenance. Trusted publishing with `id-token: write`
+generates it automatically at public publish; do not add `--provenance` to the
+workflow. Stage-only is an owner-side setting: the repository can record it and
+record that the workflow only calls `npm stage publish`, but CI cannot prove it,
+and it is not tested with a direct publish.
 
 Staged publishing requires npm CLI 11.15.0+. The workflow pins `npm@11.19.1`
 before `npm ci` so the runner does not depend on the bundled CLI.

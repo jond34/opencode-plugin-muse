@@ -26,6 +26,7 @@ would make it stale. `scripts/check-claims.ts` reads the JSON mirror and, with
 | node-signals | Windows signal termination is forceful and abrupt | [Node process](https://nodejs.org/api/process.html#signal-events) | "`SIGTERM`, `SIGKILL`, and `SIGINT` … terminate the process forcefully and abruptly" | 2026-11-24 | Node 24 | http |
 | mxc-plugin | An MXC sandbox plugin ships for opencode | [npm registry](https://registry.npmjs.org/universal-opencode-sandbox/latest) | package `universal-opencode-sandbox`, version 0.4.1 | 2026-11-24 | 0.4.1 | http |
 | codex-doctor | `codex doctor` exits 1 only when the overall status is `Fail` | [doctor.rs](https://github.com/openai/codex/blob/main/codex-rs/cli/src/doctor.rs) | `if report.overall_status == CheckStatus::Fail` | 2026-11-24 | main | http |
+| npm-stage-reject-2fa | `npm stage reject` requires 2FA | [npm stage CLI](https://docs.npmjs.com/cli/v12/commands/npm-stage) | "npm stage reject | Yes | Prompts for 2FA to permanently remove the staged package" | 2026-11-23 | npm 11.19.1 / CLI v12 docs | http |
 | vue-doctor | Vue Doctor's `--strict` exits 3 on an analyzer failure or skip | [CLI reference](https://remylagerweij.github.io/vue-doctor/reference/cli) | "Exit with code 3 if any analyzer fails or is skipped." | 2026-11-24 | current | http |
 
 The older `brew doctor` and `a4 doctor` rows are **not reopened**: no primary

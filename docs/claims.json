@@ -154,6 +154,14 @@
       "check": { "kind": "http" }
     },
     {
+      "id": "npm-stage-reject-2fa",
+      "claim": "npm stage reject requires 2FA",
+      "url": "https://docs.npmjs.com/cli/v12/commands/npm-stage",
+      "quote": "npm stage reject | Yes | Prompts for 2FA to permanently remove the staged package",
+      "version": "npm 11.19.1 / CLI v12 docs",
+      "check": { "kind": "http" }
+    },
+    {
       "id": "vue-doctor",
       "claim": "Vue Doctor's --strict exits 3 on an analyzer failure or skip",
       "url": "https://remylagerweij.github.io/vue-doctor/reference/cli",

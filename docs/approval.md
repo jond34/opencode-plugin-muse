@@ -73,9 +73,28 @@ still wrote the new marker and rewrote the trust record to the new hash with
 `legacy_hook_trust_amnesty_applied: true`.
 
 Treat a plugin hook approval as fresh-install evidence, not as durable across an
-update. The release is stopped until this is fixed or worked around; the record
-is [`evidence/2026-11-26-r31-e62.json`](evidence/2026-11-26-r31-e62.json). This
-is a Muse-side finding, not a claim that the plugin maps a Muse approval.
+update. Round 32 separated the migration from the host:
+
+| Situation | Result | Evidence |
+|---|---|---|
+| Fresh install | Hook is `review_needed` and does not run until `muse plugins approve` | E62, E65 Arm A |
+| Update, amnesty flag absent | Changed hook ran without a new approval; the run wrote the amnesty pair | E62 |
+| Update, amnesty pair seeded before install | Inspect says `modified`; the changed hook does not run; the stored hash and flags do not change | E65 Arm A |
+| Private host, no approval in its config | A hook approved in the user's config does not run; inspect says `review_needed` | E65 Arm C |
+| Private host with its own approval | `muse plugins update` re-runs a changed hook without a new approval | E65 Arm C |
+
+So E62 was the one-time legacy migration, not a recurring update bypass: seeding
+both amnesty records suppresses it. The bypass still reaches any Muse config
+store, including a private host config, but only after an approval exists in
+that store. The plugin writes a fresh private config per host process and never
+approves or updates inside it, so a normal session has no live path; the
+reachable consequence there is that the user's approval is inert.
+
+The release is stopped pending P1/P2: block `plugin` origins, or accept the inert
+production path with the caveat. Records:
+[`evidence/2026-11-26-r31-e62.json`](evidence/2026-11-26-r31-e62.json) and
+[`evidence/2026-11-26-r32-e65.json`](evidence/2026-11-26-r32-e65.json). This is a
+Muse-side finding, not a claim that the plugin maps a Muse approval.
 
 ## Why the plugin still uses `allowAll`
 

@@ -1,0 +1,54 @@
+{
+  "experiment": "A4",
+  "date": "2026-11-23",
+  "question": "Do the release gate's pack-inspection and audit assertions fail closed?",
+  "versions": {
+    "node": "v24.22.1",
+    "npm": "11.19.1",
+    "bun": "1.4.4"
+  },
+  "base": "git archive HEAD (9614d5d) into scratch/r32-gate, node_modules symlinked; never the candidate worktree",
+  "commands": [
+    "git archive HEAD | tar -x -C scratch/r32-gate/case-pack",
+    "echo forbidden > scratch/r32-gate/case-pack/src/forbidden.txt",
+    "node -e 'append \"src\" to package.json files'",
+    "bash scripts/check-release.sh",
+    "PATH=scratch/r32-gate/bin:$PATH bash scripts/check-release.sh (case-audit)"
+  ],
+  "cases": {
+    "packInspection": {
+      "setup": "src/ added to package.json files, with src/forbidden.txt present",
+      "exit": 1,
+      "failurePoint": "packed file list",
+      "exactText": "forbidden file (src/): src/adapter.ts",
+      "raw": "scratch/r32-gate/case-pack.log",
+      "rawSha256": "537de4a8c0d38ea0b15350c42029e70f255bd059fa790ba252b22bf98061755b"
+    },
+    "auditHigh": {
+      "setup": "fake npm earlier on PATH delegates every command except `audit --omit=dev --json`, which prints metadata.vulnerabilities.high = 1",
+      "exit": 1,
+      "failurePoint": "dependency audit",
+      "exactText": "audit: 1 high, 0 critical; release blocked",
+      "raw": "scratch/r32-gate/case-audit.log",
+      "rawSha256": "394c2ddb0814b1367e0ebf19d393079c25e449435aca433420f40a565a1f3324"
+    }
+  },
+  "observations": [
+    "Both negative cases exited 1 at the intended assertion and printed the intended sentence.",
+    "The pack case reached the file-list check only after build and strict claims passed, so the failure is the pack assertion and not an earlier step.",
+    "The audit case passed the pack check with 165 files, which is the candidate shape, then failed on the synthetic high advisory.",
+    "The throwaway copy was not committed and is not part of the candidate."
+  ],
+  "result": "Both release-gate negative branches fail closed with exit 1.",
+  "branch": "O33 A: enforce the gates, with the negative tests recorded",
+  "limits": [
+    "The audit case used a synthetic report; it does not reproduce a real advisory.",
+    "The copy ran Node 24 and the checkout's node_modules; it is a gate test, not a clean rebuild.",
+    "The `git diff --check` tail of the gate was not reached in either case."
+  ],
+  "artifacts": [
+    "scratch/r32-gate/case-pack.log",
+    "scratch/r32-gate/case-audit.log",
+    "scratch/r32-gate/bin/npm"
+  ]
+}

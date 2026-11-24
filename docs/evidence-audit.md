@@ -119,6 +119,30 @@ landed or was blocked; experiments still running are not counted as done.
 | E55a/E55b. Console | blocked | no owner-authenticated browser; no claim |
 | E61, E64, E60 | not run | stopped at E62 B2; no stage, approval, publish, tag, or push |
 
+## Round 32 status (2026-11-23)
+
+The live table is in `docs/round-32-status.md`. The round stopped at E65 H3, so
+E61, E55, F1, E64, and E60 were not run.
+
+| Item | Status | Where |
+|---|---|---|
+| A1. Release facts | **done** | `docs/release.md`; reject needs 2FA, verified-when table, PUBLIC-repo provenance, stage-only is owner-side |
+| A2. Approval wording | **done** | `docs/approval.md` five-row update/private-host table; P5 row still P |
+| A3. Hook-gate note | **done** | `src/hooks.ts` comment only; no behavior change |
+| A4. Gate negative tests | **done** | `docs/evidence/2026-11-26-r32-gate.json`; pack and audit cases both exit 1 |
+| A5. Stage preflight | **preflight** | `docs/evidence/2026-11-26-r32-e60.json`; no 0.1.13, 0.1.12 has an attestation, local npm token E401 |
+| E65. Amnesty + private host | **H3** | `docs/evidence/2026-11-26-r32-e65.json`; flag pair suppresses the migration; private host does not inherit the user's approval, but an approval inside the private config is bypassed on update |
+
+**The private host and the user's store are different evidence subjects.** E65
+Arm C reads a private `XDG_CONFIG_HOME` with a `trust.json` precondition and the
+plugin data dir. In that shape the plugin record is visible and `project-trusted`,
+but the user's `runtime_capabilities` approval is absent, so the hook is
+`review_needed` and inert. Approving inside that private config makes it run; an
+update then re-runs a changed hook without a new approval, exactly as in the
+user's store. Do not read that as the plugin's normal session running a changed
+hook: the plugin never runs `plugins approve` or `plugins update` in its private
+config, and the config is recreated per host process.
+
 ---
 
 ## Round 27 status (2026-11-24)

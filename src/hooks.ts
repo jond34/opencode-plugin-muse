@@ -13,8 +13,16 @@
  * workspace, and keeps its hooks inert until `muse plugins approve` (E35,
  * 1.4.25). So a checkout can supply the plugin source, but it cannot make Muse
  * run the hook without the person's approval; the approval is keyed to the
- * capability definition hash. The doctor still prints the origin of every
- * handler, so an installed plugin is visible rather than silent.
+ * capability definition hash. That keying is not durable across an update:
+ * E62 (1.4.25) found that a changed hook ran after `muse plugins update` and
+ * the next turn wrote the one-time legacy amnesty. E65 then showed the amnesty
+ * is suppressed when its record pair is already seeded, and that this private
+ * host does not inherit the user's approval at all (the hook is `review_needed`
+ * and inert), though a private config that holds its own approval is amnestied
+ * on update like any other store. The plugin never approves or updates inside
+ * that config, so the normal session has no live bypass; this gate does not
+ * cover plugin origins and does not claim to. The doctor still prints the
+ * origin of every handler, so an installed plugin is visible rather than silent.
  *
  * The acceptance is a record, not a prompt: the server half's `Context` has no
  * dialog surface, so the record is written by the doctor or by the env override

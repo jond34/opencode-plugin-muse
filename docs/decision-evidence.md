@@ -1528,3 +1528,39 @@ nothing was approved or published, and no tag or push occurred.
 installed-package import. The first `npm test` run after removing two ignored
 scratch test trees was 458 pass / 1 fail; the single conformance test passed on
 rerun. The final full run is recorded in `docs/round-31-status.md`.
+
+## Round 32 (2026-11-23)
+
+**D252/D253/D255 — not taken.** E65 did not land on H1, H2, or H4. Arm A did
+show the flag pair suppresses the amnesty (the H1 half), and Arm C's first run
+showed the private host does not run a hook approved in the user's config (the
+H4 half), but neither is the whole result.
+
+**D254 — E65 H3: stop the run.** With both E62 amnesty records seeded before a
+fresh install, `muse plugins update` stayed `modified`, the changed hook did not
+run, and the settings hash was unchanged; that bounds E62 to the one-time legacy
+migration. In the private `writeMuseHostConfig()` shape, the plugin record was
+visible and `project-trusted` while the user's approval was absent: the hook was
+`review_needed`, effective capabilities were empty, and no marker fired. After
+approving inside the private config, one turn fired marker B; changing the hook
+and updating reported `modified`; the next turn fired marker C without a new
+approval and wrote the amnesty pair. The mechanism therefore reaches a private
+Muse config. The plugin never approves or updates in that config and recreates
+it per host process, so a normal session is inert; the reachable effect is the
+user's approval not being honored. The stop condition fired. P1/P2 are open, no
+gate was implemented, and E61/E55/F1/E64/E60 were not run.
+
+**D256–D259 — not reached.** E61, E55a/E55b, and E64 were gated behind the E65
+stop.
+
+**D260 — E60 blocked before staging.** Preflight found no public or known staged
+0.1.13, 0.1.12 carrying a SLSA attestation, and a PUBLIC repository. `npm stage
+list --json` failed with `E401` because the local npm token is invalid, so the
+stage list could not be read and the reject 2FA prompt was never reachable. No
+stage, approval, reject, publish, or tag occurred.
+
+**D261 — release holds.** The trust path is not a clean pass and the builder and
+stage checks were not run; the release does not resume.
+
+**Verification.** A4 gate negative tests both exited 1 at the intended
+assertions. Documentation checks are recorded in the round-32 commit.
