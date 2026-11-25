@@ -72,8 +72,20 @@ Published 1.1.0 (base + patches 1-6):
 168 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
 hash. The patch adds the `/connect` row and the login status built on it, and
-makes the allowance warning skip a window that has already reset; the
-publish facts (commit, tag, tarball digest, attestation) are added after approval.
+makes the allowance warning skip a window that has already reset.
+
+Published 2026-11-25 from commit `0f04fbd`, tag `v1.1.0`, through the `publish`
+workflow's staged path (run
+[45695226723](https://github.com/jond34/opencode-plugin-muse/actions/runs/45695226723)):
+
+```text
+tarball shasum   b4badf06c5248148cd30b1a0ba36a8603013562d
+tarball integrity  sha512-2zC6xXHM+bSllQs1mW842CVFzrfreebuHMeUcJVsB+QAm4o//+jj+6I1KRUhCxktBM//bF/yCiFQwHFHnO92kQ==
+provenance       https://search.sigstore.dev/?logIndex=4111049771
+```
+
+The tarball shasum equals a local `npm pack` of this tree, so the published
+artifact is the reproduced build and not a rebuild of it.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 
