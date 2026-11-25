@@ -1,6 +1,7 @@
 import type {
   HarnessContentBlock,
   HarnessEvent,
+  HarnessFailure,
   HarnessSessionInfo,
   HarnessToolBridge,
   HarnessToolResult,
@@ -87,6 +88,17 @@ export interface FakeScript {
    * calls, so the registry's parked-call guards can never fire.
    */
   readonly failTurnWhileParked?: boolean;
+  /**
+   * Refuse the turn before it does anything, with a failure of this class. The
+   * default `unknown` keeps the existing parked-call fixture unchanged; `auth`
+   * is what a host says when the login is gone.
+   */
+  readonly failTurnClass?: HarnessFailure["class"];
+  /**
+   * End the turn as interrupted with no failure, the way a user pressing stop
+   * would. Says nothing about the login, so the observer must not fire.
+   */
+  readonly interruptTurn?: boolean;
 }
 
 function textOf(content: ReadonlyArray<HarnessContentBlock>): string {
@@ -179,6 +191,26 @@ export class FakeSession implements LanguageSession {
   private async run(turnId: string, text: string, turn: HarnessTurn): Promise<void> {
     const wanted = this.script.toolCalls ?? (this.script.toolName === undefined ? 0 : 1);
     const parts: string[] = [];
+    if (this.script.interruptTurn) {
+      this.bus.publish({
+        type: "turn.terminal",
+        turn: { ...turn, status: "interrupted", completedAt: now() },
+        failure: null,
+      });
+      return;
+    }
+    if (this.script.failTurnClass !== undefined) {
+      this.bus.publish({
+        type: "turn.terminal",
+        turn: { ...turn, status: "failed", completedAt: now() },
+        failure: {
+          class: this.script.failTurnClass,
+          message: "fake host refused the turn",
+          retryable: false,
+        },
+      });
+      return;
+    }
     try {
       while (this.calls < wanted && this.bridge !== undefined) {
         this.calls += 1;

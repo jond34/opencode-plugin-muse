@@ -3,9 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# 1.0.0 candidate: patches 3 through 5. The published 0.1.9 and older
+# 1.1.0 candidate: patches 3 through 6. The published 0.1.9 and 1.0.0/1.0.1
 # recorded hashes stay in docs/provenance.md.
-EXPECTED=3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669
+EXPECTED=92175e25b9cff8c5deb07caceb96594e11d3341527361e77ad6a8fae0e0477ac
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 

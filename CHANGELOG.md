@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.0
+
+- `/connect` gains a `Muse Agent` row, shaped like opencode's own `claude-agent`
+  integration: one external method, "Muse CLI login (`muse login`)". Connecting
+  records the choice only. The credential stays with `muse login`, and the stored
+  connection is `{"type": "external", "methodID": "muse-login"}` with no secret.
+- The provider names that row with `integrationID: "muse-agent"`, so the picker
+  and `/connect` share one identity. The provider id remains `muse`, and it stays
+  `activation: "enabled"`, so the link cannot hide the models when no connection
+  exists.
+- Measured on opencode 2.4.1 on 2026-11-25: the row reaches `GET /api/integration`
+  after plugin activation; `opencode auth login muse-agent --method muse-login`
+  connects; one `muse/muse-ember-1.0` turn still completes. The user's
+  `~/.config/muse/auth.json` and `settings.json` hashes were unchanged.
+- The row now reports a login that has not happened. A read-only probe
+  (`muse usage --json`, no model turn) distinguishes "not logged in" from
+  everything else; only that answer sets a `needs_auth` status, which `/connect`
+  renders as "Sign in required →". Offline, a timeout, or a renamed subcommand
+  leaves the row untouched, and a successful login clears the status. The probe
+  runs when the plugin starts with a saved connection and after a credential
+  change, never during a turn, and it reads no token of its own.
+- A finished turn updates the same status without running the CLI: a turn that
+  fails for auth sets it, and a clean finish clears it. That notices a login
+  that expired mid-session, which a startup probe cannot. A turn verdict is
+  always newer than a probe already in flight, and the probe is cancelled when
+  the plugin stops, so neither can outlive its purpose.
+
 ## 1.0.1
 
 Documentation-only patch. No source, `dist/`, dependency, or export changes; the

@@ -1,6 +1,6 @@
 {
   "name": "@jonathand34/opencode-plugin-muse",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Use Muse models in opencode through the signed-in muse CLI. Republished build of @rasyid_rafi/opencode-muse with five patches.",
   "license": "MIT",
   "homepage": "https://github.com/jond34/opencode-plugin-muse#readme",
@@ -34,7 +34,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test --path-ignore-patterns='scratch/**'",
-    "test:offline": "bun test --path-ignore-patterns='scratch/**' test/lifecycle.test.ts test/host-requests.test.ts test/usage.test.ts test/replay.test.ts test/convert.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts test/bridge.test.ts test/view-gap.test.ts test/host-death.test.ts test/host-process.test.ts test/approval-failures.test.ts test/hook-gate.test.ts test/watchdog.test.ts test/watchdog-resume.test.ts test/allowance.test.ts test/doctor.test.ts test/tui-notice.test.ts test/platform.test.ts test/muse-bin.test.ts test/suite-list.test.ts test/junit-summary.test.ts test/skip-ledger.test.ts",
+    "test:offline": "bun test --path-ignore-patterns='scratch/**' test/lifecycle.test.ts test/host-requests.test.ts test/usage.test.ts test/replay.test.ts test/convert.test.ts test/contributor-models.test.ts test/host-config.test.ts test/effort.test.ts test/meta.test.ts test/fingerprint.test.ts test/transcript.test.ts test/ledger.test.ts test/host-facts.test.ts test/compaction.test.ts test/model-limits.test.ts test/prompt-policy.test.ts test/history.test.ts test/containment.test.ts test/bench.test.ts test/bench-stats.test.ts test/native-history-harness.test.ts test/bridge-denial.test.ts test/version.test.ts test/toolset-record.test.ts test/schema-gate.test.ts test/bridge.test.ts test/view-gap.test.ts test/host-death.test.ts test/host-process.test.ts test/approval-failures.test.ts test/hook-gate.test.ts test/watchdog.test.ts test/watchdog-resume.test.ts test/allowance.test.ts test/registration.test.ts test/login-status.test.ts test/login-observer.test.ts test/doctor.test.ts test/tui-notice.test.ts test/platform.test.ts test/muse-bin.test.ts test/suite-list.test.ts test/junit-summary.test.ts test/skip-ledger.test.ts",
     "check": "tsc --noEmit -p tsconfig.json && bun test",
     "check:offline": "tsc --noEmit -p tsconfig.json && bun run test:offline",
     "doctor": "bun scripts/doctor.ts",

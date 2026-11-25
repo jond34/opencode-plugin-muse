@@ -1,5 +1,5 @@
 import type { LanguageModelV3StreamPart, LanguageModelV3Usage } from "@ai-sdk/provider";
-import type { HarnessEvent, HarnessToolBridge, HarnessToolResult } from "./contract/index.js";
+import type { HarnessEvent, HarnessFailure, HarnessToolBridge, HarnessToolResult } from "./contract/index.js";
 import type { LanguageAdapter, LanguageSession } from "./language.js";
 import type { HistoryCompactedEvent } from "./session.js";
 import { StreamConverter } from "./convert.js";
@@ -249,6 +249,16 @@ export class LiveSession {
   }
 
   /**
+   * Called when a turn finishes in a way that says something about the login:
+   * `null` for a completed turn, the classified failure for a failed one.
+   * Interrupted, cancelled, and unclassified failures are skipped — half a turn
+   * is not evidence. The plugin listens to notice a login that expired without
+   * a restart. An observer that throws must not disturb the stream, so the call
+   * site guards it.
+   */
+  onTurnTerminal: ((failure: HarnessFailure | null) => void) | undefined;
+
+  /**
    * Offer this step's tools to the bridge. Each OpenCode session has its own
    * agent and therefore its own tool set; a shared list would serve one
    * session's tools to another.
@@ -406,6 +416,16 @@ export class LiveSession {
             this.terminalError = new Error(event.failure?.message ?? "Muse turn failed");
           }
           this.mergeUsage(event.turn.tokenUsage as Usage | undefined);
+          // Only a finished or refused turn says something about the login. An
+          // interrupted or cancelled turn is not evidence either way, and a
+          // failed turn without a classified failure proves nothing.
+          if (event.turn.status === "completed" || (event.turn.status === "failed" && event.failure !== null)) {
+            try {
+              this.onTurnTerminal?.(event.failure ?? null);
+            } catch {
+              // Observation is advisory: a listener must never cost the turn.
+            }
+          }
           if (this.pending.size > 0) {
             // The turn ended before its tool calls were answered; they can
             // never be. Reject them so the bridge does not wait forever.
@@ -744,6 +764,7 @@ export class MuseSessionRegistry {
   private hostFingerprintValue: string | null = null;
   private promptDeliveryValue: PromptDelivery = "unknown";
   private containmentModeValue: "strict" | "warn" | "off" = "warn";
+  private turnObserverValue: ((failure: HarnessFailure | null) => void) | undefined;
 
   constructor(adapter: LanguageAdapter, store?: SessionStore) {
     this.adapter = adapter;
@@ -771,6 +792,18 @@ export class MuseSessionRegistry {
   /** Set once at startup; a containment breach in strict mode fails the turn. */
   setContainmentMode(mode: "strict" | "warn" | "off"): void {
     this.containmentModeValue = mode;
+  }
+
+  /**
+   * Observe every finished turn, for the login status on the `/connect` row.
+   *
+   * A turn that fails with `class: "auth"` is the strongest evidence available:
+   * it is the login itself refusing, not a probe inferring. Existing sessions
+   * are updated too, because a turn may already be running.
+   */
+  setTurnObserver(observer: (failure: HarnessFailure | null) => void): void {
+    this.turnObserverValue = observer;
+    for (const session of this.sessions.values()) session.onTurnTerminal = observer;
   }
 
   /**
@@ -972,6 +1005,7 @@ export class MuseSessionRegistry {
       nativePrompt,
       this.containmentModeValue === "strict",
     );
+    live.onTurnTerminal = this.turnObserverValue;
     const transcript = parseFingerprints(await this.store?.get(storeKey(openCodeSessionId, ":transcript")));
     const compactions = parseFingerprints(await this.store?.get(storeKey(openCodeSessionId, ":compaction")));
     this.transcriptBySession.set(openCodeSessionId, transcript);
