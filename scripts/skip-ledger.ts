@@ -47,6 +47,34 @@ export const PLATFORM_SKIPS: readonly PlatformSkip[] = [
     reason: "POSIX mode reporting is not a Windows behaviour; the win32 row is tested separately",
     decisionRow: "U23",
   },
+  {
+    file: "test/login-status.test.ts",
+    name: "reads a signed-in CLI from exit 0",
+    platform: "win32",
+    reason: "the fixture is a POSIX shell script; execFile cannot start it on Windows, and the probe correctly reports unknown there",
+    decisionRow: "U24",
+  },
+  {
+    file: "test/login-status.test.ts",
+    name: "reads a signed-out CLI from its stderr",
+    platform: "win32",
+    reason: "the fixture is a POSIX shell script; execFile cannot start it on Windows, and the probe correctly reports unknown there",
+    decisionRow: "U24",
+  },
+  {
+    file: "test/login-status.test.ts",
+    name: "a transient failure does not accuse the user",
+    platform: "win32",
+    reason: "the fixture is a POSIX shell script; on Windows the probe would report ENOENT, passing for the wrong reason",
+    decisionRow: "U24",
+  },
+  {
+    file: "test/login-status.test.ts",
+    name: "a timeout is unknown",
+    platform: "win32",
+    reason: "sleep is not a Windows command; the probe would report ENOENT, not a timeout",
+    decisionRow: "U24",
+  },
 ];
 
 export interface SkipHit {

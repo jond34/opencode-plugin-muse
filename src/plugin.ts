@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { Model, Plugin, Provider } from "@opencode/plugin";
+import { Integration, Model, Plugin, Provider } from "@opencode/plugin";
 import { MuseHarnessAdapter } from "./adapter.js";
 import { checkAllowance } from "./allowance.js";
 import { buildEffortCatalog } from "./effort.js";
@@ -35,6 +35,8 @@ import {
 import { resolveModelLimits } from "./model-limits.js";
 import { parsePromptDelivery, promptProbeKey, type PromptDelivery } from "./prompt-policy.js";
 import { makeCompactionDigest, makeLocalTitle, nativeCompactionResult, nativeWindowDigest } from "./meta.js";
+import { probeMuseLogin } from "./login-status.js";
+import { MUSE_INTEGRATION_ID, registerMuseIntegration } from "./registration.js";
 import { MuseSessionRegistry, type SessionStore } from "./session-registry.js";
 import { setGlobalRegistry } from "./shared.js";
 import { appendLedgerRow } from "./usage-ledger.js";
@@ -150,6 +152,159 @@ export function toModelInfo(
     variants: variants.map((variant) => ({ id: Model.VariantID.make(String(variant)) })),
     time: { released: Number.isFinite(released) && released > 0 ? released : 0 },
     limit: { context: contextLimit, output: outputLimit },
+  };
+}
+
+/**
+ * Text the `/connect` row carries when the CLI has no login. It names the
+ * command, because "sign in required" alone leaves people guessing.
+ */
+const LOGIN_STATUS_MESSAGE = "Muse is not signed in. Run `muse login` in a terminal, then reconnect.";
+
+/** How long the boot probe keeps waiting for the credential store to answer. */
+const LOGIN_BOOT_RETRY_MS = 750;
+const LOGIN_BOOT_RETRIES = 4;
+
+/**
+ * Report the Muse CLI's login state on the `/connect` row.
+ *
+ * The row's `external` method records a choice, not a credential (see
+ * `registration.ts`), so opencode shows a green tick as soon as someone clicks
+ * it. This asks the CLI itself — read-only, `muse usage --json` — and turns
+ * "not logged in" into a connection status, which the TUI renders as "Sign in
+ * required". A verdict of "unknown" changes nothing, so an offline laptop never
+ * accuses a signed-in user.
+ *
+ * Best-effort throughout: nothing here may fail a start or a turn. Returns the
+ * disposer that stops the watcher.
+ */
+function watchMuseLoginStatus(
+  ctx: Plugin.Context,
+  museBin: string,
+): { readonly stop: () => void; readonly report: (signal: "auth" | "ok") => void } {
+  const integration = ctx.integration;
+  if (integration === undefined) return { stop: () => {}, report: () => {} };
+
+  const abort = new AbortController();
+  let probing = false;
+  let again = false;
+  /**
+   * Which evidence is newest. A probe captures this before it starts; a turn
+   * verdict bumps it. A probe that returns after a turn must not overwrite what
+   * the turn just proved.
+   */
+  let verdictVersion = 0;
+  let bootTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Write one verdict onto the row, skipping a write that changes nothing. */
+  const apply = async (verdict: "signed-in" | "signed-out"): Promise<void> => {
+    const connection = await integration.connection.active(MUSE_INTEGRATION_ID);
+    // Without a connection there is no tick to correct; the row reads blank.
+    if (connection === undefined) return;
+    const wanted =
+      verdict === "signed-out"
+        ? ({ status: "needs_auth", message: LOGIN_STATUS_MESSAGE } as const)
+        : undefined;
+    const current = connection.status;
+    // Rewriting the same status only republishes `integration.updated`.
+    if (
+      current === undefined
+        ? wanted === undefined
+        : wanted !== undefined && current.status === wanted.status && current.message === wanted.message
+    ) {
+      return;
+    }
+    await integration.connection.status({
+      integrationID: MUSE_INTEGRATION_ID,
+      connection,
+      status: wanted,
+    });
+  };
+
+  const probe = async (): Promise<void> => {
+    const version = verdictVersion;
+    const verdict = await probeMuseLogin(museBin, { signal: abort.signal });
+    if (verdict === "unknown") return;
+    // A turn verdict that arrived while the probe ran is newer evidence.
+    if (version !== verdictVersion) return;
+    await apply(verdict);
+  };
+
+  const sync = async (): Promise<void> => {
+    // One probe at a time. An event during a probe asks for exactly one rerun,
+    // which is what a connect does: the credential write and the row refresh
+    // both arrive, and the second must not queue a third.
+    if (probing) {
+      again = true;
+      return;
+    }
+    probing = true;
+    try {
+      do {
+        again = false;
+        await probe();
+      } while (again && !abort.signal.aborted);
+    } catch (error) {
+      console.warn("[opencode-muse] could not report the Muse login state:", error);
+    } finally {
+      probing = false;
+    }
+  };
+
+  // A login saved in an earlier session is the common case, and the credential
+  // store may not answer on the first read, so retry the cheap lookup before
+  // paying for a probe. The probe itself runs only once a connection exists.
+  const boot = async (attempt: number): Promise<void> => {
+    if (abort.signal.aborted) return;
+    const connection = await integration.connection
+      .active(MUSE_INTEGRATION_ID)
+      .catch(() => undefined);
+    if (connection !== undefined) {
+      void sync();
+      return;
+    }
+    if (attempt >= LOGIN_BOOT_RETRIES || abort.signal.aborted) return;
+    bootTimer = setTimeout(() => void boot(attempt + 1), LOGIN_BOOT_RETRY_MS);
+    // A pending retry must not keep a short-lived CLI alive.
+    bootTimer.unref?.();
+  };
+  void boot(0);
+
+  void (async () => {
+    try {
+      // `integration.updated` is deliberately absent: our own status write
+      // publishes it. A connect creates a credential, which these events cover.
+      for await (const _event of ctx.event.subscribe({
+        types: ["credential.updated", "credential.switched"],
+        signal: abort.signal,
+      })) {
+        void sync();
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        console.warn("[opencode-muse] Muse login watch stopped:", error);
+      }
+    }
+  })();
+
+  return {
+    stop: () => {
+      abort.abort();
+      if (bootTimer !== undefined) clearTimeout(bootTimer);
+    },
+    /**
+     * Apply what a turn already proved, without spending a probe. A turn that
+     * failed for auth is the login itself refusing; a turn that finished is the
+     * login working. Any other failure says nothing, so the row keeps its state.
+     */
+    report: (signal) => {
+      // A turn verdict is newer than any probe already in flight; bumping the
+      // version makes those probes discard their result when they return.
+      verdictVersion += 1;
+      void apply(signal === "auth" ? "signed-out" : "signed-in").catch((error) => {
+        console.warn("[opencode-muse] could not report the Muse login state:", error);
+      });
+    },
   };
 }
 
@@ -420,12 +575,45 @@ export const MusePlugin = Plugin.define({
           name: PROVIDER_NAME,
           activation: "enabled",
           package: PROVIDER_PACKAGE,
+          // Tie the provider to the `/connect` row. The row is registered in the
+          // same setup pass, and `enabled` keeps the provider in the list even
+          // when no connection exists yet, so this link cannot hide the models.
+          integrationID: Integration.ID.make(MUSE_INTEGRATION_ID),
           canonical: Provider.ID.make(PROVIDER_CANONICAL),
           settings: { apiKey: PROVIDER_API_KEY },
         },
         models: modelInfos,
       });
     });
+
+    // `/connect` gets one Muse row, shaped like opencode's `claude-agent`
+    // integration: an external method that records the choice, with the
+    // credential left to `muse login`. The editor only exists inside the
+    // transform, and the write is best-effort (see registration.ts): an older
+    // host without the domain, or a rejected write, must not stop the provider
+    // from loading.
+    //
+    // The watch below keeps that row honest about `muse login`. It exists only
+    // where the row does, and it stops with the plugin.
+    let stopLoginWatch: () => void = () => {};
+    if (ctx.integration !== undefined) {
+      try {
+        await ctx.integration.transform((editor) => {
+          registerMuseIntegration(editor);
+        });
+        const loginWatch = watchMuseLoginStatus(ctx, museBin);
+        stopLoginWatch = loginWatch.stop;
+        // A finished turn is better evidence than a probe: an auth failure is
+        // the login refusing, a clean finish is the login working. That closes
+        // the window where a login expires mid-session.
+        registry.setTurnObserver((failure) => {
+          if (failure === null) loginWatch.report("ok");
+          else if (failure.class === "auth") loginWatch.report("auth");
+        });
+      } catch (error) {
+        console.warn("[opencode-muse] could not register the Muse login entry:", error);
+      }
+    }
 
     // Supply the AI SDK for the provider: OpenCode calls this instead of
     // loading a package from npm.
@@ -554,6 +742,7 @@ export const MusePlugin = Plugin.define({
     );
 
     return async () => {
+      stopLoginWatch();
       await registry.closeAll();
       await adapter.close();
       hostConfig?.remove();

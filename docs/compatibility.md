@@ -21,6 +21,7 @@ the native-history default are not promised.
 | Muse Code CLI | 1.4.25 | live X9a/X9b, 2026-11-24 |
 | `@opencode/plugin` | 2.3.2 | compile pin |
 | `@muse-code/sdk` | 1.4.24 | compile pin |
+| `/connect` integration entry | 1.1.0 | measured on host 2.4.1, 2026-11-25 |
 
 The plugin compiles against the 2.3.2 plugin package. X9a ran it inside the
 2.4.1 host on 2026-11-24: one simple turn, one bridged `shell` call, and one
@@ -32,6 +33,22 @@ not the provider proof. X9b then ran `opencode plugin add
 @jonathand34/opencode-plugin-muse@1.0.0` in a redirected config directory and
 returned an exact nonce from a run that loaded only that package. The record is
 [`evidence/2026-11-24-r36-x9.json`](evidence/2026-11-24-r36-x9.json).
+
+The `/connect` entry was measured separately on 2.4.1 on 2026-11-25: the
+`muse-agent` row reaches `GET /api/integration` after plugin activation, and
+connecting it stores a credential with `method: "external"` and no secret. The
+provider names the same integration with `integrationID`; the provider stays
+available because it registers as `activation: "enabled"`.
+
+The login status was measured on the same host: with a connection and no CLI
+login, the connection carried `status: {status: "needs_auth", message: "Muse is
+not signed in..."}`; after a restart the boot probe restored it without a click;
+and with the probe answering success (`muse usage --json` exit 0) the status was
+absent. `muse usage --json` costs about 0.02 s when signed out and about 1.2 s
+when signed in; a dead proxy produced a distinct "usage refresh failed
+(transient)" message, which the probe treats as unknown. A finished turn updates
+the same status without a probe: a turn failure classified as auth sets it, and
+a completed turn clears it. An interrupted turn changes nothing.
 
 The `SessionRequest.messages` metadata field added in 2.3.2 is additive and
 unused. The policy vocabulary the 2.3.2 compile pin reads is `policies` (2.2.3

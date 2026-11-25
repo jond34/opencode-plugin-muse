@@ -113,11 +113,12 @@ sign-in to `muse login`. The provider declares `canonical: "meta"` for the
 model's catalog identity and picker icon; as of opencode 2.3.2, `canonical`
 inheritance applies in the config-provider path, not to providers added by a
 plugin transform. So the plugin supplies each model's limits itself, and the
-model list stays the plugin's. The cost is UX parity: `/connect` does not list
-it, and a model switch is a picker entry rather than an account connection. The
-benefit is that the credential never reaches opencode, the config, or this
-plugin. The MSP competitor also registers `muse`, so the split is about the
-credential, not the id.
+model list stays the plugin's. The cost is UX parity: a model switch is a picker
+entry rather than an account connection. `/connect` lists a Muse row, but the
+row only records the choice; it cannot supply the credential (see "Signing in
+from `/connect`" below). The benefit is that the credential never reaches
+opencode, the config, or this plugin. The MSP competitor also registers `muse`,
+so the split is about the credential, not the id.
 
 Muse Code authenticates in its own CLI. Meta attests the Muse Code client: a
 subscription covers requests that client makes, and `api.meta.ai` refuses
@@ -147,6 +148,36 @@ credential. Which credential the CLI spends is not visible from inside the
 process: a subscription and a pay-as-you-go key look the same. `muse usage` is
 the only meter, and it reports account-wide percentages rather than a per-turn
 cost.
+
+### Signing in from `/connect`
+
+The plugin registers a `Muse Agent` row in `/connect`, shaped like opencode's
+own `claude-agent` integration: one external method, "Muse CLI login (`muse
+login`)". Connecting records that you chose Muse. It does not run a login, and
+opencode stores no secret for the row.
+
+The credential still belongs to `muse login`, which is what keeps the promise
+above: the row is a record of intent, not a source of tokens. The placeholder
+key the plugin reports to opencode and the provider path are unchanged.
+
+Because the row records an intent, opencode would otherwise mark it connected
+before you had signed in. The plugin closes that gap by asking the CLI:
+`muse usage --json` runs no model turn, the plugin never reads `auth.json`, and
+when no login exists the command fails in a few milliseconds with the CLI's own
+sentence. That answer becomes a connection status, which `/connect` shows as
+"Sign in required →", clearable by running `muse login` and clicking the row
+again (reconnecting re-runs the check). A probe that cannot tell — offline, a
+timeout, a renamed subcommand — changes nothing, so a signed-in user is never
+told to sign in because their laptop lost Wi-Fi.
+
+Turns close the gap too, without running anything. A finished turn is the
+strongest evidence there is: a failure classified as auth sets the status, and a
+clean finish clears it. That covers a login that expires mid-session, which no
+startup probe could see. The CLI check itself runs at startup when a connection
+exists and after every credential change, never during a turn.
+
+From the command line the same entry is `opencode auth login muse-agent
+--method muse-login`.
 
 ## Limits of the seam
 
