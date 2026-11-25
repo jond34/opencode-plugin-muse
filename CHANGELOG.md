@@ -26,6 +26,14 @@
   that expired mid-session, which a startup probe cannot. A turn verdict is
   always newer than a probe already in flight, and the probe is cancelled when
   the plugin stops, so neither can outlive its purpose.
+- The allowance warning no longer repeats a window that has already reset.
+  `usage/read` answers from the observation the host holds, so an idle host (or a
+  notice left behind by a failed toast) could carry a 95% window whose reset was
+  days in the past; the line then named a number and a reset time that were both
+  history. `checkAllowance` skips an expired window without claiming its
+  warn-once key, and the TUI half drops an expired notice instead of showing it.
+- The line now names the observation's age, e.g. `(observed 3h 05m ago)`, so a
+  stale reading reads as stale rather than as current.
 
 ## 1.0.1
 

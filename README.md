@@ -462,7 +462,7 @@ child host; none of the three is a setting you can pass.
 | `MUSE_IDLE_WARN_MS` | `90000` | silence before a warning is logged; `0` disables |
 | `MUSE_TOOL_CEILING_MS` | `0` (off) | longest a single bridged tool call may run before the host is ended |
 | `MUSE_RETRY_CAP_MS` | `600000` | most a provider retry may extend the idle clock; `0` keeps the normal reset |
-| `MUSE_ALLOWANCE_WARN_PERCENT` | `90` | warn once per allowance window at or above this percentage; `0` disables |
+| `MUSE_ALLOWANCE_WARN_PERCENT` | `90` | warn once per allowance window at or above this percentage; a window that has already reset is skipped, and the line names how old the reading is; `0` disables |
 
 `NODE_EXTRA_CA_CERTS` is not read by the plugin. The host is a child process that
 inherits this environment, so a corporate CA works by setting it for opencode.

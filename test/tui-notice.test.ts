@@ -20,7 +20,8 @@ import { plugin, showAllowanceNotice, TUI_PLUGIN_ID, type ToastSurface } from ".
 const NOTICE = {
   atMs: 1_700_000_000_000,
   usedPercent: 94,
-  resetsAtMs: 1_700_000_100_000,
+  // A reset still in the future: a live notice must be shown.
+  resetsAtMs: Date.now() + 60 * 60 * 1000,
   message: "[opencode-muse] allowance window 94% used (warning threshold 90%)",
 };
 
@@ -78,6 +79,17 @@ describe("the allowance notice", () => {
     // The second poll finds nothing: the person has already read it.
     expect(showAllowanceNotice(context, env)).toBe(false);
     expect(shown).toHaveLength(1);
+  });
+
+  test("a notice whose window already reset is dropped, not shown", async () => {
+    const env = await stateEnv();
+    writeAllowanceNotice({ ...NOTICE, resetsAtMs: Date.now() - 60_000 }, env);
+    const { context, shown } = surface();
+    // A notice can outlive its window. Showing it would name a reset in the
+    // past and a number nobody can act on.
+    expect(showAllowanceNotice(context, env)).toBe(false);
+    expect(shown).toHaveLength(0);
+    expect(readAllowanceNotice(env)).toBeNull();
   });
 
   test("a throwing toast leaves the notice for the next poll", async () => {
