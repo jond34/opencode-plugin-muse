@@ -9,6 +9,8 @@ import {
 } from "../src/allowance.js";
 
 const RESET = Date.parse("2026-11-22T18:00:00.000Z");
+/** A clock inside the fixture's window, before its reset. */
+const NOW = Date.parse("2026-11-22T16:00:00.000Z");
 
 function usage(usedPercent: number, resetsAtMs = RESET) {
   return {
@@ -65,10 +67,17 @@ describe("threshold", () => {
 
   test("the message names the number, the threshold, and the reset", () => {
     const parsed = parseAllowance(usage(93));
-    const message = allowanceMessage(parsed as never, 90);
+    const message = allowanceMessage(parsed as never, 90, NOW);
     expect(message).toContain("93% used");
     expect(message).toContain("warning threshold 90%");
     expect(message).toContain("2026-11-22T18:00:00.000Z");
+  });
+
+  test("the message says how old the reading is", () => {
+    const parsed = parseAllowance(usage(93));
+    expect(allowanceMessage(parsed as never, 90, NOW)).toContain("observed 1h 00m ago");
+    const unobserved = parseAllowance({ usage: { window: { usedPercent: 93, resetsAtMs: RESET } } });
+    expect(allowanceMessage(unobserved as never, 90, NOW)).not.toContain("observed");
   });
 });
 
@@ -76,23 +85,47 @@ describe("checkAllowance", () => {
   test("warns once per window, and again after the window resets", async () => {
     const lines: string[] = [];
     const source = { read: async () => usage(95) };
-    expect(await checkAllowance(source, {}, (line) => lines.push(line))).not.toBeNull();
-    expect(await checkAllowance(source, {}, (line) => lines.push(line))).toBeNull();
+    expect(await checkAllowance(source, {}, (line) => lines.push(line), NOW)).not.toBeNull();
+    expect(await checkAllowance(source, {}, (line) => lines.push(line), NOW)).toBeNull();
     expect(lines).toHaveLength(1);
 
     const nextWindow = { read: async () => usage(95, RESET + 5 * 60 * 60 * 1000) };
-    expect(await checkAllowance(nextWindow, {}, (line) => lines.push(line))).not.toBeNull();
+    const nextNow = RESET + 4 * 60 * 60 * 1000;
+    expect(
+      await checkAllowance(nextWindow, {}, (line) => lines.push(line), nextNow),
+    ).not.toBeNull();
     expect(lines).toHaveLength(2);
+  });
+
+  test("a window that has already reset stays quiet, and does not block the live one", async () => {
+    const lines: string[] = [];
+    const expired = { read: async () => usage(95) };
+    // The observation is from a block that ended before this run: the number is
+    // history, and "resets at" would name an instant already in the past.
+    expect(
+      await checkAllowance(expired, {}, (line) => lines.push(line), RESET + 60_000),
+    ).toBeNull();
+    expect(lines).toHaveLength(0);
+
+    // The skip did not claim the warn-once key: the next live window speaks.
+    const live = { read: async () => usage(95, RESET + 60 * 60 * 1000) };
+    expect(
+      await checkAllowance(live, {}, (line) => lines.push(line), RESET + 30 * 60 * 1000),
+    ).not.toBeNull();
+    expect(lines).toHaveLength(1);
   });
 
   test("stays quiet below the threshold and when disabled", async () => {
     const lines: string[] = [];
-    expect(await checkAllowance({ read: async () => usage(50) }, {}, (l) => lines.push(l))).toBeNull();
+    expect(
+      await checkAllowance({ read: async () => usage(50) }, {}, (l) => lines.push(l), NOW),
+    ).toBeNull();
     expect(
       await checkAllowance(
         { read: async () => usage(99) },
         { MUSE_ALLOWANCE_WARN_PERCENT: "0" },
         (l) => lines.push(l),
+        NOW,
       ),
     ).toBeNull();
     expect(lines).toHaveLength(0);
@@ -108,6 +141,7 @@ describe("checkAllowance", () => {
       },
       {},
       (l) => lines.push(l),
+      NOW,
     );
     expect(message).toBeNull();
     expect(lines).toHaveLength(0);

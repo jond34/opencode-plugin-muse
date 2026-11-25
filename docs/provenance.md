@@ -66,12 +66,13 @@ superseded build.
 Published 1.1.0 (base + patches 1-6):
 
 ```text
-92175e25b9cff8c5deb07caceb96594e11d3341527361e77ad6a8fae0e0477ac
+3175a42e42e17648dcca6d3456aef351e9aa120d85c1127285690bd2bbe4f42b
 ```
 
 168 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
-hash. The patch adds the `/connect` row and the login status built on it; the
+hash. The patch adds the `/connect` row and the login status built on it, and
+makes the allowance warning skip a window that has already reset; the
 publish facts (commit, tag, tarball digest, attestation) are added after approval.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:

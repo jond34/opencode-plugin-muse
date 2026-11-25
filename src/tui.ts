@@ -21,6 +21,7 @@
 import type { Plugin } from "@opencode/plugin/tui";
 import {
   clearAllowanceNotice,
+  isExpiredNotice,
   readAllowanceNotice,
   type AllowanceNotice,
 } from "./allowance.js";
@@ -52,9 +53,16 @@ export interface ToastSurface {
 export function showAllowanceNotice(
   surface: ToastSurface,
   env: NodeJS.ProcessEnv = process.env,
+  nowMs: number = Date.now(),
 ): boolean {
   const notice: AllowanceNotice | null = readAllowanceNotice(env);
   if (notice === null) return false;
+  // The window may have reset while the notice waited (a failed toast leaves
+  // the file for the next poll). Drop it instead of showing yesterday's wall.
+  if (isExpiredNotice(notice, nowMs)) {
+    clearAllowanceNotice(env);
+    return false;
+  }
   try {
     surface.ui.toast.show({
       title: "Muse allowance",

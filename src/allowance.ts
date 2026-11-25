@@ -80,18 +80,54 @@ export function shouldWarn(usage: AllowanceUsage, percent: number): boolean {
   return used !== undefined && used >= percent;
 }
 
+/**
+ * True when the reported window has already reset. `usage/read` answers from
+ * the observation the host already holds, so an idle host (or a replayed
+ * notice) can carry a window that ended hours or days ago. Warning about it
+ * would name a number and a reset time that are both history.
+ */
+export function isExpiredWindow(
+  usage: AllowanceUsage,
+  nowMs: number = Date.now(),
+): boolean {
+  const resets = usage.window?.resetsAtMs;
+  return resets !== null && resets !== undefined && resets <= nowMs;
+}
+
 /** The line a user reads. Names the number, the threshold, and the reset. */
-export function allowanceMessage(usage: AllowanceUsage, percent: number): string {
+export function allowanceMessage(
+  usage: AllowanceUsage,
+  percent: number,
+  nowMs: number = Date.now(),
+): string {
   const used = usage.window?.usedPercent ?? 0;
   const resets = usage.window?.resetsAtMs;
   const when =
     resets === null || resets === undefined
       ? "the reset time is not reported"
       : `the window resets at ${new Date(resets).toISOString()}`;
+  // Say how old the reading is: the number is only as good as its observation,
+  // and "observed 3h ago" is what tells a reader not to trust it as current.
+  const observedAtMs = usage.observedAtMs;
+  const age =
+    observedAtMs === null
+      ? ""
+      : ` (observed ${describeAge(nowMs - observedAtMs)} ago)`;
   return (
-    `[opencode-muse] allowance window ${used}% used (warning threshold ${percent}%); ${when}. ` +
+    `[opencode-muse] allowance window ${used}% used (warning threshold ${percent}%); ${when}${age}. ` +
     `Turns fail when it runs out; MUSE_ALLOWANCE_WARN_PERCENT=0 silences this.`
   );
+}
+
+/** `45s`, `12m`, `3h 05m`, `2d 4h`: enough to judge freshness at a glance. */
+function describeAge(ageMs: number): string {
+  const seconds = Math.max(0, Math.round(ageMs / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 /** A warning the TUI part can show. One file, one window, removed once shown. */
@@ -100,6 +136,18 @@ export interface AllowanceNotice {
   readonly usedPercent: number;
   readonly resetsAtMs: number | null;
   readonly message: string;
+}
+
+/**
+ * A notice whose window has already reset. A notice can outlive its toast (a
+ * failed show leaves it for the next poll), so a stale file must be dropped
+ * rather than displayed days later.
+ */
+export function isExpiredNotice(
+  notice: AllowanceNotice,
+  nowMs: number = Date.now(),
+): boolean {
+  return notice.resetsAtMs !== null && notice.resetsAtMs <= nowMs;
 }
 
 /** `$XDG_STATE_HOME/opencode-muse/allowance-notice.json`, beside the ledger. */
@@ -180,6 +228,7 @@ export async function checkAllowance(
   source: { read(): Promise<unknown> },
   env: NodeJS.ProcessEnv = process.env,
   log: (message: string) => void = (message) => console.warn(message),
+  nowMs: number = Date.now(),
 ): Promise<string | null> {
   const percent = allowanceWarnPercent(env);
   if (percent <= 0) return null;
@@ -190,12 +239,16 @@ export async function checkAllowance(
     return null;
   }
   if (usage === null || !shouldWarn(usage, percent)) return null;
+  // A window that has already reset is not a warning: the number belongs to a
+  // block that ended, and saying it "resets at" a past instant is a lie. Leave
+  // the warn-once key untouched so the live window can still speak.
+  if (isExpiredWindow(usage, nowMs)) return null;
   // The window is identified by when it resets; an absent stamp still warns,
   // but then only once per process, which is the best identity available.
   const key = usage.window?.resetsAtMs ?? null;
   if (warnedResetAtMs === key) return null;
   warnedResetAtMs = key;
-  const message = allowanceMessage(usage, percent);
+  const message = allowanceMessage(usage, percent, nowMs);
   log(message);
   writeAllowanceNotice(
     {
