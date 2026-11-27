@@ -4,7 +4,7 @@ Most of the code here is the npm package
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 (MIT, "Copyright (c) 2026 The opencode-muse authors"), published by the npm user
 `rasyid_rafi`. The adapter, provider, session registry, tool bridge, and test suite come
-from it; this repository adds five patches and the record describing them. The first
+from it; this repository adds patches 1-5 and the record describing them. The first
 two reconcile the base tree with the published 0.1.9 tarball; the third contains Muse
 to inference, the fourth makes opencode own the context (effort, titles, compaction,
 transcript reconciliation, and approvals), and the fifth finishes the effort,
