@@ -20,6 +20,12 @@
   reached Muse with no host turn reading it. The ack names the turn that runs
   the input, so it is adopted; `steered` is still refused, because that folds the
   input into a turn already running.
+- A turn whose queued input Muse reclaims now fails at once, retryable, naming
+  the reclaim. `turn/unqueued` carries the pre-minted turn id and the protocol
+  promises no `turn/started` or `turn/completed` for it, so without a handler
+  the host turn waited out the watchdog and reported a dead host that was in
+  fact answering. The adapter never asks for a reclaim, so the event means the
+  host dropped the input on its own; the failure says to send it again.
 - A Muse turn can write again. The plugin no longer passes `--disable-write` or
   `--disable-shell` to `muse serve`. Both flags reach further than Muse's own
   tools: Muse reports the posture to the model, which then declined the same
@@ -40,6 +46,17 @@
 
 ### Changed
 
+- The Muse SDK compile pin is 1.4.25 (was 1.4.24). The older SDK reported the
+  1.4.25 schema as a fingerprint mismatch (pinned `b7fb9137…`, served
+  `6bf51806…`), so `MUSE_STRICT_HOST=1` refused the installed CLI and
+  `bun run doctor` warned on every run. With 1.4.25 the fingerprint matches and
+  strict mode starts. The `@opencode/plugin` pin stays 2.3.2: the 2.4.2 type
+  surface adds only an experimental automation domain, tool codemode generics,
+  and a video attachment kind, none of which this plugin uses. The permission
+  domain is already in 2.3.2, so bumping would not change that surface either.
+- `bun run doctor` prints the contributor mode the plugin will actually use.
+  It used to echo the raw `MUSE_CONTRIBUTOR_MODE` string, so `yes` showed as
+  `yes` while the plugin ran with it off; it now prints `on` or `off`.
 - `bun run doctor` no longer asks for Muse's beta capability, so its `posture`
   row is gone. The plugin uses only the stable MSP surface; `permissionState`
   and `permissionProfile/list` are served only to a connection that declares
