@@ -12,7 +12,7 @@ CLI.
 
 ```bash
 muse login
-opencode plugin add @jonathand34/opencode-plugin-muse@1.3.0
+opencode plugin add @jonathand34/opencode-plugin-muse@1.2.0
 ```
 
 Restart opencode and pick a Muse model:
@@ -24,7 +24,7 @@ opencode run -m muse/muse-ember-1.0 "hello"
 Or pin it in `opencode.jsonc`:
 
 ```jsonc
-{ "plugins": ["@jonathand34/opencode-plugin-muse@1.3.0"] }
+{ "plugins": ["@jonathand34/opencode-plugin-muse@1.2.0"] }
 ```
 
 Needs opencode 2.x and Muse Code CLI 1.4.25 or newer, already logged in. If the
@@ -69,7 +69,7 @@ default, so leaving it out changes nothing.
 {
   "plugins": [
     {
-      "package": "@jonathand34/opencode-plugin-muse@1.3.0",
+      "package": "@jonathand34/opencode-plugin-muse@1.2.0",
       "options": { "sessionLog": true }
     }
   ]
@@ -94,9 +94,12 @@ unparseable value is ignored with a warning.
   carries opencode's tools to Muse. Muse's own tools, workflows, subagents,
   observer reminders, and skill catalog are off, and its toolset is pinned to
   `mcp__opencode__*`, so spawning belongs to opencode.
-- Contributor mode is off (`--contributor-mode off`), so code is not used for
-  training. Muse's terms make a harness subscription contributor services by
-  default, whatever model you pick; `MUSE_CONTRIBUTOR_MODE=1` restores it.
+- Contributor mode is off for this host (`--contributor-mode off`, per process,
+  never saved), so no family is routed to its `-contributor` model. The training
+  opt-out is not this flag: Muse's terms make the *account* setting the lever,
+  and a coding-harness subscription is Contributor Services by default for every
+  model you pick. Change it in Muse's `/settings`; `MUSE_CONTRIBUTOR_MODE=1`
+  restores routing here.
 - At an agent's step limit the plugin closes the running turn and delivers
   opencode's text-only instruction as a turn of its own, so the cap produces a
   summary instead of a refused tool call.
