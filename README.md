@@ -95,8 +95,8 @@ unparseable value is ignored with a warning.
   observer reminders, and skill catalog are off, and its toolset is pinned to
   `mcp__opencode__*`, so spawning belongs to opencode.
 - Contributor mode is off (`--contributor-mode off`), so code is not used for
-  training. Muse's subscription default is the opposite; `MUSE_CONTRIBUTOR_MODE=1`
-  restores it.
+  training. Muse's terms make a harness subscription contributor services by
+  default, whatever model you pick; `MUSE_CONTRIBUTOR_MODE=1` restores it.
 - At an agent's step limit the plugin closes the running turn and delivers
   opencode's text-only instruction as a turn of its own, so the cap produces a
   summary instead of a refused tool call.

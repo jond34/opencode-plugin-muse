@@ -481,10 +481,12 @@ export class MuseLanguageModel implements LanguageModelV3 {
    * End the turn Muse is still running so the step-cap instruction can be
    * delivered as a turn of its own.
    *
-   * Muse accepts only one running turn per session, so the instruction cannot
-   * simply start a new one. Interrupting is the only exit; a failure here
-   * leaves the turn active, and the caller falls back to steering, which is
-   * today's behaviour rather than a new failure mode.
+   * The host would accept a second `turn/start` and queue it (`ifBusy` defaults
+   * to `queue`), but this adapter is one native turn per host turn, so a queued
+   * submit would share the running turn's native id. Interrupting first is what
+   * makes the instruction a turn of its own; a failure here leaves the turn
+   * active, and the caller falls back to steering, which is today's behaviour
+   * rather than a new failure mode.
    */
   private async closeCappedTurn(live: LiveSession): Promise<void> {
     const turnId = live.activeTurnId;
