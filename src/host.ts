@@ -69,17 +69,81 @@ export function contributorModeFromEnv(value: string | undefined): "on" | "off" 
   }
 }
 
+/**
+ * Read `MUSE_HOST_SESSION_LOG`. Returns `undefined` for absent or unparseable
+ * values, so the caller can fall through instead of guessing.
+ */
+export function sessionLogFromEnv(value: string | undefined): boolean | undefined {
+  switch (value?.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "on":
+    case "yes":
+      return true;
+    case "0":
+    case "false":
+    case "off":
+    case "no":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+export interface SessionLogResolution {
+  readonly enabled: boolean;
+  /** Which input decided it, for the startup line. */
+  readonly source: "env" | "option" | "default";
+  /** Inputs that were present but unusable; each is ignored, not obeyed. */
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Resolve the session-log switch.
+ *
+ * `MUSE_HOST_SESSION_LOG` wins, then `plugins[].options.sessionLog`, then on
+ * (Muse's default, so unset changes nothing). The environment wins because a
+ * project config entry naming this package replaces plugin options wholesale:
+ * with the option alone, a repo file carrying `{}` would silently turn the
+ * durable transcript back on. An unusable value is ignored and reported, never
+ * coerced.
+ */
+export function resolveSessionLog(
+  options: { readonly sessionLog?: unknown },
+  env: string | undefined,
+): SessionLogResolution {
+  const warnings: string[] = [];
+  const fromEnv = sessionLogFromEnv(env);
+  if (fromEnv !== undefined) return { enabled: fromEnv, source: "env", warnings };
+  if (env !== undefined && env.trim() !== "") {
+    warnings.push(`MUSE_HOST_SESSION_LOG=${env} is not a boolean; ignoring it`);
+  }
+  const option = options.sessionLog;
+  if (typeof option === "boolean") return { enabled: option, source: "option", warnings };
+  if (option !== undefined) {
+    warnings.push(`sessionLog must be a boolean; ignoring ${JSON.stringify(option)}`);
+  }
+  return { enabled: true, source: "default", warnings };
+}
+
 /** Build the `muse serve` argument list. */
 export function serveArgs(options: MuseHostOptions): string[] {
   const args = ["serve", ...(options.args ?? [])];
   if (options.preset !== undefined) args.push("--preset", options.preset);
   if (options.contributorMode !== undefined) args.push("--contributor-mode", options.contributorMode);
   if (options.trustWorkspace === true) args.push("--trust-workspace");
-  // Vendor sandbox fences. opencode owns shell, writes, and approvals for every
-  // bridged call, so Muse's own copies of those are only a way around the
-  // harness. Keeping them off does not depend on the settings `run.toolset`
-  // key, which the vendor does not document.
-  args.push("--disable-write", "--disable-request-user-input");
+  // No `--disable-write` and no `--disable-shell`: both flags are more than a
+  // fence on Muse's own tools. Muse reports the posture to the model, which
+  // then declines the same operation through the *bridge* tool opencode
+  // actually runs (measured on 1.4.25: `--disable-write` made Ember answer
+  // "filesystem writes are disabled in this session" and skip opencode's
+  // write). The fence for Muse's own tools is the `run.toolset` allowlist in
+  // the private config (`mcp__opencode__*`), so the posture flags buy no
+  // containment and cost parity with every other opencode model.
+  if (options.sessionLog === false) args.push("--no-session-log");
+  // opencode owns questions; the host's reviewer would be a second, invisible
+  // one with no surface in opencode.
+  args.push("--disable-request-user-input");
   return args;
 }
 
@@ -168,6 +232,13 @@ export interface MuseHostOptions {
   readonly contributorMode?: "on" | "off";
   /** Start the host with `--trust-workspace`; required for per-session MCP. */
   readonly trustWorkspace?: boolean;
+  /**
+   * Keep Muse's native transcript. Omit or `true` changes nothing; `false`
+   * passes `--no-session-log`, which also removes warm resume and makes every
+   * turn reseed from the full prompt (measured ~7x input on a short
+   * conversation). Resolve it with `resolveSessionLog`.
+   */
+  readonly sessionLog?: boolean;
   /**
    * Declare the beta capability on this connection only.
    *

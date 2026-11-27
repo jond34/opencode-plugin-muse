@@ -24,7 +24,13 @@ import {
   strictHostRequested,
   type HostFacts,
 } from "./host-facts.js";
-import { CONTRIBUTOR_SUFFIX, contributorModeFromEnv, museBinFailure, resolveMuseBinFromProcess } from "./host.js";
+import {
+  CONTRIBUTOR_SUFFIX,
+  contributorModeFromEnv,
+  museBinFailure,
+  resolveMuseBinFromProcess,
+  resolveSessionLog,
+} from "./host.js";
 import {
   AGENT_OPTION,
   HEADERS,
@@ -80,7 +86,30 @@ const MODEL_NAMES: Readonly<Record<string, string>> = {
   "muse-spark-1.2": "Muse Spark 1.2",
 };
 
+/**
+ * Instruction sources the plugin drops. Muse supplies its own date and
+ * environment, so forwarding ours would duplicate them. `core/codemode` is
+ * dropped while `execute` stays offered; N5 (2026-11-26) A/B'd that over five
+ * paired tasks and saw zero `execute` calls in both conditions, so it changed no
+ * tool choice on that sample. That is a ceiling, not a general result: every
+ * task was a lookup, where `execute` was never the attractive choice. Kept
+ * excluded; only re-open it with a task set where Code Mode is actually
+ * tempting (multi-step loops), which N5 did not test.
+ */
 const EXCLUDED_INSTRUCTIONS = new Set(["core/date", "core/environment", "core/codemode"]);
+
+/**
+ * A declared zero price, not a missing one. `cost: []` is "unknown" and renders
+ * blank; one all-zero tier renders "Free" for any provider, because the label
+ * predicate is `cost.length > 0 && cost.every(input === 0)`. Muse bills the
+ * subscription rather than tokens, and its wire `model/list` returned
+ * `cost: null` on 1.4.25 (N2, 2026-11-26), so per-token zero is the honest
+ * statement - and it stops core from computing a budget from a price that does
+ * not exist. The brand is compile-time only; the runtime value is 0.
+ */
+const ZERO_COST = [
+  { input: 0, output: 0, cache: { read: 0, write: 0 } },
+] as unknown as Model.Info["cost"];
 
 interface SystemPart {
   readonly text: string;
@@ -141,6 +170,7 @@ export function toModelInfo(
   return {
     ...base,
     modelID: Model.ID.make(modelId),
+    cost: ZERO_COST,
     name: isContributor
       ? `${MODEL_NAMES[baseId] ?? baseId} Contributor`
       : MODEL_NAMES[baseId] ?? displayLabel,
@@ -365,9 +395,21 @@ export const MusePlugin = Plugin.define({
     // A preset set by the user wins; otherwise the private config is the
     // containment channel, and `empty` is only the fallback when it failed.
     const preset = process.env.MUSE_PRESET;
+    // One resolved value per run, logged so a project entry that replaced the
+    // options wholesale is visible rather than silent. Env wins: it is the
+    // only form a repo config cannot erase.
+    const sessionLog = resolveSessionLog(
+      ctx.options as { readonly sessionLog?: unknown },
+      process.env.MUSE_HOST_SESSION_LOG,
+    );
+    for (const warning of sessionLog.warnings) {
+      console.warn(`[opencode-muse] ${warning}`);
+    }
+    console.info(`[opencode-muse] session log: ${sessionLog.enabled ? "on" : "off"} (${sessionLog.source})`);
     const adapter = new MuseHarnessAdapter({
       hostOptions: {
         museBin,
+        sessionLog: sessionLog.enabled,
         ...(preset !== undefined
           ? { preset }
           : hostConfig === undefined

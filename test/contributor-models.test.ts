@@ -3,6 +3,7 @@ import { Provider } from "@opencode/plugin";
 import {
   contributorModeFromEnv,
   contributorModelEntries,
+  resolveSessionLog,
   serveArgs,
   type CatalogRow,
 } from "../src/host.js";
@@ -127,16 +128,56 @@ describe("serveArgs", () => {
       "--contributor-mode",
       "off",
       "--trust-workspace",
-      "--disable-write",
       "--disable-request-user-input",
     ]);
   });
 
-  test("adds the vendor sandbox fences even when nothing else is set", () => {
-    expect(serveArgs({})).toEqual([
+  test("leaves write and shell posture alone so bridged tools match other models", () => {
+    // Muse reports `--disable-write` to the model, which then declines the
+    // bridged write opencode would have run. The toolset allowlist is the
+    // fence; the posture flags only cost parity.
+    expect(serveArgs({})).toEqual(["serve", "--disable-request-user-input"]);
+  });
+
+  test("passes --no-session-log only when the transcript is turned off", () => {
+    expect(serveArgs({ sessionLog: true })).toEqual(["serve", "--disable-request-user-input"]);
+    expect(serveArgs({ sessionLog: false })).toEqual([
       "serve",
-      "--disable-write",
+      "--no-session-log",
       "--disable-request-user-input",
     ]);
+  });
+});
+
+describe("resolveSessionLog", () => {
+  test("defaults on, so an unset option changes nothing", () => {
+    expect(resolveSessionLog({}, undefined)).toEqual({ enabled: true, source: "default", warnings: [] });
+  });
+
+  test("the option can turn it off", () => {
+    expect(resolveSessionLog({ sessionLog: false }, undefined)).toEqual({
+      enabled: false,
+      source: "option",
+      warnings: [],
+    });
+  });
+
+  test("the environment wins, so a repo config cannot erase the switch", () => {
+    expect(resolveSessionLog({ sessionLog: false }, "1").enabled).toBe(true);
+    expect(resolveSessionLog({ sessionLog: true }, "0").enabled).toBe(false);
+  });
+
+  test("an unparseable environment value is ignored and reported", () => {
+    const resolved = resolveSessionLog({ sessionLog: false }, "sometimes");
+    expect(resolved.enabled).toBe(false);
+    expect(resolved.source).toBe("option");
+    expect(resolved.warnings).toHaveLength(1);
+  });
+
+  test("a non-boolean option is ignored and reported", () => {
+    const resolved = resolveSessionLog({ sessionLog: "false" }, undefined);
+    expect(resolved.enabled).toBe(true);
+    expect(resolved.source).toBe("default");
+    expect(resolved.warnings).toHaveLength(1);
   });
 });
