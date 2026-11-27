@@ -36,6 +36,37 @@ describe("makeLocalTitle", () => {
     expect(title.endsWith("…")).toBe(true);
     expect(title).not.toContain("  ");
   });
+
+  test("drops leading framing and sentence-cases the request", () => {
+    expect(
+      makeLocalTitle([{ role: "user", content: "can you fix the 500 error in the retry handler?" }]),
+    ).toBe("Fix the 500 error in the retry handler");
+    expect(
+      makeLocalTitle([{ role: "user", content: "please review the openssl 3.5 release notes" }]),
+    ).toBe("Review the openssl 3.5 release notes");
+    expect(
+      makeLocalTitle([{ role: "user", content: "I need to migrate the auth service" }]),
+    ).toBe("Migrate the auth service");
+    expect(
+      makeLocalTitle([{ role: "user", content: "hey, help me understand why the build fails" }]),
+    ).toBe("Why the build fails");
+  });
+
+  test("keeps the first sentence and drops its punctuation", () => {
+    expect(
+      makeLocalTitle([{ role: "user", content: "Fix the retry handler. Then deploy it." }]),
+    ).toBe("Fix the retry handler");
+  });
+
+  test("leaves an identifier or path opener alone", () => {
+    expect(
+      makeLocalTitle([{ role: "user", content: "@src/credential.ts can you add refresh tokens" }]),
+    ).toBe("@src/credential.ts can you add refresh tokens");
+  });
+
+  test("falls back when only framing is left", () => {
+    expect(makeLocalTitle([{ role: "user", content: "can you please" }])).toBe("Muse session");
+  });
 });
 
 describe("makeCompactionDigest", () => {
