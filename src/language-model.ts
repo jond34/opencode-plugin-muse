@@ -11,7 +11,7 @@ import { resolveEffort, type ModelEffort } from "./effort.js";
 import { fingerprintTranscript, findCompactionFingerprint, reconcileTranscript } from "./fingerprint.js";
 import { nativeHistoryEnabled } from "./flags.js";
 import { decideHistory, isToolOnlyRewrite } from "./history.js";
-import type { MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
+import type { LiveSession, MuseSessionRegistry, ToolDefinition } from "./session-registry.js";
 import { toAIUsage } from "./session-registry.js";
 import {
   allImages,
@@ -330,6 +330,17 @@ export class MuseLanguageModel implements LanguageModelV3 {
     let admitMs: number | undefined;
     const turn = latestUserTurn(fresh) ?? trailingInstruction(fresh);
     if (turn) {
+      // OpenCode marks the final allowed step with `toolChoice: none` and
+      // appends `MAX_STEPS_PROMPT`. Muse obeys that only when no turn is in
+      // flight: after tool results it keeps calling tools, and OpenCode refuses
+      // each call ("Tools are disabled after the maximum agent steps"), so the
+      // capped turn ends on an error card with no summary. Steering the
+      // instruction into the running turn does not help (measured 28/28
+      // ignored, and 20/20 with a blunter wording), and starting a second turn
+      // without closing the first fails ("Turn ... is still running"). Closing
+      // it first makes Muse answer in text 20/20, and leaves the session's
+      // tools working on the next turn 12/12.
+      if (options.toolChoice?.type === "none") await this.closeCappedTurn(live);
       const running = live.hasActiveTurn ? live.activeTurnId : null;
       if (running !== null) {
         // OpenCode promotes input that arrives mid-turn as a steer. Dropping
@@ -464,6 +475,31 @@ export class MuseLanguageModel implements LanguageModelV3 {
     });
     void controller;
     return { stream };
+  }
+
+  /**
+   * End the turn Muse is still running so the step-cap instruction can be
+   * delivered as a turn of its own.
+   *
+   * Muse accepts only one running turn per session, so the instruction cannot
+   * simply start a new one. Interrupting is the only exit; a failure here
+   * leaves the turn active, and the caller falls back to steering, which is
+   * today's behaviour rather than a new failure mode.
+   */
+  private async closeCappedTurn(live: LiveSession): Promise<void> {
+    const turnId = live.activeTurnId;
+    if (!live.hasActiveTurn || turnId === null) return;
+    try {
+      await live.muse.interruptTurn({ turnId });
+    } catch {
+      return;
+    }
+    // The turn is over as far as Muse is concerned; wait for its finish event
+    // so the next start is not refused, and force the flag if it never comes.
+    for (let waited = 0; waited < 20 && live.hasActiveTurn; waited += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (live.hasActiveTurn) live.setActiveTurn(false);
   }
 
   /** Title, compaction summary, and generate run as one-off Muse turns. */

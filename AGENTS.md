@@ -24,3 +24,9 @@ Tracked files are public. `scratch/` is ignored and may hold local records;
 `scratch/archive/MANIFEST.md` lists what was removed and why. Never link to,
 publish, or treat anything under `scratch/` as current public guidance. `bench/`
 is a local experiment harness, not part of the public test set.
+
+New prose is local by default: it belongs in `scratch/` unless it is a README
+section or replaces an existing tracked doc. A new file under `docs/` needs a
+reason it cannot be a README section. `README.md` is the only public surface
+that should grow, and it stays near the ~1,700-word category median; long
+material goes into an existing doc, not a new one.
