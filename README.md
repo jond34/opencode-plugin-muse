@@ -94,12 +94,12 @@ unparseable value is ignored with a warning.
   carries opencode's tools to Muse. Muse's own tools, workflows, subagents,
   observer reminders, and skill catalog are off, and its toolset is pinned to
   `mcp__opencode__*`, so spawning belongs to opencode.
-- Contributor mode is off for this host (`--contributor-mode off`, per process,
-  never saved), so no family is routed to its `-contributor` model. The training
-  opt-out is not this flag: Muse's terms make the *account* setting the lever,
-  and a coding-harness subscription is Contributor Services by default for every
-  model you pick. Change it in Muse's `/settings`; `MUSE_CONTRIBUTOR_MODE=1`
-  restores routing here.
+- Contributor mode is off on every run (`--contributor-mode off`), so no request
+  this plugin sends is a contributor request. That flag is a per-run override: it
+  does not change the saved switch, `contributor_mode_enabled` in
+  `~/.config/muse/settings.json`, and Muse saves that switch per computer. Muse
+  defaults a subscription to Contributor mode, which trades more usage for
+  training on your content, and that default covers every model.
 - At an agent's step limit the plugin closes the running turn and delivers
   opencode's text-only instruction as a turn of its own, so the cap produces a
   summary instead of a refused tool call.
