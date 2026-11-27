@@ -33,11 +33,11 @@ import {
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "doctor.ts");
 
-function run(args: string[], cwd: string, state: string) {
+function run(args: string[], cwd: string, state: string, extraEnv: NodeJS.ProcessEnv = {}) {
   const result = Bun.spawnSync({
     cmd: [process.execPath, SCRIPT, ...args],
     cwd,
-    env: { ...process.env, XDG_STATE_HOME: state },
+    env: { ...process.env, ...extraEnv, XDG_STATE_HOME: state },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -97,6 +97,19 @@ describe("doctor --json", () => {
     expect(out).not.toContain(homedir());
     expect(out).not.toMatch(/Bearer\s+[A-Za-z0-9]/);
     expect(out).not.toMatch(/sk-[A-Za-z0-9]{8,}/);
+  });
+
+  // The plugin parses contributor mode; doctor used to print the raw string, so
+  // `MUSE_CONTRIBUTOR_MODE=yes` showed "yes" while the plugin ran with it off.
+  test("prints the contributor mode the plugin will actually use", () => {
+    const { root, state } = workspace();
+    const detail = (value: string) => {
+      const { out } = run(["--json", "--offline"], root, state, { MUSE_CONTRIBUTOR_MODE: value });
+      return parse(out).checks.find((check) => check.id === "containment")?.detail ?? "";
+    };
+    expect(detail("1")).toContain("MUSE_CONTRIBUTOR_MODE=on");
+    expect(detail("yes")).toContain("MUSE_CONTRIBUTOR_MODE=off");
+    expect(detail("off")).toContain("MUSE_CONTRIBUTOR_MODE=off");
   });
 });
 

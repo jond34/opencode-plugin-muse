@@ -35,7 +35,7 @@ import {
   trustedHandlerHashes,
   type HookRow,
 } from "../src/hooks.js";
-import { MuseHost, shutdownLadder } from "../src/host.js";
+import { contributorModeFromEnv, MuseHost, shutdownLadder } from "../src/host.js";
 import { hasSchemaDrift, hostFactsFrom } from "../src/host-facts.js";
 import { describeFilePermissions, ledgerPath, stateDirectory } from "../src/usage-ledger.js";
 import { packageVersion } from "../src/version.js";
@@ -498,7 +498,7 @@ function containment(env: NodeJS.ProcessEnv): Check {
     id: "containment",
     status: "ok",
     detail:
-      `MUSE_CONTAINMENT=${on("MUSE_CONTAINMENT")} MUSE_CONTRIBUTOR_MODE=${on("MUSE_CONTRIBUTOR_MODE")} ` +
+      `MUSE_CONTAINMENT=${on("MUSE_CONTAINMENT")} MUSE_CONTRIBUTOR_MODE=${contributorModeFromEnv(env.MUSE_CONTRIBUTOR_MODE)} ` +
       `MUSE_NATIVE_HISTORY=${on("MUSE_NATIVE_HISTORY")} MUSE_STRICT_HOST=${on("MUSE_STRICT_HOST")}`,
   };
 }
