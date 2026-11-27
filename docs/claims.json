@@ -61,7 +61,7 @@
       "id": "meta-terms-contributor-default",
       "claim": "A Coding Harness Subscription is Contributor Services by default, whatever model is selected",
       "url": "https://dev.meta.ai/legal/terms-of-service",
-      "quote": "If you access the Services through a Coding Harness Subscription, you are considered to be using the Contributor Services by default regardless of which Meta Model you select",
+      "quote": "If you access the Services through a Coding Harness Subscription, you are considered to be using the Contributor Services by default regardless of which Meta Model you select, and Section 6 applies to that access and use. If you want to access the Standard Services through a Coding Harness Subscription, you must change the applicable setting in your Account",
       "version": "2026-10-09 terms",
       "check": {
         "kind": "http"
@@ -70,6 +70,20 @@
       "label": "Meta Model API Terms §3.3",
       "quote_md": "\"If you access the Services through a Coding Harness Subscription, you are considered to be using the Contributor Services by default regardless of which Meta Model you select\"",
       "claim_md": "A Coding Harness Subscription is Contributor Services by default, whatever model is selected"
+    },
+    {
+      "id": "muse-contributor-routes",
+      "claim": "Contributor mode routes each model family to its served contributor model",
+      "url": "https://dev.meta.ai/docs/muse-code/changelog",
+      "quote": "Contributor mode is subscribers-only and routes each model family to its served contributor model",
+      "version": "1.4.25",
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-26",
+      "label": "Muse changelog",
+      "quote_md": "\"Contributor mode is subscribers-only and routes each model family to its served contributor model\"",
+      "claim_md": "Contributor mode routes each model family to its served `-contributor` model"
     },
     {
       "id": "opencode-saved-approval",
