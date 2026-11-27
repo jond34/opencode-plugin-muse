@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
-    "@muse-code/sdk": "1.4.24",
+    "@muse-code/sdk": "1.4.25",
     "@opencode/plugin": "2.3.2"
   },
   "devDependencies": {
