@@ -12,20 +12,38 @@
  * There is no runner flag for "error on an unmatched path", and a glob migration
  * would change every invocation and the published file count. A test that reads
  * the list is the smallest instrument that fails loudly.
+ *
+ * The list drifted in both directions: it named the three gitignored harness
+ * files, which a runner checkout does not have, and it had never named
+ * `test/step-cap.test.ts`, a published test that runs offline. `unlistedTests`
+ * closes the second direction: every tracked test belongs in the list unless it
+ * needs a real host, and `LIVE_ONLY` is that exception written down.
  */
 import { existsSync } from "node:fs";
 
 /**
- * Entries in `test:offline` that are deliberately absent from a runner checkout:
- * three gitignored local harness files. They are excused by
- * name, not by absence, so any other missing entry is still reported — and the
- * accompanying test requires each one to be both untracked and ignored, so a
- * published test cannot be excused and the list cannot widen silently.
+ * Entries in `test:offline` that are deliberately absent from a runner
+ * checkout. Empty: the three local harness files (`bench`, `bench-stats`,
+ * `native-history-harness`) are no longer listed, because a runner never has
+ * them and a listed path that matches nothing is the silent shrink this module
+ * exists to prevent. Run them by hand from `bench/`.
  */
-export const LOCAL_ONLY: readonly string[] = [
-  "test/bench.test.ts",
-  "test/bench-stats.test.ts",
-  "test/native-history-harness.test.ts",
+export const LOCAL_ONLY: readonly string[] = [];
+
+/**
+ * Published tests that spawn a real `muse serve` host and need a logged-in CLI,
+ * so they cannot run in the offline job. `CONTRIBUTING.md` names them. Four
+ * follow the `-live` convention; the two harness suites predate it. The test
+ * beside this module requires each entry to exist and be tracked, so an excuse
+ * cannot outlive its file.
+ */
+export const LIVE_ONLY: readonly string[] = [
+  "test/containment-live.test.ts",
+  "test/fork-live.test.ts",
+  "test/model-live.test.ts",
+  "test/restart-live.test.ts",
+  "test/conformance.test.ts",
+  "test/tool-bridge.test.ts",
 ];
 
 export interface PackageScripts {
@@ -51,4 +69,18 @@ export function missingFromSuite(
   localOnly: readonly string[] = LOCAL_ONLY,
 ): string[] {
   return suitePaths(pkg).filter((entry) => !exists(entry) && !localOnly.includes(entry));
+}
+
+/**
+ * Tracked tests the list does not name. Every published test belongs in the
+ * offline suite unless it needs a real host; `liveOnly` is the set that does.
+ */
+export function unlistedTests(
+  tracked: readonly string[],
+  suite: readonly string[],
+  liveOnly: readonly string[] = LIVE_ONLY,
+): string[] {
+  return tracked.filter(
+    (entry) => entry.endsWith(".test.ts") && !liveOnly.includes(entry) && !suite.includes(entry),
+  );
 }
