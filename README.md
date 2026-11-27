@@ -160,7 +160,7 @@ project skills can load outside opencode's permissions, and
 Repo-supplied hooks are refused at session open unless their hash is recorded
 with `bun run doctor --trust-hooks`; `MUSE_ALLOW_PROJECT_HOOKS=1` accepts one for
 a run. Second, the plugin pins no permission profile and cannot read the posture
-its own session runs under; `bun run doctor` reports it on its own connection.
+its own session runs under; no stable MSP method exposes that state to a client.
 
 The measured posture is in [docs/approval.md](https://github.com/jond34/opencode-plugin-muse/blob/main/docs/approval.md).
 
@@ -246,7 +246,7 @@ logged-in CLI. The reproducible build and publish gates are in
 MIT throughout. The base is
 [`@rasyid_rafi/opencode-muse`](https://www.npmjs.com/package/@rasyid_rafi/opencode-muse)
 0.1.9; [CREDITS.md](https://github.com/jond34/opencode-plugin-muse/blob/main/CREDITS.md)
-records the base commit, each of the five diffs, and why the differences live in
+records the base commit, each diff, and why the differences live in
 a separate package. The effort handling follows
 [pgquiles/opencode-muse](https://github.com/pgquiles/opencode-muse); the session
 protocol is [muse-code-sdk](https://github.com/meta-models/muse-code-sdk).

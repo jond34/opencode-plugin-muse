@@ -63,7 +63,7 @@ previous E64 record at
 [`evidence/2026-11-26-r33-e64.json`](evidence/2026-11-26-r33-e64.json) covers the
 superseded build.
 
-Published 1.1.0 (base + patches 1-6):
+Published 1.1.0 (base + patches 1-5, plus the `/connect` and allowance changes):
 
 ```text
 3175a42e42e17648dcca6d3456aef351e9aa120d85c1127285690bd2bbe4f42b
@@ -71,8 +71,8 @@ Published 1.1.0 (base + patches 1-6):
 
 168 files, built from the committed lockfile with node v24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
-hash. The patch adds the `/connect` row and the login status built on it, and
-makes the allowance warning skip a window that has already reset.
+hash. Those changes add the `/connect` row and the login status built on it,
+and make the allowance warning skip a window that has already reset.
 
 Published 2026-11-25 from commit `0f04fbd`, tag `v1.1.0`, through the `publish`
 workflow's staged path (run

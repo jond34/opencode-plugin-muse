@@ -32,6 +32,11 @@
 
 ### Changed
 
+- `bun run doctor` no longer asks for Muse's beta capability, so its `posture`
+  row is gone. The plugin uses only the stable MSP surface; `permissionState`
+  and `permissionProfile/list` are served only to a connection that declares
+  `experimentalApi`, and the row could not ship without that opt-in. The host,
+  hooks, allowance, and ledger rows are unchanged.
 - Every Muse model declares a zero per-token price. opencode read the provider's
   `cost: null` as unknown and rendered a blank price; one all-zero tier renders
   "Free" for any provider, which is true of the price and false of the bill.

@@ -6,9 +6,12 @@ publish, a staged upload, a tag, or a push.
 
 ## Current public state
 
-- npm `latest` is `1.0.1`, published 2026-11-24 from commit
-  `b15ba82f959536004ab80f96f70f370f075dc52e`. The tags are `v0.1.12`, `v1.0.0`,
-  and `v1.0.1`; `v1.0.0` and `v1.0.1` have immutable GitHub Releases.
+- npm `latest` is `1.1.0`, published 2026-11-25 from commit
+  `0f04fbd9245da10bc42a40c572429bd2bb7c6b16`. The tags are `v0.1.12`, `v1.0.0`,
+  `v1.0.1`, and `v1.1.0`; `v1.0.0`, `v1.0.1`, and `v1.1.0` have immutable
+  GitHub Releases. The tree is `1.2.0`, prepared and not yet published.
+- `1.1.0` adds the `/connect` `Muse Agent` row and the login status built on
+  it; its record and hashes are in [`provenance.md`](provenance.md).
 - `1.0.1` is documentation-only: no source, `dist/`, dependency, export,
   provider id, or documented `MUSE_*` variable changed. `dist/` still hashes to
   `3fef9808acc1c6b0b1fcbf49b9eaa49fafc58d0c2443395a6389a73b0a350669` over 160
@@ -32,9 +35,9 @@ publish, a staged upload, a tag, or a push.
   then.
 - `docs/integration-landscape.md` is an owner-modified file and is deliberately
   not part of a release commit.
-- The version is `1.0.1`; the public API below is unchanged from `1.0.0`. npm,
-  the tag, the provenance attestation, and the immutable Release all name the
-  same commit.
+- The published version is `1.1.0`; the tree is `1.2.0`, not yet published. The
+  public API below is unchanged from `1.0.0`. npm, the tag, the provenance
+  attestation, and the immutable Release all name the same commit.
 
 ## Watch item
 
