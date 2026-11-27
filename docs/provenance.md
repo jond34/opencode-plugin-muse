@@ -88,8 +88,8 @@ The tarball shasum equals a local `npm pack` of this tree, so the published
 artifact is the reproduced build and not a rebuild of it.
 
 Prepared 1.2.0 (base + patches 1-5, the `/connect` and allowance changes, the
-1.2.0 fixes, the doctor capability removal, the queued-turn ack, and the local
-title framing):
+1.2.0 fixes, the doctor capability removal, the queued-turn ack, the local title
+unwrapping, and the price declaration):
 
 ```text
 fd17646415ba4cb38897b1a65508dfa11a8cc001bc354a0544450d60f6705149
@@ -97,8 +97,9 @@ fd17646415ba4cb38897b1a65508dfa11a8cc001bc354a0544450d60f6705149
 
 168 files, built from the committed lockfile with node 24.22.1, npm 11.19.1, and
 tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
-hash. An earlier 1.2.0 stage was built before the queued-turn fix and is not
-this tree; a stage must be approved before a tarball record exists.
+hash. An earlier 1.2.0 stage was built before the queued-turn, title, and price
+fixes and is not this tree; a stage must be approved before a tarball record
+exists.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 
