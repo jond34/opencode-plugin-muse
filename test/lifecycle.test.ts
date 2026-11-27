@@ -551,6 +551,56 @@ describe("MuseHarnessSession turns", () => {
     expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(2);
   });
 
+  test("a reclaim of the queued input fails that turn at once, retryable", async () => {
+    // The protocol promises no `turn/started` or `turn/completed` for a
+    // reclaimed turn (SDK `TurnUnqueuedParams`). Without a handler the host
+    // turn would wait out the watchdog and fail as a dead host, which is false
+    // of a host that is answering.
+    const commands: RecordedCommand[] = [];
+    const acks: Record<string, unknown>[] = [
+      { disposition: "queued", startedNewTurn: false, turnId: "native-1" },
+      { disposition: "started", startedNewTurn: true, turnId: "native-2" },
+    ];
+    let sent = 0;
+    const host: SessionHost = {
+      connection: {
+        mintCommandId: () => `cmd-${sent}`,
+        command: async (method: string, params: Record<string, unknown>) => {
+          commands.push({ method, params });
+          return method === "turn/start" ? (acks[sent++] ?? {}) : {};
+        },
+      },
+      registerSink: () => {},
+      unregisterSink: () => {},
+    };
+    const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
+    const events = await drive(session, async () => {
+      const queued = await session.startTurn({
+        turnId: "t1",
+        message: { content: [{ type: "text", text: "one" }] },
+      });
+      expect(queued.nativeRef.id).toBe("native-1");
+
+      session.handleNotification({
+        method: "turn/unqueued",
+        params: { turnId: "native-1", commandId: "cmd-0", sessionId: "native" },
+      } satisfies MuseNotification);
+
+      // The reclaim frees the adapter: the next turn is a fresh start.
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "two" }] },
+      });
+      expect(next.nativeRef.id).toBe("native-2");
+    });
+    const terminal = events.filter((event) => event.type === "turn.terminal");
+    expect(terminal).toHaveLength(1);
+    const failure = terminal[0]?.type === "turn.terminal" ? terminal[0].failure : undefined;
+    expect(failure?.message).toMatch(/reclaimed the queued input/);
+    expect(failure?.retryable).toBe(true);
+    expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(2);
+  });
+
   test("a completed message whose start was missed emits the turn and both frames", async () => {
     // The start fell in a view gap (or before the subscription). The completion
     // must not be dropped, and the contract still wants turn.started first and

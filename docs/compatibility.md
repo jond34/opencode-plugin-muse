@@ -20,13 +20,16 @@ the native-history default are not promised.
 | opencode host | 2.4.1 | live X9a/X9b, 2026-11-24 |
 | Muse Code CLI | 1.4.25 | live X9a/X9b, 2026-11-24 |
 | `@opencode/plugin` | 2.3.2 | compile pin |
-| `@muse-code/sdk` | 1.4.24 | compile pin |
+| `@muse-code/sdk` | 1.4.25 | compile pin |
 | `/connect` integration entry | 1.1.0 | measured on host 2.4.1, 2026-11-25 |
 
-The plugin compiles against the 2.3.2 plugin package. X9a ran it inside the
-2.4.1 host on 2026-11-24: one simple turn, one bridged `shell` call, and one
-resumed turn all returned the expected nonce. The 2.3.2/1.4.24 pair is a compile
-pin, not a live-tested pair in that run. On 2.4.1, `opencode models` did not list
+The plugin compiles against the 2.3.2 plugin package and the 1.4.25 SDK. X9a ran
+it inside the 2.4.1 host on 2026-11-24: one simple turn, one bridged `shell`
+call, and one resumed turn all returned the expected nonce. A standalone 2.4.2
+TUI loaded this checkout on 2026-11-27 and completed a Muse turn, with the
+variant picker and the derived title working; that is a smoke run, not a repeat
+of X9a, so the tested-pair badge still says 2.4.1. The 2.3.2/1.4.25 pair is a
+compile pin, not a live-tested pair in that run. On 2.4.1, `opencode models` did not list
 the plugin-injected `muse/*` provider, but `opencode run -m muse/muse-ember-1.0`
 resolved it and completed the turns; the models command is a display gap there,
 not the provider proof. X9b then ran `opencode plugin add
@@ -176,8 +179,10 @@ the plugin unwraps the two framings it ships (first message, and the regenerated
 conversation form) before deriving a title. If a future opencode changes that
 wording, the title degrades to today's framing text rather than failing.
 
-The doctor reads two CLI surfaces and both are version-dependent, measured on
-2.3.2:
+The doctor reads two CLI surfaces, both measured on 2.3.2. The `debug config`
+shape was re-run on 2.4.2 on 2026-11-27 and still holds, and `--standalone`
+before the subcommand worked in that TUI run; `opencode plugin list` and the
+after-subcommand rejection were not re-checked and keep their 2.3.2 notes:
 
 - `opencode debug config` prints one document per config source, each with its
   own `plugins` array and, for files, a `path`. It follows the cwd and respects
@@ -251,9 +256,12 @@ choices that change observable behaviour at the seam.
    (`src/session.ts:669`). Multi-stage approvals reject a decision that does
    not name a current choice, which is why `approval/updated` stores
    `currentRequirementId`. The harness contract's request response carries no
-   decision kind — opencode's plugin API has no permission callback to route one
-   from (`@opencode/plugin@2.3.2` exposes `storage`, `provider`, `aisdk`,
-   `session`, `agent` only) — but the wire choices do carry `decision` and
+   decision kind, and this plugin never routes a Muse approval through
+   `ctx.permission.assert`: doing so would put a second gate in front of
+   opencode's for the same call (`docs/approval.md`). The compile pin does
+   expose `permission` (`@opencode/plugin@2.3.2` has `storage`, `provider`,
+   `aisdk`, `session`, `agent`, and `permission`), so the absence is a choice
+   here, not a missing API. The wire choices do carry `decision` and
    `acceptsFeedback` (`msp.d.ts:45-51`). Both are copied onto
    `HarnessApprovalOption`, and `respondToRequest` refuses `feedback` unless the
    chosen option accepts it, because sending it otherwise is a protocol error

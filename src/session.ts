@@ -1431,6 +1431,9 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
       case "turn/completed":
         this.onTurnCompleted(params);
         break;
+      case "turn/unqueued":
+        this.onTurnUnqueued(params);
+        break;
       case "item/started":
         this.onItemStarted(params);
         break;
@@ -1613,6 +1616,48 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     active.terminal = true;
     this.emit({ type: "turn.updated", turn });
     this.emit({ type: "turn.terminal", turn, failure });
+  }
+
+  /**
+   * The host reclaimed a queued submit before it ever launched.
+   *
+   * `turn/unqueued` carries the pre-minted turn id, and the protocol promises
+   * no `turn/started` or `turn/completed` for it (SDK `TurnUnqueuedParams`).
+   * This adapter never sends `turn/unqueue`, so seeing it here means the host
+   * dropped the input on its own. Without a handler the host turn waits out the
+   * watchdog and fails as a dead host, which says the wrong thing about a live
+   * one; with it the turn fails at once, retryable, naming the reclaim.
+   */
+  private onTurnUnqueued(params: Record<string, unknown>): void {
+    const nativeTurnId = typeof params.turnId === "string" ? params.turnId : undefined;
+    if (nativeTurnId === undefined) return;
+    const hostTurnId = this.nativeToHost.get(nativeTurnId);
+    if (hostTurnId === undefined) return;
+    const active = this.turns.get(hostTurnId);
+    if (active === undefined || active.terminal) return;
+    // A late reclaim for an earlier turn must not stop the current turn's
+    // clocks, so only clear the watchdog that belongs to this turn.
+    if (this.watchdogTurnId === hostTurnId) this.stopWatchdog();
+    this.nativeToHost.delete(nativeTurnId);
+    this.hostToNative.delete(hostTurnId);
+    this.assumedTurnIds.delete(nativeTurnId);
+    this.turnUsage.delete(nativeTurnId);
+    // Same rule as the watchdog: an admitted turn the host is waiting on must
+    // get its terminal, not be retired silently as a reservation that never
+    // reached anyone. A queued ack was announced to opencode as the turn that
+    // will carry this input, so its failure has to be announced too.
+    if (active.turn.status === "pending") {
+      active.turn = { ...active.turn, status: "running" };
+    }
+    this.retireTurn(
+      hostTurnId,
+      new HarnessError({
+        code: "protocol_error",
+        adapterId: ADAPTER_ID,
+        retryable: true,
+        message: "Muse reclaimed the queued input before it started; send it again",
+      }),
+    );
   }
 
   private onTokenUsage(params: Record<string, unknown>): void {

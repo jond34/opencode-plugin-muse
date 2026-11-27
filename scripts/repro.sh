@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 # capability removal, the queued-turn ack, and the local title framing. The
 # published 0.1.9 and 1.0.0/1.0.1/1.1.0 recorded hashes stay in
 # docs/provenance.md.
-EXPECTED=fd17646415ba4cb38897b1a65508dfa11a8cc001bc354a0544450d60f6705149
+EXPECTED=c17dfc2b5c7a6450d8172d9efa4ab3299461603edb0822360c912da4625f6698
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 
