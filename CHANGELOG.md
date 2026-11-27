@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- A reseed keeps the newest user message when the transcript exceeds the replay
+  budget. The renderer filled the budget from the start and dropped the tail, so
+  a follow-up sent after a large, tool-heavy session disappeared and Muse
+  replayed the original request (issue #21; reproduced at 119,643 chars, where
+  the follow-up was absent and only the first message survived). The renderer
+  now keeps the prefix and that message and marks the gap, clipping the message
+  only when it alone exceeds the cap.
 - A turn that reached its agent's step limit now ends with a summary instead of
   a refused tool call. opencode marks the last allowed step with
   `toolChoice: "none"` and appends a text-only instruction; Muse obeys that only
