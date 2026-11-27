@@ -42,6 +42,29 @@ function clipCodepoints(text: string, limit: number): string {
   return `${points.slice(0, Math.max(0, limit - 1)).join("")}…`;
 }
 
+// OpenCode frames the title request before it reaches the hook: the user
+// message the hook sees is "Here is the first message of the conversation:
+// <message>...</message> Reply with only the title." (session/title.ts), not
+// what the user typed. Without this unwrap the derived title is the framing,
+// which is what every Muse session in the local database showed. Both framings
+// are matched; anything else is left as written, so a future host wording
+// degrades to the old behaviour instead of losing the title.
+const FIRST_MESSAGE_PROMPT =
+  /^Here is the first message of the conversation:\s*<message>\s*([\s\S]*?)\s*<\/message>\s*Reply with only the title\.?\s*$/i;
+const CONVERSATION_PROMPT =
+  /^Here is the conversation so far:\s*<conversation>\s*([\s\S]*?)\s*<\/conversation>\s*Reply with only the title\.?\s*$/i;
+
+function unwrapTitlePrompt(text: string): string {
+  const first = FIRST_MESSAGE_PROMPT.exec(text);
+  if (first) return first[1] ?? "";
+  const conversation = CONVERSATION_PROMPT.exec(text);
+  if (!conversation) return text;
+  const body = conversation[1] ?? "";
+  if (!body.startsWith("Original request:")) return body;
+  const end = body.indexOf("\n\nRecent conversation:");
+  return body.slice("Original request:".length, end === -1 ? undefined : end);
+}
+
 /**
  * A title from the first user message: whitespace-collapsed, leading framing
  * dropped, first sentence kept, sentence-cased, and 72 codepoints cut at a word
@@ -58,7 +81,7 @@ export function makeLocalTitle(
   prompt: ReadonlyArray<{ readonly role: string; readonly content: unknown }>,
 ): string {
   const first = prompt.find((message) => message.role === "user");
-  let text = collapse(first === undefined ? "" : textOfContent(first.content));
+  let text = collapse(first === undefined ? "" : unwrapTitlePrompt(textOfContent(first.content)));
   for (let pass = 0; pass < 3; pass += 1) {
     const before = text;
     for (const rule of TITLE_FRAMING) text = text.replace(rule, "");

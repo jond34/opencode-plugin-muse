@@ -171,6 +171,10 @@ its hidden `title` agent exists, so `agents.title.disabled: true` leaves every
 session untitled; that switch is opencode-side, and the plugin does not override
 it. When the hook runs the plugin always sets `event.result`, so
 `agents.title.model` is never used for a Muse session and no Muse turn is spent.
+The hook receives opencode's framed title request, not the raw first message:
+the plugin unwraps the two framings it ships (first message, and the regenerated
+conversation form) before deriving a title. If a future opencode changes that
+wording, the title degrades to today's framing text rather than failing.
 
 The doctor reads two CLI surfaces and both are version-dependent, measured on
 2.3.2:
