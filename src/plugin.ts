@@ -99,17 +99,16 @@ const MODEL_NAMES: Readonly<Record<string, string>> = {
 const EXCLUDED_INSTRUCTIONS = new Set(["core/date", "core/environment", "core/codemode"]);
 
 /**
- * A declared zero price, not a missing one. `cost: []` is "unknown" and renders
- * blank; one all-zero tier renders "Free" for any provider, because the label
- * predicate is `cost.length > 0 && cost.every(input === 0)`. Muse bills the
- * subscription rather than tokens, and its wire `model/list` returned
- * `cost: null` on 1.4.25 (N2, 2026-11-26), so per-token zero is the honest
- * statement - and it stops core from computing a budget from a price that does
- * not exist. The brand is compile-time only; the runtime value is 0.
+ * No per-token price, the way opencode treats its own subscription logins. A
+ * Sign in with ChatGPT model gets `cost: []` (core/src/plugin/provider/
+ * chatgpt.ts) and a first-party Claude Agent account gets `cost: []` too
+ * (claude-agent/provider.ts: "A subscription covers usage ... so they show no
+ * cost"). The picker renders nothing for an empty cost and "Free" only for a
+ * non-empty all-zero tier, so zero would be a label that is false of the bill.
+ * Muse bills the subscription, not the token; usage is surfaced by the
+ * allowance notice instead.
  */
-const ZERO_COST = [
-  { input: 0, output: 0, cache: { read: 0, write: 0 } },
-] as unknown as Model.Info["cost"];
+const NO_COST: Model.Info["cost"] = [];
 
 interface SystemPart {
   readonly text: string;
@@ -170,7 +169,7 @@ export function toModelInfo(
   return {
     ...base,
     modelID: Model.ID.make(modelId),
-    cost: ZERO_COST,
+    cost: NO_COST,
     name: isContributor
       ? `${MODEL_NAMES[baseId] ?? baseId} Contributor`
       : MODEL_NAMES[baseId] ?? displayLabel,

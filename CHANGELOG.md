@@ -45,18 +45,24 @@
   and `permissionProfile/list` are served only to a connection that declares
   `experimentalApi`, and the row could not ship without that opt-in. The host,
   hooks, allowance, and ledger rows are unchanged.
-- Every Muse model declares a zero per-token price. opencode read the provider's
-  `cost: null` as unknown and rendered a blank price; one all-zero tier renders
-  "Free" for any provider, which is true of the price and false of the bill.
-  Muse bills the subscription, not the token. The tier also stops core from
-  computing a spend budget from a price that does not exist. Source-derived
-  label, not an observed render: there is no TTY in the offline suite.
-- A local session title now drops leading framing ("can you", "please", "I need
-  to", "how do I") and is sentence-cased, so the sidebar shows the request
-  instead of the question around it. A path or identifier that opens the message
-  is left alone. Titles stay local: a Muse title measured 2,051 input tokens and
-  2.4 s per session over 10/10 turns, ten times the pre-registered cost bound, so
-  no model-title path is offered.
+- Every Muse model declares no per-token price (`cost: []`), matching
+  opencode's own Sign in with ChatGPT and first-party Claude Agent logins: a
+  subscription covers usage, so the picker shows nothing rather than a price of
+  zero or a "Free" that is false of the bill. Muse's wire `model/list` returned
+  `cost: null` on 1.4.25. Usage stays on the allowance notice.
+- A local session title is now derived from the message, not from opencode's
+  title prompt. The `title` hook receives a framed request ("Here is the first
+  message of the conversation: `<message>…</message>` Reply with only the
+  title."), and the plugin read the framing as the first user message: all 109
+  Muse sessions in the local database that still carried a generated title held
+  it verbatim. Both framings are unwrapped, including the regenerated
+  conversation form, which is read at `Original request:`. Titles also drop
+  leading framing ("can you", "please", "I need to", "how do I") and are
+  sentence-cased, so the sidebar shows the request instead of the question
+  around it; a path or identifier that opens the message is left alone. Titles
+  stay local: a Muse title measured 2,051 input tokens and 2.4 s per session
+  over 10/10 turns, ten times the pre-registered cost bound, so no model-title
+  path is offered.
 
 ## 1.1.0
 

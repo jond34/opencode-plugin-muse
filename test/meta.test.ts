@@ -64,6 +64,24 @@ describe("makeLocalTitle", () => {
     ).toBe("@src/credential.ts can you add refresh tokens");
   });
 
+  test("unwraps the host's first-message title prompt", () => {
+    const prompt =
+      "Here is the first message of the conversation:\n\n<message>\ncan you fix the 500 error in the retry handler?\n</message>\n\nReply with only the title.";
+    expect(makeLocalTitle([{ role: "user", content: prompt }])).toBe("Fix the 500 error in the retry handler");
+  });
+
+  test("unwraps a regenerated conversation prompt at the original request", () => {
+    const prompt =
+      "Here is the conversation so far:\n\n<conversation>\nOriginal request:\nMigrate the auth service to refresh tokens\n\nRecent conversation:\nUser: anything else?\nAssistant: No.\n</conversation>\n\nReply with only the title.";
+    expect(makeLocalTitle([{ role: "user", content: prompt }])).toBe("Migrate the auth service to refresh tokens");
+  });
+
+  test("does not treat prose as a title prompt", () => {
+    expect(
+      makeLocalTitle([{ role: "user", content: "Here is the first message of the conversation: it failed" }]),
+    ).toBe("Here is the first message of the conversation: it failed");
+  });
+
   test("falls back when only framing is left", () => {
     expect(makeLocalTitle([{ role: "user", content: "can you please" }])).toBe("Muse session");
   });

@@ -117,6 +117,13 @@ describe("toModelInfo", () => {
     expect(name("muse-spark-1.3-contributor")).toBe("Muse Spark 1.3 Contributor");
     expect(name("muse-ember-1.0")).toBe("Muse Ember");
   });
+
+  // A subscription covers usage, so opencode's ChatGPT and Claude Agent
+  // logins both carry `cost: []`; the picker then shows no price. A non-empty
+  // all-zero tier would instead be labelled "Free".
+  test("declares no per-token price", () => {
+    expect(toModelInfo(providerID, { modelId: "muse-ember-1.0" }).cost).toEqual([]);
+  });
 });
 
 describe("serveArgs", () => {
