@@ -92,7 +92,7 @@ Prepared 1.2.0 (base + patches 1-5, the `/connect` and allowance changes, the
 title framing):
 
 ```text
-fdb7ab051beaec1dd63216132fc59be9577b5694789eb0f7bcdf5f2aff3286a7
+a9b2c871624d2d23220b0418dbad62c856f5455db7815464c4d653c10bf93f26
 ```
 
 168 files, built from the committed lockfile with node 24.22.1, npm 11.19.1, and

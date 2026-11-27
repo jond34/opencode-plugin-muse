@@ -45,12 +45,11 @@
   and `permissionProfile/list` are served only to a connection that declares
   `experimentalApi`, and the row could not ship without that opt-in. The host,
   hooks, allowance, and ledger rows are unchanged.
-- Every Muse model declares a zero per-token price. opencode read the provider's
-  `cost: null` as unknown and rendered a blank price; one all-zero tier renders
-  "Free" for any provider, which is true of the price and false of the bill.
-  Muse bills the subscription, not the token. The tier also stops core from
-  computing a spend budget from a price that does not exist. Source-derived
-  label, not an observed render: there is no TTY in the offline suite.
+- Every Muse model declares no per-token price (`cost: []`), matching
+  opencode's own Sign in with ChatGPT and first-party Claude Agent logins: a
+  subscription covers usage, so the picker shows nothing rather than a price of
+  zero or a "Free" that is false of the bill. Muse's wire `model/list` returned
+  `cost: null` on 1.4.25. Usage stays on the allowance notice.
 - A local session title is now derived from the message, not from opencode's
   title prompt. The `title` hook receives a framed request ("Here is the first
   message of the conversation: `<message>…</message>` Reply with only the
