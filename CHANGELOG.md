@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.3.0
+
+### Fixed
+
+- A turn that reached its agent's step limit now ends with a summary instead of
+  a refused tool call. opencode marks the last allowed step with
+  `toolChoice: "none"` and appends a text-only instruction; Muse obeys that only
+  when no turn is in flight, so after any tool result it kept calling tools and
+  opencode refused each one, leaving an error card and no answer. The plugin now
+  closes the running turn at that signal and delivers the instruction as a turn
+  of its own (measured 12/12 on 2026-11-27; the previous behaviour was a refused
+  tool call in 28/28 capped turns).
+- A Muse turn can write again. The plugin no longer passes `--disable-write` or
+  `--disable-shell` to `muse serve`. Both flags reach further than Muse's own
+  tools: Muse reports the posture to the model, which then declined the same
+  operation through the bridged tool opencode actually runs (on 1.4.25 Ember
+  answered "filesystem writes are disabled in this session" and skipped
+  opencode's `write`). The `run.toolset` allowlist is the fence, and the write
+  itself is opencode's tool under opencode's permissions.
+
+### Added
+
+- `plugins[].options.sessionLog` (default on), with `MUSE_HOST_SESSION_LOG` as
+  the non-erasable override. `false` passes `--no-session-log`, which removes
+  Muse's native transcript and with it warm resume: every turn reseeds from the
+  full prompt. Measured on a two-turn recall: 1,456 input tokens with the log,
+  10,770 without (roughly 7x on a short conversation, growing with history). The
+  resolved value is logged at startup, and an unparseable value is ignored
+  rather than coerced.
+
+### Changed
+
+- Every Muse model declares a zero per-token price. opencode read the provider's
+  `cost: null` as unknown and rendered a blank price; one all-zero tier renders
+  "Free" for any provider, which is true of the price and false of the bill.
+  Muse bills the subscription, not the token. The tier also stops core from
+  computing a spend budget from a price that does not exist. Source-derived
+  label, not an observed render: there is no TTY in the offline suite.
+
 ## 1.1.0
 
 - `/connect` gains a `Muse Agent` row, shaped like opencode's own `claude-agent`
