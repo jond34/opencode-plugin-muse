@@ -116,6 +116,16 @@ describe("renderTranscript", () => {
     expect(text).toContain("[truncated:");
   });
 
+  test("stays inside the cap when the harness note alone nearly fills it", () => {
+    const messages: unknown[] = [user("go"), call("t1"), result("t1", { type: "text", value: "y" })];
+    messages.push(user("follow up now"));
+    const text = renderTranscript(asPrompt(messages), { maxTotalChars: 170 });
+    expect(text.length).toBeLessThanOrEqual(170);
+    expect(text).toContain("follow up now");
+    expect(text).toContain("[truncated:");
+    expect(text).not.toContain("[truncated: 0 chars omitted]");
+  });
+
   test("does not put images in the text, and keeps them available", () => {
     const prompt = asPrompt([
       {
