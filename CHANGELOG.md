@@ -54,9 +54,9 @@
   title prompt. The `title` hook receives a framed request ("Here is the first
   message of the conversation: `<message>…</message>` Reply with only the
   title."), and the plugin read the framing as the first user message: all 109
-  Muse sessions in the local database that still carried a generated title held
-  it verbatim. Both framings are unwrapped, including the regenerated
-  conversation form, which is read at `Original request:`. Titles also drop
+  Muse sessions examined that still carried a generated title held it verbatim.
+  Both framings are unwrapped, including the regenerated conversation form,
+  which is read at `Original request:`. Titles also drop
   leading framing ("can you", "please", "I need to", "how do I") and are
   sentence-cased, so the sidebar shows the request instead of the question
   around it; a path or identifier that opens the message is left alone. Titles

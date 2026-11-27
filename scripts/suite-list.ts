@@ -26,7 +26,8 @@ import { existsSync } from "node:fs";
  * checkout. Empty: the three local harness files (`bench`, `bench-stats`,
  * `native-history-harness`) are no longer listed, because a runner never has
  * them and a listed path that matches nothing is the silent shrink this module
- * exists to prevent. Run them by hand from `bench/`.
+ * exists to prevent. They are untracked local files; run them by hand when the
+ * bench fixtures exist.
  */
 export const LOCAL_ONLY: readonly string[] = [];
 
