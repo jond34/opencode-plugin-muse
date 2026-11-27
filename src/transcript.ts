@@ -253,8 +253,16 @@ export function renderTranscriptDetailed(
         truncated: true,
       };
     }
-    const prefix: string[] = [...head];
-    let prefixUsed = sizeOf(head);
+    // The harness note is helpful, but not worth the newest message's
+    // headroom; when it cannot share the room it counts as omitted content.
+    const prefix: string[] = [];
+    let prefixUsed = 0;
+    const headSize = sizeOf(head);
+    const headFits = headSize <= room;
+    if (headFits) {
+      prefix.push(...head);
+      prefixUsed = headSize;
+    }
     for (let index = 0; index < newestUserIndex; index += 1) {
       const block = blocks[index]!;
       const separator = prefix.length > 0 ? 2 : 0;
@@ -262,11 +270,13 @@ export function renderTranscriptDetailed(
       prefix.push(block);
       prefixUsed += separator + block.length;
     }
-    const prefixCount = prefix.length - head.length;
+    const prefixCount = prefix.length - (headFits ? head.length : 0);
     const omitted =
+      (headFits ? 0 : headSize) +
       blocks
         .slice(prefixCount, newestUserIndex)
-        .reduce((sum, block) => sum + block.length, 0) + droppedAfter;
+        .reduce((sum, block) => sum + block.length, 0) +
+      droppedAfter;
     return {
       text: [...prefix, marker(omitted), newestUser].join("\n\n"),
       toolBlocks,
