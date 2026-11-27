@@ -86,6 +86,34 @@
       "claim_md": "Contributor mode routes each model family to its served `-contributor` model"
     },
     {
+      "id": "muse-contributor-saved-locally",
+      "claim": "Muse saves Contributor mode per computer",
+      "url": "https://dev.meta.ai/docs/muse-code/subscriptions",
+      "quote": "Muse Code saves the setting on the computer you're using, so if you use Muse Code on more than one computer, change it on each one.",
+      "version": "1.4.25",
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-26",
+      "label": "Muse subscriptions",
+      "quote_md": "\"Muse Code saves the setting on the computer you're using, so if you use Muse Code on more than one computer, change it on each one.\"",
+      "claim_md": "Muse saves Contributor mode per computer"
+    },
+    {
+      "id": "muse-contributor-run-override",
+      "claim": "The contributor flag is a per-run override and does not change the saved setting",
+      "url": "https://dev.meta.ai/docs/muse-code/subscriptions",
+      "quote": "To turn Contributor mode on or off for a single run without changing your saved setting, pass `--contributor-mode on` or `--contributor-mode off`",
+      "version": "1.4.25",
+      "check": {
+        "kind": "http"
+      },
+      "as_of": "2026-11-26",
+      "label": "Muse subscriptions",
+      "quote_md": "\"To turn Contributor mode on or off for a single run without changing your saved setting, pass `--contributor-mode on` or `--contributor-mode off`\"",
+      "claim_md": "The contributor flag is a per-run override, not a saved setting"
+    },
+    {
       "id": "opencode-saved-approval",
       "claim": "An opencode saved approval is project-scoped and cannot override a deny",
       "url": "https://opencode.ai/docs/permissions",
