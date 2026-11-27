@@ -89,11 +89,11 @@ artifact is the reproduced build and not a rebuild of it.
 
 Prepared 1.2.0 (base + patches 1-5, the `/connect` and allowance changes, the
 1.2.0 fixes, the doctor capability removal, the queued-turn ack, the local title
-unwrapping, the price declaration, the 1.4.25 schema pin, and the queued-reclaim
-handler):
+unwrapping, the price declaration, the 1.4.25 schema pin, the queued-reclaim
+handler, and the reseed follow-up retention):
 
 ```text
-c17dfc2b5c7a6450d8172d9efa4ab3299461603edb0822360c912da4625f6698
+b3aea93f8d22317bd415c473d2afda52b1b3afc1065d52e996b6299bcd62cd28
 ```
 
 168 files, built from the committed lockfile with node 24.22.1, npm 11.19.1, and

@@ -90,6 +90,32 @@ describe("renderTranscript", () => {
     expect(text).toContain("start");
   });
 
+  test("keeps the newest user message when the budget drops the middle", () => {
+    const messages: unknown[] = [user("start")];
+    for (let index = 0; index < 20; index += 1) {
+      messages.push(call(`t${index}`), result(`t${index}`, { type: "text", value: "y".repeat(500) }));
+    }
+    messages.push(user("stop gathering and write the report"));
+    const text = renderTranscript(asPrompt(messages), { maxTotalChars: 2_000 });
+    expect(text.length).toBeLessThanOrEqual(2_000);
+    expect(text).toContain("start");
+    expect(text).toContain("stop gathering and write the report");
+    expect(text).toContain("[truncated:");
+    expect(text.trimEnd().endsWith("stop gathering and write the report")).toBe(true);
+  });
+
+  test("clips a newest user message that cannot fit at all", () => {
+    const messages: unknown[] = [user("start")];
+    for (let index = 0; index < 5; index += 1) {
+      messages.push(call(`t${index}`), result(`t${index}`, { type: "text", value: "y".repeat(500) }));
+    }
+    messages.push(user("z".repeat(500)));
+    const text = renderTranscript(asPrompt(messages), { maxTotalChars: 300 });
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect(text).toContain("zzz");
+    expect(text).toContain("[truncated:");
+  });
+
   test("does not put images in the text, and keeps them available", () => {
     const prompt = asPrompt([
       {

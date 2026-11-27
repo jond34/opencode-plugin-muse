@@ -122,7 +122,7 @@ export interface TranscriptRender {
   readonly text: string;
   /** Tool call/result blocks that made it into the body. */
   readonly toolBlocks: number;
-  /** True when the whole-transcript cap dropped a tail block. */
+  /** True when the whole-transcript cap dropped at least one block. */
   readonly truncated: boolean;
 }
 
@@ -132,7 +132,8 @@ export interface TranscriptRender {
  * Order is the prompt's order; nothing is regrouped. Tool calls and results are
  * paired by their ids, and a repeated id is rendered once. Long outputs are
  * capped per block and again for the whole transcript, always with an explicit
- * omission marker.
+ * omission marker. The newest user message is kept even when the rest of the
+ * budget is gone: it is the request the turn exists to answer.
  */
 export function renderTranscriptDetailed(
   prompt: LanguageModelV3Prompt,
@@ -142,6 +143,7 @@ export function renderTranscriptDetailed(
   const maxTotal = Math.max(0, options.maxTotalChars ?? DEFAULT_MAX_TOTAL_CHARS);
 
   const blocks: string[] = [];
+  const userIndices: number[] = [];
   const seenCalls = new Set<string>();
   const seenResults = new Set<string>();
   let toolBlocks = 0;
@@ -169,7 +171,10 @@ export function renderTranscriptDetailed(
     }
     if (message.role === "user") {
       const text = textOfContent(message.content);
-      if (text.length > 0) blocks.push(text);
+      if (text.length > 0) {
+        userIndices.push(blocks.length);
+        blocks.push(text);
+      }
       continue;
     }
     if (message.role === "tool") {
@@ -204,27 +209,79 @@ export function renderTranscriptDetailed(
   }
 
   const head = toolBlocks > 0 ? [HARNESS_NOTE] : [];
-  const assembled: string[] = [...head];
-  let used = head.reduce((sum, block) => sum + block.length, 0);
   // Reserve room for the omission marker so the result stays inside the cap.
   const effectiveMax = Math.max(0, maxTotal - 48);
-  let omitted = 0;
-  let overflowing = false;
+  const sizeOf = (parts: string[]): number =>
+    parts.reduce((sum, part, index) => sum + part.length + (index > 0 ? 2 : 0), 0);
+
+  const assembled: string[] = [...head];
+  let used = sizeOf(head);
+  let included = 0;
   for (const block of blocks) {
     const separator = assembled.length > 0 ? 2 : 0;
-    // Once one block no longer fits, drop the rest as a tail: keeping a later
-    // small block after a gap would misrepresent the order of the transcript.
-    if (overflowing || used + separator + block.length > effectiveMax) {
-      overflowing = true;
-      omitted += block.length;
-      continue;
-    }
+    if (used + separator + block.length > effectiveMax) break;
     assembled.push(block);
     used += separator + block.length;
+    included += 1;
   }
-  if (omitted > 0) assembled.push(marker(omitted));
+  if (included === blocks.length) {
+    return { text: assembled.join("\n\n"), toolBlocks, truncated: false };
+  }
 
-  return { text: assembled.join("\n\n"), toolBlocks, truncated: omitted > 0 };
+  const newestUserIndex =
+    userIndices.length > 0 ? userIndices[userIndices.length - 1]! : undefined;
+  // A plain prefix drops the newest user message, which is the request the turn
+  // exists to answer; Muse would replay the older work instead (issue #21).
+  // Keep that block and move the omission marker to the gap.
+  if (newestUserIndex !== undefined && newestUserIndex >= included) {
+    const newestUser = blocks[newestUserIndex]!;
+    const droppedAfter = blocks
+      .slice(newestUserIndex + 1)
+      .reduce((sum, block) => sum + block.length, 0);
+    const room = effectiveMax - newestUser.length - 4;
+    if (room < 0) {
+      const clipped = clip(newestUser, Math.max(0, effectiveMax - 2));
+      const omitted =
+        blocks
+          .slice(included, newestUserIndex)
+          .reduce((sum, block) => sum + block.length, 0) +
+        droppedAfter +
+        clipped.omitted;
+      return {
+        text: [clipped.text, marker(omitted)].join("\n\n"),
+        toolBlocks,
+        truncated: true,
+      };
+    }
+    const prefix: string[] = [...head];
+    let prefixUsed = sizeOf(head);
+    for (let index = 0; index < newestUserIndex; index += 1) {
+      const block = blocks[index]!;
+      const separator = prefix.length > 0 ? 2 : 0;
+      if (prefixUsed + separator + block.length > room) break;
+      prefix.push(block);
+      prefixUsed += separator + block.length;
+    }
+    const prefixCount = prefix.length - head.length;
+    const omitted =
+      blocks
+        .slice(prefixCount, newestUserIndex)
+        .reduce((sum, block) => sum + block.length, 0) + droppedAfter;
+    return {
+      text: [...prefix, marker(omitted), newestUser].join("\n\n"),
+      toolBlocks,
+      truncated: true,
+    };
+  }
+
+  const omitted = blocks
+    .slice(included)
+    .reduce((sum, block) => sum + block.length, 0);
+  return {
+    text: [...assembled, marker(omitted)].join("\n\n"),
+    toolBlocks,
+    truncated: true,
+  };
 }
 
 /** The rendered text; kept as the simple entry point for importers. */
