@@ -494,10 +494,12 @@ describe("MuseHarnessSession turns", () => {
     expect(events.filter((event) => event.type === "turn.terminal")).toHaveLength(0);
   });
 
-  test("a queued ack is refused as queued, not as absorbed", async () => {
-    // `queue` is the wire default, so this is the ack an adapter sees if it ever
-    // submits while a turn runs. The input launches later under its own turn;
-    // it is not folded into this one, and this adapter does not queue.
+  test("a queued ack adopts the queued turn and settles when it launches", async () => {
+    // Measured on Muse 1.4.25: after `turn/completed` the host keeps the old
+    // turn active for a moment, so a submit in that window answers `queued`.
+    // The id it names is the turn that carries the input, launched 0-50 ms
+    // later. Adopting it keeps the input and the host turn together; refusing
+    // would leave text the host runs with no host turn reading it.
     const commands: RecordedCommand[] = [];
     const acks: Record<string, unknown>[] = [
       { disposition: "queued", startedNewTurn: false, turnId: "native-1" },
@@ -516,19 +518,36 @@ describe("MuseHarnessSession turns", () => {
       unregisterSink: () => {},
     };
     const session = MuseHarnessSession.fromNativeSession(host, { sessionId: "oc", cwd: "/tmp" }, "native");
-    await drive(session, async () => {
-      const refused = await session.startTurn({
+    const events = await drive(session, async () => {
+      const queued = await session.startTurn({
         turnId: "t1",
         message: { content: [{ type: "text", text: "one" }] },
-      }).then(
-        () => null,
-        (error: { code?: string; message?: string }) => error,
-      );
-      expect(refused?.code).toBe("unsupported");
-      expect(refused?.message).toMatch(/queued this input for a later turn \(native-1\)/);
-      // The dropped reservation leaves no turn behind.
-      await session.startTurn({ turnId: "t2", message: { content: [{ type: "text", text: "two" }] } });
+      });
+      expect(queued.id).toBe("t1");
+      expect(queued.nativeRef.id).toBe("native-1");
+
+      // The queued turn launches under the id the ack named.
+      session.handleNotification({
+        method: "turn/started",
+        params: { turnId: "native-1", sessionId: "native" },
+      } satisfies MuseNotification);
+      session.handleNotification({
+        method: "turn/completed",
+        params: { turnId: "native-1", sessionId: "native", terminal: "completed" },
+      } satisfies MuseNotification);
+
+      const next = await session.startTurn({
+        turnId: "t2",
+        message: { content: [{ type: "text", text: "two" }] },
+      });
+      expect(next.nativeRef.id).toBe("native-2");
     });
+    const started = events.filter((event) => event.type === "turn.started");
+    expect(started).toHaveLength(1);
+    expect(started[0]?.type === "turn.started" ? started[0].turn.id : undefined).toBe("t1");
+    const terminal = events.filter((event) => event.type === "turn.terminal");
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]?.type === "turn.terminal" ? terminal[0].turn.id : undefined).toBe("t1");
     expect(commands.filter((entry) => entry.method === "turn/start")).toHaveLength(2);
   });
 

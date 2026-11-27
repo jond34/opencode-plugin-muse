@@ -848,7 +848,15 @@ export class MuseHarnessSession implements HarnessSession, NotificationSink {
     // to two of them, so the start is refused: this adapter runs one turn at a
     // time and opencode steers explicitly rather than submitting while busy.
     const disposition = typeof result?.disposition === "string" ? result.disposition : "started";
-    if (disposition !== "started" || result?.startedNewTurn === false) {
+    // `queued` means the host still had the previous turn marked active for a
+    // moment after reporting it complete (measured: a submit in that window
+    // answers `queued`, and the same id launches 0-50 ms later). The ack names
+    // the turn that will carry this input, so adopting that id is honest: this
+    // adapter does not queue behind a live turn (the guard above refuses that),
+    // so the queued turn is this one starting late.
+    if (disposition === "queued" && acked !== undefined) {
+      // Fall through: the mapping below adopts `acked` as this turn's id.
+    } else if (disposition !== "started" || result?.startedNewTurn === false) {
       if (this.hostToNative.get(input.turnId) === commandId) this.hostToNative.delete(input.turnId);
       if (this.nativeToHost.get(commandId) === input.turnId) this.nativeToHost.delete(commandId);
       this.assumedTurnIds.delete(commandId);

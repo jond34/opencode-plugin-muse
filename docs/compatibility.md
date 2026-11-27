@@ -166,6 +166,12 @@ the hook-window path; a bad window is validated late; there is no model-neutral
 window; plugins do not control when compaction runs; and a shrink path can
 restore text a compaction hook removed.
 
+The session `title` hook is the local-title path. opencode calls it only while
+its hidden `title` agent exists, so `agents.title.disabled: true` leaves every
+session untitled; that switch is opencode-side, and the plugin does not override
+it. When the hook runs the plugin always sets `event.result`, so
+`agents.title.model` is never used for a Muse session and no Muse turn is spent.
+
 The doctor reads two CLI surfaces and both are version-dependent, measured on
 2.3.2:
 

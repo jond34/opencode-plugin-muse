@@ -12,6 +12,21 @@ import { toolCallInputText, toolResultStatus, toolResultText } from "./transcrip
  */
 
 const TITLE_LIMIT = 72;
+const TITLE_FALLBACK = "Muse session";
+// Openers that restate the ask instead of saying it. Applied in order and
+// repeated, so "hey, please could you ..." reduces to the request itself.
+const TITLE_FRAMING: ReadonlyArray<RegExp> = [
+  /^(?:hey|hi|hello)[,!.\s]+/i,
+  /^(?:please|pls)\b[,:\s]*/i,
+  /^would you mind (?:please )?/i,
+  /^(?:can|could|would|will) you (?:please )?/i,
+  /^help me (?:to |understand )?/i,
+  /^i'd like (?:to |you to )?/i,
+  /^i (?:need|want) (?:to |you to )?/i,
+  /^how (?:do|can|could|would|should) i /i,
+  /^what(?:'s| is) the best way to /i,
+  /^is there (?:a|any) way to /i,
+];
 const DEFAULT_DIGEST_BUDGET = 1024;
 const MIN_DIGEST_BUDGET = 64;
 const DIGEST_HEADER = "Conversation digest (opencode-owned history):";
@@ -28,15 +43,36 @@ function clipCodepoints(text: string, limit: number): string {
 }
 
 /**
- * A title from the first user message: whitespace-collapsed, 72 codepoints,
- * cut at a word boundary, with a stable fallback when the message is empty.
+ * A title from the first user message: whitespace-collapsed, leading framing
+ * dropped, first sentence kept, sentence-cased, and 72 codepoints cut at a word
+ * boundary, with a stable fallback when the message is empty.
+ *
+ * The framing list is the measured win from the local-title probe: "can you fix
+ * the 500" reads as "Fix the 500" in the sidebar instead of restating the
+ * question. A message that opens with a bare identifier or path is left alone.
+ * A message that opens with a bare command name ("npm install fails") is
+ * capitalized too; a stoplist for that would need maintaining for a cosmetic
+ * case, and the session can always be renamed.
  */
 export function makeLocalTitle(
   prompt: ReadonlyArray<{ readonly role: string; readonly content: unknown }>,
 ): string {
   const first = prompt.find((message) => message.role === "user");
-  const text = collapse(first === undefined ? "" : textOfContent(first.content));
-  if (text.length === 0) return "Muse session";
+  let text = collapse(first === undefined ? "" : textOfContent(first.content));
+  for (let pass = 0; pass < 3; pass += 1) {
+    const before = text;
+    for (const rule of TITLE_FRAMING) text = text.replace(rule, "");
+    if (text === before) break;
+  }
+  text = text.split(/(?<=[.!?])\s+/)[0] ?? text;
+  text = text.replace(/[.!?]+$/, "").trim();
+  if (Array.from(text).length < 3) return TITLE_FALLBACK;
+  if (/^[a-z]/.test(text)) text = `${text[0]!.toUpperCase()}${text.slice(1)}`;
+  return clipTitle(text);
+}
+
+/** A title cut at 72 codepoints, preferring a word boundary past the halfway point. */
+function clipTitle(text: string): string {
   const points = Array.from(text);
   if (points.length <= TITLE_LIMIT) return text;
   const head = points.slice(0, TITLE_LIMIT - 1).join("");

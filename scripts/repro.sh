@@ -3,10 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# 1.2.0 candidate: patches 1-5, the /connect and 1.2.0 fixes, and the doctor
-# capability removal. The published 0.1.9 and 1.0.0/1.0.1/1.1.0 recorded hashes
-# stay in docs/provenance.md.
-EXPECTED=ff8f698cda4ee08f39cbccd7a7f70a3ce5fd26fc19e372c4a50995f8cc85a54e
+# 1.2.0 candidate: patches 1-5, the /connect and 1.2.0 fixes, the doctor
+# capability removal, the queued-turn ack, and the local title framing. The
+# published 0.1.9 and 1.0.0/1.0.1/1.1.0 recorded hashes stay in
+# docs/provenance.md.
+EXPECTED=fdb7ab051beaec1dd63216132fc59be9577b5694789eb0f7bcdf5f2aff3286a7
 
 [[ -f package-lock.json ]] || { echo "missing package-lock.json" >&2; exit 1; }
 

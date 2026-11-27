@@ -88,18 +88,17 @@ The tarball shasum equals a local `npm pack` of this tree, so the published
 artifact is the reproduced build and not a rebuild of it.
 
 Prepared 1.2.0 (base + patches 1-5, the `/connect` and allowance changes, the
-1.2.0 fixes, and the doctor capability removal):
+1.2.0 fixes, the doctor capability removal, the queued-turn ack, and the local
+title framing):
 
 ```text
-ff8f698cda4ee08f39cbccd7a7f70a3ce5fd26fc19e372c4a50995f8cc85a54e
+fdb7ab051beaec1dd63216132fc59be9577b5694789eb0f7bcdf5f2aff3286a7
 ```
 
-168 files, built from the committed lockfile with node 24, npm 11.19.1, and
-tsc 5.9.3. The first `publish` run on the merged tree (run
-[45951445967](https://github.com/jond34/opencode-plugin-muse/actions/runs/45951445967))
-printed this value and stopped because `scripts/repro.sh` still held the 1.1.0
-hash. Not yet published: a stage must be approved before a tarball record
-exists.
+168 files, built from the committed lockfile with node 24.22.1, npm 11.19.1, and
+tsc 5.9.3. `bash scripts/repro.sh` compares the rebuilt `dist/` against this
+hash. An earlier 1.2.0 stage was built before the queued-turn fix and is not
+this tree; a stage must be approved before a tarball record exists.
 
 Historical tree (base + patches 1-5) at `bcfabcb`, earlier record:
 
