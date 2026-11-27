@@ -12,6 +12,14 @@
   closes the running turn at that signal and delivers the instruction as a turn
   of its own (measured 12/12 on 2026-11-27; the previous behaviour was a refused
   tool call in 28/28 capped turns).
+- A submitted turn that Muse answers `queued` is now adopted instead of refused.
+  After `turn/completed` the host keeps the previous turn marked active for a
+  moment; a submit in that window answers `queued` with a new turn id, and that
+  id launches 0-50 ms later carrying the submitted text (measured on 1.4.25:
+  4 submits, 3 completions, 0 drops). The plugin refused the ack, so the text
+  reached Muse with no host turn reading it. The ack names the turn that runs
+  the input, so it is adopted; `steered` is still refused, because that folds the
+  input into a turn already running.
 - A Muse turn can write again. The plugin no longer passes `--disable-write` or
   `--disable-shell` to `muse serve`. Both flags reach further than Muse's own
   tools: Muse reports the posture to the model, which then declined the same
@@ -43,6 +51,12 @@
   Muse bills the subscription, not the token. The tier also stops core from
   computing a spend budget from a price that does not exist. Source-derived
   label, not an observed render: there is no TTY in the offline suite.
+- A local session title now drops leading framing ("can you", "please", "I need
+  to", "how do I") and is sentence-cased, so the sidebar shows the request
+  instead of the question around it. A path or identifier that opens the message
+  is left alone. Titles stay local: a Muse title measured 2,051 input tokens and
+  2.4 s per session over 10/10 turns, ten times the pre-registered cost bound, so
+  no model-title path is offered.
 
 ## 1.1.0
 

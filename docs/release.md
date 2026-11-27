@@ -88,11 +88,13 @@ workflow, the registry, or a model turn.
 |---|---|---|
 | Release tarball | `npm pack` plus SHA-256 of the `.tgz` | Before any stage |
 | Staged tarball | `npm stage download <stage-id>` plus SHA-256; compare with the release tarball | While the stage is pending |
-| Provenance | Generated at public publish by trusted publishing; not verifiable from a staged package | After approval only |
+| Provenance | Signed and logged to the transparency log when the package is staged (`npm stage publish`); the registry serves the attestation for the public version after approval | At stage time; served after approval |
 | Public version | `npm view <pkg> versions --json` and `dist-tags --json` | After approval only |
 
-`npm audit signatures` verifies an installed package that already carries an
-attestation. It is not a pre-approval check for a staged tarball.
+The CLI signs the provenance statement and publishes it to the transparency log
+during `npm stage publish`, before any approval; only the staged version stays
+non-public. `npm audit signatures` verifies an installed package that already
+carries an attestation. It is not a pre-approval check for a staged tarball.
 
 ## Dependency gate
 
@@ -144,7 +146,7 @@ repo-side checks.
 
 The repository is **PUBLIC** (`jond34/opencode-plugin-muse`), so repository
 visibility does not block provenance. Trusted publishing with `id-token: write`
-generates it automatically at public publish; do not add `--provenance` to the
+generates it automatically at stage time; do not add `--provenance` to the
 workflow. Stage-only is an owner-side setting: the repository can record it and
 record that the workflow only calls `npm stage publish`, but CI cannot prove it,
 and it is not tested with a direct publish.
